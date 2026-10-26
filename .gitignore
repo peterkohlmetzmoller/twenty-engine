@@ -1,0 +1,8 @@
+build/
+iPlug2/
+tests/host_test
+tests/rs_test
+tests/render_demo
+tests/*.wav
+tests/*.raw
+.DS_Store
