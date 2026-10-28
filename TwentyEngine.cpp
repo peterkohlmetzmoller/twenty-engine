@@ -1,11 +1,54 @@
 #include "TwentyEngine.h"
 #include "IPlug_include_in_plug_src.h"
+#if IPLUG_EDITOR
+#include "IControls.h"
+#endif
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/stat.h>
 
 using namespace ms20;
+
+#if IPLUG_EDITOR
+// The whole window: product name and whether a controller is plugged in. Nothing else.
+class StatusControl : public IControl
+{
+public:
+  StatusControl(const IRECT& r) : IControl(r) { mIgnoreMouse = true; Scan(); }
+
+  bool IsDirty() override
+  {
+    if (++mFrames >= 30) { mFrames = 0; if (Scan()) return true; }   // look about twice a second
+    return IControl::IsDirty();
+  }
+
+  void Draw(IGraphics& g) override
+  {
+    const IColor ink(255, 20, 20, 20), paper(255, 255, 255, 255), dim(255, 150, 150, 150);
+    g.FillRect(paper, mRECT);
+    g.DrawRect(ink, mRECT.GetPadded(-6.f), nullptr, 1.5f);
+    const IRECT in = mRECT.GetPadded(-22.f);
+    g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE", in);
+
+    static const char* kNames[] = { "", "MS-20 iC", "Ksoloti Core", "Teensy" };
+    const bool on = mController > 0;
+    const IRECT row = in.GetFromBottom(18.f);
+    const float cx = row.L + 6.f, cy = row.MH();
+    if (on) g.FillCircle(ink, cx, cy, 5.f);
+    else    g.DrawCircle(dim, cx, cy, 5.f, nullptr, 1.5f);
+    WDL_String txt;
+    if (on) txt.SetFormatted(64, "Connected  \xC2\xB7  %s", kNames[mController]);
+    else    txt.Set("Not connected");
+    g.DrawText(IText(14.f, on ? ink : dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), txt.Get(), row.GetHShifted(20.f));
+  }
+
+private:
+  bool Scan() { const int c = LedPort::FindController(); if (c == mController) return false; mController = c; return true; }
+  int mController = -1;
+  int mFrames = 0;
+};
+#endif
 
 // parameter type helpers (types as written in the Ksoloti patch)
 static bool IsFrac(int i) { return strncmp(kParamInfo[i].type, "frac32", 6) == 0; }
@@ -48,6 +91,16 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       GetParam(i)->InitInt(p.label, p.def, 0, maxv, "", 0, p.object);
     }
   }
+
+#if IPLUG_EDITOR
+  mMakeGraphicsFunc = [&]() {
+    return MakeGraphics(*this, PLUG_WIDTH, PLUG_HEIGHT, PLUG_FPS, GetScaleForScreen(PLUG_WIDTH, PLUG_HEIGHT));
+  };
+  mLayoutFunc = [&](IGraphics* pGraphics) {
+    pGraphics->LoadFont("Roboto-Regular", ROBOTO_FN);
+    pGraphics->AttachControl(new StatusControl(pGraphics->GetBounds()));
+  };
+#endif
 }
 
 #if IPLUG_DSP

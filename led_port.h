@@ -51,6 +51,28 @@ public:
   }
   bool Connected() const { return mDest != 0; }
 
+  // Which controller is plugged in, judged from the MIDI inputs the Mac sees:
+  // 0 none, 1 stock MS-20 iC, 2 Twenty Engine on Ksoloti, 3 Twenty Engine on Teensy.
+  // The hardware versions win: with them inside, the iC itself is not on USB.
+  static int FindController()
+  {
+    int found = 0;
+    const ItemCount n = MIDIGetNumberOfSources();
+    for (ItemCount i = 0; i < n; i++)
+    {
+      CFStringRef name = nullptr;
+      if (MIDIObjectGetStringProperty(MIDIGetSource(i), kMIDIPropertyDisplayName, &name) != noErr || !name) continue;
+      auto has = [&](CFStringRef s) { return CFStringFind(name, s, kCFCompareCaseInsensitive).location != kCFNotFound; };
+      int k = 0;
+      if (has(CFSTR("Ksoloti"))) k = 2;
+      else if (has(CFSTR("Teensy")) || has(CFSTR("Twenty Engine"))) k = 3;
+      else if (has(CFSTR("MS-20"))) k = 1;
+      CFRelease(name);
+      if (k > found) found = k;
+    }
+    return found;
+  }
+
 private:
   MIDIClientRef mClient = 0;
   MIDIPortRef mPort = 0;
@@ -64,5 +86,6 @@ public:
   void Rescan() {}
   void Send(const uint8_t*, int) {}
   bool Connected() const { return false; }
+  static int FindController() { return 0; }
 };
 #endif

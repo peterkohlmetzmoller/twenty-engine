@@ -2,13 +2,13 @@
 
 #include "IPlug_include_in_plug_hdr.h"
 #include "engine/engine_gen.h"
+#include "led_port.h"
 
 const int kNumPresets = 1;
 const int kNumParams = ms20::NPARAMS;   // every parameter of the Ksoloti patch
 
 #if IPLUG_DSP
 #include "engine/ms20_host.h"
-#include "led_port.h"
 #include <memory>
 #endif
 

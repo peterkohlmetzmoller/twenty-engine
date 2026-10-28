@@ -12,7 +12,7 @@ find_package(iPlug2 REQUIRED)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# AU only, no graphics: Logic shows its own parameter controls
+# AU only. Minimal window: name + connection status (Logic shows the parameters in its own controls view)
 iplug_add_plugin(${PROJECT_NAME}
   SOURCES
     TwentyEngine.cpp
@@ -23,7 +23,7 @@ iplug_add_plugin(${PROJECT_NAME}
     engine/ms20_host.h
     engine/engine_globals.cpp
     resources/resource.h
+  RESOURCES
+    resources/fonts/Roboto-Regular.ttf
   FORMATS AU
-  UI NONE
-  DEFINES NO_IGRAPHICS
 )

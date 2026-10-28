@@ -1,5 +1,5 @@
 <patch-1.0 appVersion="1.0.12">
-   <comment type="patch/comment" x="112" y="28" text="=== 8-VOICE KORG MS-20: ONE EG1 + ONE EG2 | ARP OFF = MS-20 POLY (VCO1+VCO2 PER VOICE) | ARP = VCO1 ORGAN GATE | LATCH = VCO1 CHORD HELD | v11: saw PW = 12-stage phaser, stereo spread BBD, ESP A/B layers | v40: smaller in RAM | v39: USB MIDI bridge to the computer + legacy mode (switch held at power-on) | v38: HOLD at max = chord latch (new chord replaces the held one) | v36: VCO2 pitch continuous | v35: patch memory on the keys (hold switch + key: tap = recall, hold 2 s = save), 36 factory sounds, pickup, SWITCH->ESP SIGNAL IN = tap tempo | v31: 3.4 s power-on LED show, single-tap delay, tap tempo on the momentary switch, filter silent without notes, mono mode (patch KBD CV -> VCO1+2 CV IN), VCO2 pitch +-5, vibrato 4.6 Hz, ESP arp off = delay send, switch = tone; attack stops on key up, runaway feedback, ESP knobs follow the arp mode (no pickup), VCO1 32'-4', cleaner gain staging, latch chord replace, knob glide, iC LEDs, confirmed patch bay ==="/>
+   <comment type="patch/comment" x="112" y="28" text="=== 8-VOICE KORG MS-20: ONE EG1 + ONE EG2 | ARP OFF = MS-20 POLY (VCO1+VCO2 PER VOICE) | ARP = VCO1 ORGAN GATE | LATCH = VCO1 CHORD HELD | v11: saw PW = 12-stage phaser, stereo spread BBD, ESP A/B layers | v42: iC MIDI always passed to the computer; MIDI/init code compiled for size | v38: HOLD at max = chord latch (new chord replaces the held one) | v36: VCO2 pitch continuous | v35: patch memory on the keys (hold switch + key: tap = recall, hold 2 s = save), 36 factory sounds, pickup, SWITCH->ESP SIGNAL IN = tap tempo | v31: 3.4 s power-on LED show, single-tap delay, tap tempo on the momentary switch, filter silent without notes, mono mode (patch KBD CV -> VCO1+2 CV IN), VCO2 pitch +-5, vibrato 4.6 Hz, ESP arp off = delay send, switch = tone; attack stops on key up, runaway feedback, ESP knobs follow the arp mode (no pickup), VCO1 32'-4', cleaner gain staging, latch chord replace, knob glide, iC LEDs, confirmed patch bay ==="/>
    <comment type="patch/comment" x="1092" y="84" text="PATCH BAY: 0 normal 1 MG tri 2 MG sq 3 EG1 4 EG1rev 5 EG2 6 EG2rev 7 S&amp;H 8 noise 9 wheel 10 button 11 kbdCV 12 kbdTrig 13 open"/>
    <patchobj type="patch/object" uuid="b100000000000000000000000000000000000500" name="MS20_Voices" x="112" y="98">
       <params>
@@ -119,8 +119,93 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
  if(kn_f)kn_s[i]=(float)tg;else kn_s[i]+=((float)tg-kn_s[i])*0.055f;    /* first tick: no glide from zero */
  return (int32_t)kn_s[i];
 }
-]]></code.declaration>
-         <code.init><![CDATA[
+
+/* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+
+uint8_t st=status&0xF0;
+if((st==MIDI_NOTE_ON)&&(data2>0)&&marm){
+ /* memory mode armed: the key selects a memory slot (Patch_Memory), no note */
+}else if((st==MIDI_NOTE_ON)&&(data2>0)){
+ if(hpinf&&mode!=2&&(kclk-lon)>180){        /* HOLD at the top = chord latch: a new chord (more than 60 ms after the last note) releases the held notes */
+  for(int i=0;i<NV;i++){if(!vg[i]&&!vk[i]&&(vs[i]==1||vs[i]==2)){vs[i]=3;vh[i]=0;}}
+ }
+ bool f=false;for(int i=0;i<nh;i++){if(h[i]==data1)f=true;}if(!f&&nh<16)h[nh++]=data1;
+ if(mode==2){
+  if(zk||(kclk-lon)>180){                     /* new chord: after a full release, or more than 60 ms after the previous note-on */
+   na=0;zk=false;cid++;
+   for(int i=0;i<NV;i++){if(vg[i]&&vc[i]!=cid){if(!vk[i])vg[i]=0;else vu[i]=1;}} /* old chord: latched notes stop now, keys still down stop when released */
+  }
+  bool af=false;for(int i=0;i<na;i++){if(a[i]==data1)af=true;}
+  if(!af&&na<16){a[na++]=data1;for(int i=0;i<na-1;i++){for(int j=i+1;j<na;j++){if(a[j]<a[i]){uint8_t t=a[i];a[i]=a[j];a[j]=t;}}}}
+ }
+ lon=kclk;
+ if(!mono_on){                              /* mono: the control-rate code plays one voice from the held keys */
+ float np=(float)((data1-64)<<21);ln=np;
+ int lg=-1;
+ if(porta>0.002f){                            // Multibend: legato within 2 semitones of a held string glides on that string
+  int bd=99;uint32_t bt=0;
+  for(int i=0;i<NV;i++){
+   if(vg[i]&&sc[i]>0&&(kclk-vt[i])>=90){     // 90 control ticks = 30 ms chord window: chords never glide into each other
+    int d=data1-vn[i];if(d<0)d=-d;
+    if(d<=2&&(d<bd||(d==bd&&vlt[i]>bt))){bd=d;bt=vlt[i];lg=i;}  // nearest wins; tie -> most recently touched string
+   }
+  }
+ }
+ if(lg>=0){
+  if(sc[lg]<SD)stk[lg][sc[lg]++]=data1;
+  vlt[lg]=++acnt;vn[lg]=data1;vc[lg]=cid;vu[lg]=0;
+  float gmax=2500.f*porta;float gmin=gmax*0.0667f;                   // script ratio 20 : 300 ms; max 2.5 s at full knob
+  float gms=gmin+(127-data2)*(1.f/127.f)*(gmax-gmin);               // soft hit = slow, hard hit = fast
+  float tk=gms*3.f;if(tk<1.f)tk=1.f;                                // 3 control ticks per ms
+  gs[lg]=vp[lg];tg[lg]=np;gpos[lg]=0.f;ginc[lg]=1.f/tk;gmix[lg]=data2*(1.f/127.f);gon[lg]=true; // no new attack: the string bends
+ }else{
+  int tv=-1;for(int i=0;i<NV;i++){if(vn[i]==data1&&vg[i]){tv=i;break;}}
+  if(tv==-1){for(int i=0;i<NV;i++){if(!vg[i]&&ve[i]<=0.f&&vgn[i]<0.0001f){tv=i;break;}}}
+  if(tv==-1){uint32_t ma=0xFFFFFFFF;for(int i=0;i<NV;i++){if(!vg[i]&&va[i]<ma){ma=va[i];tv=i;}}}
+  if(tv==-1){uint32_t ma=0xFFFFFFFF;for(int i=0;i<NV;i++){if(va[i]<ma){ma=va[i];tv=i;}}}
+  if(tv>=0){
+   vn[tv]=data1;vg[tv]=1;vk[tv]=1;vd[tv]=(data2>=120)?1:0;vs[tv]=1;vh[tv]=holdt;va[tv]=++acnt;rp=1;
+   vp[tv]=np;tg[tv]=np;gon[tv]=false;stk[tv][0]=data1;sc[tv]=1;vt[tv]=kclk;vlt[tv]=++acnt;vc[tv]=cid;vu[tv]=0;  // new attack: no glide
+  }
+ }
+ }
+}else if((st==MIDI_NOTE_OFF)||((st==MIDI_NOTE_ON)&&(data2==0))){
+ for(int i=0;i<nh;i++){if(h[i]==data1){for(int j=i;j<nh-1;j++)h[j]=h[j+1];nh--;break;}}
+ if(nh==0){zk=true;if(mode!=2)na=0;}
+ for(int i=0;i<NV;i++){                     // remove the key from its string's stack
+  if(sc[i]<=0)continue;
+  int w=0;bool rm=false;
+  for(int r=0;r<sc[i];r++){if(!rm&&stk[i][r]==data1){rm=true;continue;}stk[i][w++]=stk[i][r];}
+  if(!rm)continue;
+  sc[i]=w;
+  if(w==0){vk[i]=0;vd[i]=0;if(mode!=2||vu[i])vg[i]=0;vu[i]=0;}     // last key of the string up (latch keeps it sounding, unless a newer chord replaced it)
+  else{int top=stk[i][w-1];
+   if(top!=vn[i]){vn[i]=top;vlt[i]=++acnt;gs[i]=vp[i];tg[i]=(float)((top-64)<<21);gpos[i]=0.f;ginc[i]=1.f/270.f;gmix[i]=0.f;gon[i]=true;} // glide back to the key still held: 90 ms, soft curve
+  }
+  break;
+ }
+}else if(st==MIDI_CONTROL_CHANGE){
+ if(data1==1)mw=data2/127.f;                                       // mod wheel -> vibrato
+ else{
+  // MS-20 iC rotary switches send 0/43/85/127; Ksoloti's built-in CC mapping can't decode that, so map to positions 0..3 here
+  int rz=(data2<22)?0:((data2<64)?1:((data2<106)?2:3));
+  // PExParameterChange = the same call Ksoloti's built-in CC assignment uses, so the knob also moves in the editor
+  // Index names are spelled out (works on every Ksoloti version). If you rename this object, change MS20__Voices below to the new name (underscores doubled).
+  if(data1==77)PExParameterChange(&parent->PExch[PARAM_INDEX_MS20__Voices_vco1wave],rz,0xFFFD);       // VCO1 waveform
+  else if(data1==15)PExParameterChange(&parent->PExch[PARAM_INDEX_MS20__Voices_vco1oct],rz,0xFFFD);   // VCO1 scale 32'..4'
+  else if(data1==82)PExParameterChange(&parent->PExch[PARAM_INDEX_MS20__Voices_vco2wave],rz,0xFFFD);  // VCO2 waveform
+  else if(data1==22)PExParameterChange(&parent->PExch[PARAM_INDEX_MS20__Voices_vco2oct],rz,0xFFFD);   // VCO2 scale 32'..4'
+ }
+}else if(st==0xD0){
+ btn_phys=(data1>0)?1:0;                                           // MS-20 iC momentary switch = channel pressure (delay layer is handled in ESP_Layer)
+}
+         
+}
+
+/* init code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void initOs(){
+
 marm=0;v2s=0.f;v2i=0;hpinf=false;
 acnt=0;rng=1357911U;pk=0.f;ln=0.f;hp=0;cc_pw=0.f;pws=0.f;btn_dub=0;btn_phys=0;rp=0;holdt=0;mw=mws=vph=0.f;for(int k=0;k<12;k++)ap_s[k]=0.f;ph_fb=ph_a=ph_da=0.f;phwas=false;
 for(int i=0;i<NV;i++){ph1[i]=i*0.125f;ph2[i]=0.31f+i*0.0625f;inc1[i]=inc2[i]=0.009f;ve[i]=vgn[i]=vp[i]=0.f;vn[i]=60;vg[i]=vk[i]=vd[i]=vs[i]=0;va[i]=vh[i]=0;}
@@ -131,6 +216,11 @@ mono_on=false;mg_was=0;mhp=0;mtg=mpos=0.f;p1a=0.f;
 nh=na=0;ap=60.f;am=amp=mode=0;acc=0;ledp=0;arng=1357911U;ai=ao=0;aup=zk=true;p2=0.f;drf2=drt2=0.f;
          
 for(int i=0;i<1;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654468715U;kn_f=1;
+
+}
+]]></code.declaration>
+         <code.init><![CDATA[
+initOs();
 ]]></code.init>
          <code.krate><![CDATA[
 {float dv=(float)param_vco2semi*(1.f/2097152.f);         /* VCO2 PITCH: continuous +-5 semitones (was semitone steps) */
@@ -301,84 +391,8 @@ if(am>0){
 outlet_arp=(int32_t)(ao2*0.2f*134217728.f);
          ]]></code.srate>
          <code.midihandler><![CDATA[
-uint8_t st=status&0xF0;
-if((st==MIDI_NOTE_ON)&&(data2>0)&&marm){
- /* memory mode armed: the key selects a memory slot (Patch_Memory), no note */
-}else if((st==MIDI_NOTE_ON)&&(data2>0)){
- if(hpinf&&mode!=2&&(kclk-lon)>180){        /* HOLD at the top = chord latch: a new chord (more than 60 ms after the last note) releases the held notes */
-  for(int i=0;i<NV;i++){if(!vg[i]&&!vk[i]&&(vs[i]==1||vs[i]==2)){vs[i]=3;vh[i]=0;}}
- }
- bool f=false;for(int i=0;i<nh;i++){if(h[i]==data1)f=true;}if(!f&&nh<16)h[nh++]=data1;
- if(mode==2){
-  if(zk||(kclk-lon)>180){                     /* new chord: after a full release, or more than 60 ms after the previous note-on */
-   na=0;zk=false;cid++;
-   for(int i=0;i<NV;i++){if(vg[i]&&vc[i]!=cid){if(!vk[i])vg[i]=0;else vu[i]=1;}} /* old chord: latched notes stop now, keys still down stop when released */
-  }
-  bool af=false;for(int i=0;i<na;i++){if(a[i]==data1)af=true;}
-  if(!af&&na<16){a[na++]=data1;for(int i=0;i<na-1;i++){for(int j=i+1;j<na;j++){if(a[j]<a[i]){uint8_t t=a[i];a[i]=a[j];a[j]=t;}}}}
- }
- lon=kclk;
- if(!mono_on){                              /* mono: the control-rate code plays one voice from the held keys */
- float np=(float)((data1-64)<<21);ln=np;
- int lg=-1;
- if(porta>0.002f){                            // Multibend: legato within 2 semitones of a held string glides on that string
-  int bd=99;uint32_t bt=0;
-  for(int i=0;i<NV;i++){
-   if(vg[i]&&sc[i]>0&&(kclk-vt[i])>=90){     // 90 control ticks = 30 ms chord window: chords never glide into each other
-    int d=data1-vn[i];if(d<0)d=-d;
-    if(d<=2&&(d<bd||(d==bd&&vlt[i]>bt))){bd=d;bt=vlt[i];lg=i;}  // nearest wins; tie -> most recently touched string
-   }
-  }
- }
- if(lg>=0){
-  if(sc[lg]<SD)stk[lg][sc[lg]++]=data1;
-  vlt[lg]=++acnt;vn[lg]=data1;vc[lg]=cid;vu[lg]=0;
-  float gmax=2500.f*porta;float gmin=gmax*0.0667f;                   // script ratio 20 : 300 ms; max 2.5 s at full knob
-  float gms=gmin+(127-data2)*(1.f/127.f)*(gmax-gmin);               // soft hit = slow, hard hit = fast
-  float tk=gms*3.f;if(tk<1.f)tk=1.f;                                // 3 control ticks per ms
-  gs[lg]=vp[lg];tg[lg]=np;gpos[lg]=0.f;ginc[lg]=1.f/tk;gmix[lg]=data2*(1.f/127.f);gon[lg]=true; // no new attack: the string bends
- }else{
-  int tv=-1;for(int i=0;i<NV;i++){if(vn[i]==data1&&vg[i]){tv=i;break;}}
-  if(tv==-1){for(int i=0;i<NV;i++){if(!vg[i]&&ve[i]<=0.f&&vgn[i]<0.0001f){tv=i;break;}}}
-  if(tv==-1){uint32_t ma=0xFFFFFFFF;for(int i=0;i<NV;i++){if(!vg[i]&&va[i]<ma){ma=va[i];tv=i;}}}
-  if(tv==-1){uint32_t ma=0xFFFFFFFF;for(int i=0;i<NV;i++){if(va[i]<ma){ma=va[i];tv=i;}}}
-  if(tv>=0){
-   vn[tv]=data1;vg[tv]=1;vk[tv]=1;vd[tv]=(data2>=120)?1:0;vs[tv]=1;vh[tv]=holdt;va[tv]=++acnt;rp=1;
-   vp[tv]=np;tg[tv]=np;gon[tv]=false;stk[tv][0]=data1;sc[tv]=1;vt[tv]=kclk;vlt[tv]=++acnt;vc[tv]=cid;vu[tv]=0;  // new attack: no glide
-  }
- }
- }
-}else if((st==MIDI_NOTE_OFF)||((st==MIDI_NOTE_ON)&&(data2==0))){
- for(int i=0;i<nh;i++){if(h[i]==data1){for(int j=i;j<nh-1;j++)h[j]=h[j+1];nh--;break;}}
- if(nh==0){zk=true;if(mode!=2)na=0;}
- for(int i=0;i<NV;i++){                     // remove the key from its string's stack
-  if(sc[i]<=0)continue;
-  int w=0;bool rm=false;
-  for(int r=0;r<sc[i];r++){if(!rm&&stk[i][r]==data1){rm=true;continue;}stk[i][w++]=stk[i][r];}
-  if(!rm)continue;
-  sc[i]=w;
-  if(w==0){vk[i]=0;vd[i]=0;if(mode!=2||vu[i])vg[i]=0;vu[i]=0;}     // last key of the string up (latch keeps it sounding, unless a newer chord replaced it)
-  else{int top=stk[i][w-1];
-   if(top!=vn[i]){vn[i]=top;vlt[i]=++acnt;gs[i]=vp[i];tg[i]=(float)((top-64)<<21);gpos[i]=0.f;ginc[i]=1.f/270.f;gmix[i]=0.f;gon[i]=true;} // glide back to the key still held: 90 ms, soft curve
-  }
-  break;
- }
-}else if(st==MIDI_CONTROL_CHANGE){
- if(data1==1)mw=data2/127.f;                                       // mod wheel -> vibrato
- else{
-  // MS-20 iC rotary switches send 0/43/85/127; Ksoloti's built-in CC mapping can't decode that, so map to positions 0..3 here
-  int rz=(data2<22)?0:((data2<64)?1:((data2<106)?2:3));
-  // PExParameterChange = the same call Ksoloti's built-in CC assignment uses, so the knob also moves in the editor
-  // Index names are spelled out (works on every Ksoloti version). If you rename this object, change MS20__Voices below to the new name (underscores doubled).
-  if(data1==77)PExParameterChange(&parent->PExch[PARAM_INDEX_MS20__Voices_vco1wave],rz,0xFFFD);       // VCO1 waveform
-  else if(data1==15)PExParameterChange(&parent->PExch[PARAM_INDEX_MS20__Voices_vco1oct],rz,0xFFFD);   // VCO1 scale 32'..4'
-  else if(data1==82)PExParameterChange(&parent->PExch[PARAM_INDEX_MS20__Voices_vco2wave],rz,0xFFFD);  // VCO2 waveform
-  else if(data1==22)PExParameterChange(&parent->PExch[PARAM_INDEX_MS20__Voices_vco2oct],rz,0xFFFD);   // VCO2 scale 32'..4'
- }
-}else if(st==0xD0){
- btn_phys=(data1>0)?1:0;                                           // MS-20 iC momentary switch = channel pressure (delay layer is handled in ESP_Layer)
-}
-         ]]></code.midihandler>
+midiOs(dev,port,status,data1,data2);
+]]></code.midihandler>
       </object>
    </patchobj>
    <patchobj type="patch/object" uuid="b100000000000000000000000000000000000501" name="EG1" x="308" y="98">
@@ -422,9 +436,16 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
  if(kn_f)kn_s[i]=(float)tg;else kn_s[i]+=((float)tg-kn_s[i])*0.055f;    /* first tick: no glide from zero */
  return (int32_t)kn_s[i];
 }
-]]></code.declaration>
-         <code.init><![CDATA[val=0.f;stg=0;tmr=0;pg=0;pm=0;
+
+/* init code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void initOs(){
+val=0.f;stg=0;tmr=0;pg=0;pm=0;
 for(int i=0;i<4;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654418544U;kn_f=1;
+
+}
+]]></code.declaration>
+         <code.init><![CDATA[
+initOs();
 ]]></code.init>
          <code.krate><![CDATA[
 int32_t kn_delay=kn_upd(0,param_delay,0,134217727,524288);
@@ -508,10 +529,17 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
  if(kn_f)kn_s[i]=(float)tg;else kn_s[i]+=((float)tg-kn_s[i])*0.055f;    /* first tick: no glide from zero */
  return (int32_t)kn_s[i];
 }
-]]></code.declaration>
-         <code.init><![CDATA[
+
+/* init code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void initOs(){
+
 epinf=false;for(int e=0;e<2;e++){val[e]=0.f;stg[e]=0;hld[e]=0;pg[e]=0;}
 for(int i=0;i<7;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654431178U;kn_f=1;
+
+}
+]]></code.declaration>
+         <code.init><![CDATA[
+initOs();
 ]]></code.init>
          <code.krate><![CDATA[
 int32_t kn_hold=kn_upd(0,param_hold,0,134217727,524288);
@@ -654,9 +682,16 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
  if(kn_f)kn_s[i]=(float)tg;else kn_s[i]+=((float)tg-kn_s[i])*0.055f;    /* first tick: no glide from zero */
  return (int32_t)kn_s[i];
 }
-]]></code.declaration>
-         <code.init><![CDATA[h1p=h2p=l1p=l2p=h1a=h2a=l1a=l2a=cp=ca=pnk=sh=sl=0.f;pgp=pga=init=0;cfirst=1;cks=cks2=0.f;fgs=0.f;for(int k=0;k<12;k++){cc[k]=dcc[k]=0.f;}
+
+/* init code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void initOs(){
+h1p=h2p=l1p=l2p=h1a=h2a=l1a=l2a=cp=ca=pnk=sh=sl=0.f;pgp=pga=init=0;cfirst=1;cks=cks2=0.f;fgs=0.f;for(int k=0;k<12;k++){cc[k]=dcc[k]=0.f;}
 for(int i=0;i<4;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654451953U;kn_f=1;
+
+}
+]]></code.declaration>
+         <code.init><![CDATA[
+initOs();
 ]]></code.init>
          <code.krate><![CDATA[
 float fgt=inlet_polyenv*7.45e-9f*6.f;if(fgt>1.f)fgt=1.f; /* no notes = no self-oscillation (MS-20: the VCA closes behind the filter) */
@@ -723,7 +758,6 @@ l1a=sat(2.f*v1la-l1a,0.67f);l2a=2.f*v2la-l2a;outlet_arpout=(int32_t)(sat(v2la,1.
             <frac32buffer name="arpin"/>
             <frac32.positive name="arpenv"/>
             <frac32.bipolar name="vca"/>
-            <bool32 name="mute"/>
          </inlets>
          <outlets>
             <frac32buffer name="out"/>
@@ -745,16 +779,23 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
  if(kn_f)kn_s[i]=(float)tg;else kn_s[i]+=((float)tg-kn_s[i])*0.055f;    /* first tick: no glide from zero */
  return (int32_t)kn_s[i];
 }
-]]></code.declaration>
-         <code.init><![CDATA[px=ep=ea=b1=b2=0.f;vgs=1.f;
+
+/* init code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void initOs(){
+px=ep=ea=b1=b2=0.f;vgs=1.f;
 for(int i=0;i<3;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654423640U;kn_f=1;
+
+}
+]]></code.declaration>
+         <code.init><![CDATA[
+initOs();
 ]]></code.init>
          <code.krate><![CDATA[
 int32_t kn_bassboost=kn_upd(0,param_bassboost,0,134217727,0);
 int32_t kn_drive=kn_upd(1,param_drive,0,134217727,0);
 int32_t kn_mastervol=kn_upd(2,param_mastervol,0,134217727,0);
 kn_f=0;
-float bg=(kn_bassboost*7.45e-9f)*1.5f;   /* bass boost: max about +8 dB */float dr=0.25f+(kn_drive*7.45e-9f)*1.5f;float idr=1.f/pt(dr);float vol=(kn_mastervol*7.45e-9f)*1.5f;if(inlet_mute)vol=0.f;   /* legacy mode: the engine is silent */
+float bg=(kn_bassboost*7.45e-9f)*1.5f;   /* bass boost: max about +8 dB */float dr=0.25f+(kn_drive*7.45e-9f)*1.5f;float idr=1.f/pt(dr);float vol=(kn_mastervol*7.45e-9f)*1.5f;
 float vg=1.f;if(inlet_vca!=(int32_t)0x80000000){vg=inlet_vca*7.4505806e-9f;if(vg<0.f)vg=0.f;if(vg>1.f)vg=1.f;} // VCA CONTROL jack]]></code.krate>
          <code.srate><![CDATA[
 float xp=inlet_polyin*7.45e-9f; /* poly voices already carry their own EG2 / organ gate */
@@ -883,8 +924,26 @@ void patchEvent(int t,int a,int b){
  if(t==4){if(out>0)setsel(-in-1,out);}
  else setsel(-in-1,OPEN);              // cable pulled; the plug-out event that follows restores the normal
 }
-         ]]></code.declaration>
-         <code.init><![CDATA[
+         
+/* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+
+// MS-20 iC patch panel: CC99 = event type, CC98 / CC6 = the two jack numbers (NRPN-style triple)
+if((status&0xF0)==MIDI_CONTROL_CHANGE){
+ if(data1==99){m99=data2;h99=true;h98=h6=false;}   // 99 starts a new event (standard NRPN order), dropping any stray 98/6
+ else if(data1==98){m98=data2;h98=true;}
+ else if(data1==6){m6=data2;h6=true;}
+ if((data1==99||data1==98||data1==6)&&h99&&h98&&h6){
+  h99=h98=h6=false;ev99=m99;ev98=m98;ev6=m6;
+  patchEvent(m99,m98,m6);
+ }
+}
+         
+}
+
+/* init code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void initOs(){
+
 for(int i=0;i<35;i++){jack[i]=0;lk[i]=0;}monof=0;pwr=1;pon=0;
 // ---- jack table: confirmed on the MS-20 iC (one cable from TOTAL through every jack) ----
 // outputs
@@ -919,7 +978,12 @@ pidx[3]=PARAM_INDEX_PatchBay_hpf;pidx[4]=PARAM_INDEX_PatchBay_lpf;pidx[5]=PARAM_
 pidx[6]=PARAM_INDEX_PatchBay_eg1trig;pidx[7]=PARAM_INDEX_PatchBay_eg2trig;pidx[8]=PARAM_INDEX_PatchBay_shin;pidx[9]=PARAM_INDEX_PatchBay_shclock;
 m99=m98=m6=0;h99=h98=h6=false;ev99=ev98=ev6=-1;
 nrng=192837465U;shval=0;pclk=0;for(int i=0;i<14;i++)src[i]=0;
-         ]]></code.init>
+         
+}
+]]></code.declaration>
+         <code.init><![CDATA[
+initOs();
+]]></code.init>
          <code.krate><![CDATA[
 outlet_mono=monof;outlet_power=pwr;outlet_poweron=pon;
 // ---- sources (frac32 full scale = 1<<27) ----
@@ -941,17 +1005,8 @@ outlet_total=r[0];outlet_freq=r[1];outlet_vco2freq=r[2];outlet_hpf=r[3];outlet_l
 outlet_evtype=ev99;outlet_evjacka=ev98;outlet_evjackb=ev6;
          ]]></code.krate>
          <code.midihandler><![CDATA[
-// MS-20 iC patch panel: CC99 = event type, CC98 / CC6 = the two jack numbers (NRPN-style triple)
-if((status&0xF0)==MIDI_CONTROL_CHANGE){
- if(data1==99){m99=data2;h99=true;h98=h6=false;}   // 99 starts a new event (standard NRPN order), dropping any stray 98/6
- else if(data1==98){m98=data2;h98=true;}
- else if(data1==6){m6=data2;h6=true;}
- if((data1==99||data1==98||data1==6)&&h99&&h98&&h6){
-  h99=h98=h6=false;ev99=m99;ev98=m98;ev6=m6;
-  patchEvent(m99,m98,m6);
- }
-}
-         ]]></code.midihandler>
+midiOs(dev,port,status,data1,data2);
+]]></code.midihandler>
       </object>
    </patchobj>
    <obj type="disp/i" uuid="5e35fd0c62d81e70017289250cf28edd26e19e4a" name="Cable_Event_Type" x="1246" y="98">
@@ -1042,12 +1097,19 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
  if(kn_f)kn_s[i]=(float)tg;else kn_s[i]+=((float)tg-kn_s[i])*0.055f;    /* first tick: no glide from zero */
  return (int32_t)kn_s[i];
 }
-]]></code.declaration>
-         <code.init><![CDATA[
+
+/* init code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void initOs(){
+
 static int16_t _b[131072] __attribute__((section(".sdram"))); bbd = &_b[0];
 for(int i=0; i<131072; i++) bbd[i]=0; w_i=0; s_t=28000.f; l_s1=l_s2=h_s1=0.f; w_ph=f_ph=0; wf_rng=22446688U; d_t=d_s=d_t2=d_s2=m_sL=m_sR=mw=d_e=syb=lim=0.f;
          
 for(int i=0;i<7;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654417092U;kn_f=1;
+
+}
+]]></code.declaration>
+         <code.init><![CDATA[
+initOs();
 ]]></code.init>
          <code.krate><![CDATA[
 int32_t kn_time=kn_upd(0,param_time,0,134217727,0); /* delay time lands exactly (tap tempo must stay in time) */
@@ -1154,8 +1216,30 @@ void knob(int k,int cc){
  if(zoned[l][k])PExParameterChange(&parent->PExch[pidx[l][k]],cc>>5,0xFFFD);                                   // 4 zones
  else PExParameterChange(&parent->PExch[pidx[l][k]],(cc!=127)?(cc<<20):0x07FFFFFF,0xFFFD);                       // same scaling as Ksoloti's built-in CC assignment
 }
-         ]]></code.declaration>
-         <code.init><![CDATA[
+         
+/* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+
+uint8_t st=status&0xF0;
+if(st==MIDI_NOTE_ON&&data2>0){
+ if(data2>124){bool f=false;for(int i=0;i<nhard;i++)if(hard[i]==data1)f=true;if(!f&&nhard<16)hard[nhard++]=data1;} // hard hit: note still plays, and switches the knobs while held
+}else if(st==MIDI_NOTE_OFF||(st==MIDI_NOTE_ON&&data2==0)){
+ for(int i=0;i<nhard;i++){if(hard[i]==data1){for(int j=i;j<nhard-1;j++)hard[j]=hard[j+1];nhard--;break;}}
+}else if(st==0xD0){
+ bool nb=(data1>0);               // momentary switch (channel pressure): held = knob layer, short press = tap tempo
+ uint32_t now=etick;
+ if(nb&&!btn){tpress=now;knobbed=false;}
+ else if(!nb&&btn){if(tapm&&!knobbed&&(now-tpress)<1050)tap(tpress);}   /* taps count only in tap-tempo mode */
+ btn=nb;
+}else if(st==MIDI_CONTROL_CHANGE&&data1>=88&&data1<=91){
+ knob(data1-88,data2);if(btn)knobbed=true;   /* knob turned while the switch is held: that press was a layer hold, not a tap */
+}
+         
+}
+
+/* init code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void initOs(){
+
 nhard=0;btn=false;amode=0;tapm=0;etick=0;tpress=tlast=0;knobbed=false;ntap=0;for(int i=0;i<3;i++)tiv[i]=0.f;
 for(int l=0;l<NSET;l++)for(int k=0;k<NK;k++)zoned[l][k]=0;
 // Index names spelled out (works on every Ksoloti version). If an object is renamed, update its name here (underscores doubled).
@@ -1174,7 +1258,12 @@ pidx[2][0]=PARAM_INDEX_BBD__Delay_time;
 pidx[2][1]=PARAM_INDEX_BBD__Delay_feedback;
 pidx[2][2]=PARAM_INDEX_BBD__Delay_wowflutter;
 pidx[2][3]=PARAM_INDEX_BBD__Delay_drywet;
-         ]]></code.init>
+         
+}
+]]></code.declaration>
+         <code.init><![CDATA[
+initOs();
+]]></code.init>
          <code.krate><![CDATA[
 amode=inlet_mode;                 /* the MIDI handler can't read inlets: keep the arp mode here */
 tapm=inlet_tapok;
@@ -1182,21 +1271,8 @@ etick++;                          /* control-tick clock for tap tempo */
 outlet_layerb=(curset()!=0)?1:0;  /* LED display: knobs are on delay controls */
          ]]></code.krate>
          <code.midihandler><![CDATA[
-uint8_t st=status&0xF0;
-if(st==MIDI_NOTE_ON&&data2>0){
- if(data2>124){bool f=false;for(int i=0;i<nhard;i++)if(hard[i]==data1)f=true;if(!f&&nhard<16)hard[nhard++]=data1;} // hard hit: note still plays, and switches the knobs while held
-}else if(st==MIDI_NOTE_OFF||(st==MIDI_NOTE_ON&&data2==0)){
- for(int i=0;i<nhard;i++){if(hard[i]==data1){for(int j=i;j<nhard-1;j++)hard[j]=hard[j+1];nhard--;break;}}
-}else if(st==0xD0){
- bool nb=(data1>0);               // momentary switch (channel pressure): held = knob layer, short press = tap tempo
- uint32_t now=etick;
- if(nb&&!btn){tpress=now;knobbed=false;}
- else if(!nb&&btn){if(tapm&&!knobbed&&(now-tpress)<1050)tap(tpress);}   /* taps count only in tap-tempo mode */
- btn=nb;
-}else if(st==MIDI_CONTROL_CHANGE&&data1>=88&&data1<=91){
- knob(data1-88,data2);if(btn)knobbed=true;   /* knob turned while the switch is held: that press was a layer hold, not a tap */
-}
-         ]]></code.midihandler>
+midiOs(dev,port,status,data1,data2);
+]]></code.midihandler>
       </object>
    </patchobj>
    <obj type="disp/bool" uuid="a0ee71d48208b71752cbb8c05e55145106ef3946" name="Delay_Layer_B" x="1246" y="560">
@@ -1263,9 +1339,16 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
  if(kn_f)kn_s[i]=(float)tg;else kn_s[i]+=((float)tg-kn_s[i])*0.055f;    /* first tick: no glide from zero */
  return (int32_t)kn_s[i];
 }
-]]></code.declaration>
-         <code.init><![CDATA[ph=phf=0; rng=987654321U; r_t=r_s1=r_s2=sr=0.f; in=0;
+
+/* init code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void initOs(){
+ph=phf=0; rng=987654321U; r_t=r_s1=r_s2=sr=0.f; in=0;
 for(int i=0;i<5;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654414431U;kn_f=1;
+
+}
+]]></code.declaration>
+         <code.init><![CDATA[
+initOs();
 ]]></code.init>
          <code.krate><![CDATA[
 int32_t kn_rate=kn_upd(0,param_rate,0,134217727,524288);
@@ -1334,7 +1417,6 @@ float hd=kn_hpfmod/134217728.f;outlet_hpfmod=(int32_t)(lfo*hd*134217728.f);
             <int32 name="fseq"/>
             <int32 name="fmask"/>
             <int32 name="fn"/>
-            <bool32 name="legacy"/>
          </inlets>
          <outlets/>
          <displays/>
@@ -1344,18 +1426,25 @@ float hd=kn_hpfmod/134217728.f;outlet_hpfmod=(int32_t)(lfo*hd*134217728.f);
          <code.declaration><![CDATA[
 // MS-20 iC LED numbers: 0 MG rate, 1 EG, 2 ESP PEAK, 3 ESP TRIG, 4 volume
 static const int NL=5;
-int anim,lpon;int apos,adur,anext,ablink;int lseq,ovn,ovt,ovmask;int lleg,lanim; /* legacy mode: previous state, signature animation position (-1 = done) */ /* overlay blinks requested by Patch_Memory */ /* anim: power-on light show position in control ticks, -1 = not running */
+int anim,lpon;int apos,adur,anext,ablink;int lseq,ovn,ovt,ovmask; /* overlay blinks requested by Patch_Memory */ /* anim: power-on light show position in control ticks, -1 = not running */
 uint8_t want[NL],sent[NL];int hold[NL];
 uint32_t tick,lastt,tint,aph;int ton,prevst,refresh,ri,gap,rr;
 void sendLed(int i,int on){
  uint8_t m[9]={0xF0,0x42,0x40,0x6E,0x01,0x01,(uint8_t)i,(uint8_t)(on?0x3F:0x1F),0xF7};
  MidiSendSysEx(MIDI_DEVICE_USB_HOST,1,m,9);   /* USB host port 1 = the iC */
 }
-         ]]></code.declaration>
-         <code.init><![CDATA[
+         
+/* init code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void initOs(){
+
 for(int i=0;i<NL;i++){want[i]=0;sent[i]=2;hold[i]=0;} // sent=2 (unknown): every LED is set once at patch start
-anim=-1;lpon=0;apos=0;adur=0;anext=0;ablink=0;lseq=0;ovn=0;ovt=0;ovmask=0;lleg=0;lanim=-1;tick=lastt=tint=aph=0;ton=0;prevst=0;refresh=0;ri=0;gap=0;rr=0;
-         ]]></code.init>
+anim=-1;lpon=0;apos=0;adur=0;anext=0;ablink=0;lseq=0;ovn=0;ovt=0;ovmask=0;tick=lastt=tint=aph=0;ton=0;prevst=0;refresh=0;ri=0;gap=0;rr=0;
+         
+}
+]]></code.declaration>
+         <code.init><![CDATA[
+initOs();
+]]></code.init>
          <code.krate><![CDATA[
 tick++;
 want[0]=(inlet_rate>0)?1:0;                       // MG rate LED: MG square
@@ -1394,25 +1483,12 @@ if(anim>=0){
  }else{for(int k=0;k<NL;k++)want[k]=0;}          /* 3.2-3.4 s dark, then the volume LED and normal operation */
  anim++;if(anim>=10200)anim=-1;
 }
-/* legacy mode signature: all LEDs on for 0.5 s, then off one by one right to left (TRIG, PEAK, EG, RATE) until only VOLUME is lit.
-   After that the patch sends no LED messages at all: the computer / plugin owns the panel, like an unmodded iC. */
-if(inlet_legacy&&!lleg){anim=-1;lanim=0;}
-if(!inlet_legacy&&lleg){lanim=-1;for(int k=0;k<NL;k++)sent[k]=2;}   /* back to current mode: re-send everything */
-lleg=inlet_legacy;
-if(inlet_legacy&&lanim>=0){
- for(int k=0;k<NL;k++)want[k]=1;
- if(lanim>=1500)want[3]=0;
- if(lanim>=2400)want[2]=0;
- if(lanim>=3300)want[1]=0;
- if(lanim>=4200)want[0]=0;
- lanim++;if(lanim>=5100)lanim=-2;                 /* -2: signature finished, hands off */
-}
-if(!inlet_legacy&&++refresh>=1500){refresh=0;sent[ri]=2;ri=(ri+1)%NL;} /* every 0.5 s one LED is re-sent: the panel recovers after a replug or power cycle */
+if(++refresh>=1500){refresh=0;sent[ri]=2;ri=(ri+1)%NL;} /* every 0.5 s one LED is re-sent: the panel recovers after a replug or power cycle */
 for(int k=0;k<NL;k++)if(hold[k]>0)hold[k]--;
 if(gap>0)gap--;
-if(!(inlet_legacy&&lanim<0)&&gap==0&&MidiGetOutputBufferAvailable(MIDI_DEVICE_USB_HOST)>=4){ /* at least 10 ms between any two LED messages: the iC may drop messages that arrive back to back */ /* nothing is queued while no device is attached */
+if(gap==0&&MidiGetOutputBufferAvailable(MIDI_DEVICE_USB_HOST)>=4){ /* at least 10 ms between any two LED messages: the iC may drop messages that arrive back to back */ /* nothing is queued while no device is attached */
  for(int j=0;j<NL;j++){int k=(rr+j)%NL;    /* round robin: a fast-blinking rate LED can't starve the others */
-  if(want[k]!=sent[k]&&hold[k]==0){sendLed(k,want[k]);sent[k]=want[k];hold[k]=12;gap=(anim>=0||ovn>0||lanim>=0)?12:30;rr=k+1;break;}  /* light show: 4 ms spacing so all five LEDs switch together */ /* one message per tick, at least 4 ms between changes of one LED */
+  if(want[k]!=sent[k]&&hold[k]==0){sendLed(k,want[k]);sent[k]=want[k];hold[k]=12;gap=(anim>=0||ovn>0)?12:30;rr=k+1;break;}  /* light show: 4 ms spacing so all five LEDs switch together */ /* one message per tick, at least 4 ms between changes of one LED */
  }
 }
          ]]></code.krate>
@@ -1423,9 +1499,7 @@ if(!(inlet_legacy&&lanim<0)&&gap==0&&MidiGetOutputBufferAvailable(MIDI_DEVICE_US
       <attribs/>
       <object id="patch/object" uuid="b100000000000000000000000000000000000a00">
          <sDescription>Patch memory on the keys. Hold the momentary switch (keys silent, TRIG LED lit): short press on a key = recall, long press 2 s (TRIG LED blinks fast) = save, top C = panel. Knobs continue from the recalled values (scaling pickup). SWITCH patched to ESP SIGNAL IN = tap-tempo mode instead. Stored in /MS20MEM.BIN on the SD card.</sDescription>
-         <inlets>
-            <bool32 name="legacy"/>
-         </inlets>
+         <inlets/>
          <outlets>
             <bool32 name="armed"/>
             <bool32 name="tapok"/>
@@ -1457,7 +1531,6 @@ const int8_t kind[NP]={2,2,0,0,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0
 const uint8_t kcc[NP]={77,15,14,5,82,22,19,24,23,26,93,25,73,75,70,72,79,31,20,21,28,29,74,71,27,76,12,85,30};
 int32_t (*mem)[NP];uint8_t *valid;   // in SDRAM (internal RAM is full)
 int lastcc[NP];int32_t cur[NP];bool lock[NP];
-bool legm; /* legacy mode: memory off */
 bool btn,armed,saved,tapmode;uint32_t tk,tpress,kdown;int keyn,inmem;
 int fseq,fmask,fn;
 int m99,m98,m6;bool h99,h98,h6;
@@ -1466,7 +1539,7 @@ static int32_t ccraw(int k,int cc){if(k==2)return (cc<22)?0:((cc<64)?1:((cc<106)
 static int rawcc(int k,int32_t r){int c=(k==1)?((r>>21)+64):(r>>20);if(c<0)c=0;if(c>127)c=127;return c;}
 void setp(int p,int32_t v){PExParameterChange(&parent->PExch[pidx[p]],v,0xFFFD);}
 void flash(int mask,int count){fmask=mask;fn=count;fseq++;}
-__attribute__((noinline)) void recall(int n){
+__attribute__((noinline,optimize("Os"))) void recall(int n){
  if(n==NS){                                      // top C: panel
   for(int p=0;p<NP;p++){if(lastcc[p]>=0)setp(p,ccraw(kind[p],lastcc[p]));lock[p]=false;}
   inmem=-1;flash(31,1);return;
@@ -1475,18 +1548,18 @@ __attribute__((noinline)) void recall(int n){
  for(int p=0;p<NP;p++){setp(p,mem[n][p]);if(kind[p]!=2){lock[p]=true;cur[p]=mem[n][p];}}
  inmem=n;flash(31,1);
 }
-__attribute__((noinline)) void save(int n){
+__attribute__((noinline,optimize("Os"))) void save(int n){
  if(n>=NS)return;
  for(int p=0;p<NP;p++)mem[n][p]=parent->PExch[pidx[p]].value;
  valid[n]=1;inmem=n;savereq=1;flash(31,5);
 }
-__attribute__((noinline)) void cable(int ty,int a,int b){
+__attribute__((noinline,optimize("Os"))) void cable(int ty,int a,int b){
  if(ty==6){if(a!=b){for(int p=0;p<NP;p++)lock[p]=false;inmem=-1;}return;}          // power on: the iC sends every knob next, the panel is the sound
  if((a==33&&b==3)||(a==3&&b==33)){if(ty==4)tapmode=true;else if(ty==5)tapmode=false;}  // SWITCH <-> ESP SIGNAL IN
  if(ty==5&&a==b&&(a==33||a==3))tapmode=false;                                            // either plug pulled (or the power-on dump)
 }
 // ---- SD card: /MS20MEM.BIN, written from a low-priority thread (no audio click), same method as Ksoloti's "saveload noclick" object
-__attribute__((noinline)) bool loadFile(){
+__attribute__((noinline,optimize("Os"))) bool loadFile(){
  FIL f;UINT br;
  if(f_open(&f,"/MS20MEM.BIN",FA_READ|FA_OPEN_EXISTING)!=FR_OK)return false;   // no file yet: factory sounds
  int32_t hdr[3];
@@ -1499,7 +1572,7 @@ __attribute__((noinline)) bool loadFile(){
  }
  f_close(&f);return true;
 }
-__attribute__((noinline)) void saveFile(){
+__attribute__((noinline,optimize("Os"))) void saveFile(){
  FIL f;UINT bw;
  if(f_open(&f,"/MS20MEM.BIN",FA_WRITE|FA_CREATE_ALWAYS)!=FR_OK)return;
  int32_t hdr[3]={MAGIC,NS,NP};memcpy(fbuff,hdr,12);f_write(&f,fbuff,12,&bw);
@@ -1564,32 +1637,10 @@ int32_t facval(int n,int p){   // factory sounds, packed in bytes to save RAM: k
  int32_t r=(kind[p]==1)?((b-128)<<20):(b<<20);
  return (r>0x07FFFFFF)?0x07FFFFFF:r;
 }
-]]></code.declaration>
-         <code.init><![CDATA[
-static int32_t _mem[NS][NP] __attribute__((section(".sdram")));static uint8_t _valid[NS] __attribute__((section(".sdram")));
-mem=_mem;valid=_valid;
-for(int n=0;n<NS;n++){valid[n]=(n<36)?1:0;for(int p=0;p<NP;p++)mem[n][p]=(n<36)?facval(n,p):0;}
-for(int p=0;p<NP;p++){lastcc[p]=-1;cur[p]=0;lock[p]=false;}
-legm=false;btn=armed=saved=tapmode=false;tk=tpress=kdown=0;keyn=-1;inmem=-1;fseq=0;fmask=0;fn=0;
-m99=m98=m6=0;h99=h98=h6=false;savereq=0;
-thd=chThdCreateStatic(waMem,sizeof(waMem),LOWPRIO,(tfunc_t)memThread,(void *)this);
-]]></code.init>
-         <code.dispose><![CDATA[
-chThdTerminate(thd);
-chThdWait(thd);
-]]></code.dispose>
-         <code.krate><![CDATA[
-legm=inlet_legacy;
-if(legm){btn=false;armed=false;keyn=-1;}
-tk++;
-armed=btn&&!tapmode;                                                    // switch held (and no tap-tempo cable): memory mode
-if(keyn>=0&&!saved&&(tk-kdown)>=ARMT){saved=true;save(keyn-BASE);}     // key held 2 s: save
-outlet_armed=armed;
-outlet_tapok=tapmode;
-outlet_trig=btn?((keyn>=0&&!saved)?2:1):((inmem>=0)?3:0);
-outlet_fseq=fseq;outlet_fmask=fmask;outlet_fn=fn;
-]]></code.krate>
-         <code.midihandler><![CDATA[
+
+/* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+
 uint8_t st=status&0xF0;
 if(st==MIDI_CONTROL_CHANGE){
  if(data1==99){m99=data2;h99=true;h98=h6=false;}                      // patch cables (same parsing as PatchBay)
@@ -1611,7 +1662,6 @@ if(st==MIDI_CONTROL_CHANGE){
   int g=rawcc(kind[p],cur[p])-data2;if(g<=1&&g>=-1)lock[p]=false;      // met: direct from now on
   break;
  }
-}else if(legm){                                                         // legacy mode: keys and switch belong to the computer
 }else if(st==0xD0){                                                     // momentary switch
  bool nb=(data1>0);
  if(nb&&!btn)tpress=tk;
@@ -1621,6 +1671,40 @@ if(st==MIDI_CONTROL_CHANGE){
 }else if(st==MIDI_NOTE_OFF||(st==MIDI_NOTE_ON&&data2==0)){
  if(data1==keyn){if(!saved)recall(keyn-BASE);keyn=-1;}                 // short press: recall on release
 }
+
+}
+
+/* init code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void initOs(){
+
+static int32_t _mem[NS][NP] __attribute__((section(".sdram")));static uint8_t _valid[NS] __attribute__((section(".sdram")));
+mem=_mem;valid=_valid;
+for(int n=0;n<NS;n++){valid[n]=(n<36)?1:0;for(int p=0;p<NP;p++)mem[n][p]=(n<36)?facval(n,p):0;}
+for(int p=0;p<NP;p++){lastcc[p]=-1;cur[p]=0;lock[p]=false;}
+btn=armed=saved=tapmode=false;tk=tpress=kdown=0;keyn=-1;inmem=-1;fseq=0;fmask=0;fn=0;
+m99=m98=m6=0;h99=h98=h6=false;savereq=0;
+thd=chThdCreateStatic(waMem,sizeof(waMem),LOWPRIO,(tfunc_t)memThread,(void *)this);
+
+}
+]]></code.declaration>
+         <code.init><![CDATA[
+initOs();
+]]></code.init>
+         <code.dispose><![CDATA[
+chThdTerminate(thd);
+chThdWait(thd);
+]]></code.dispose>
+         <code.krate><![CDATA[
+tk++;
+armed=btn&&!tapmode;                                                    // switch held (and no tap-tempo cable): memory mode
+if(keyn>=0&&!saved&&(tk-kdown)>=ARMT){saved=true;save(keyn-BASE);}     // key held 2 s: save
+outlet_armed=armed;
+outlet_tapok=tapmode;
+outlet_trig=btn?((keyn>=0&&!saved)?2:1):((inmem>=0)?3:0);
+outlet_fseq=fseq;outlet_fmask=fmask;outlet_fn=fn;
+]]></code.krate>
+         <code.midihandler><![CDATA[
+midiOs(dev,port,status,data1,data2);
 ]]></code.midihandler>
       </object>
    </patchobj>
@@ -1628,13 +1712,11 @@ if(st==MIDI_CONTROL_CHANGE){
       <params/>
       <attribs/>
       <object id="patch/object" uuid="b100000000000000000000000000000000000b00">
-         <sDescription>USB MIDI bridge. Current mode: the iC's MIDI also goes to the computer over the Ksoloti USB port. Legacy mode (hold the momentary switch while switching the VOLUME knob on): engine silent, iC and computer connected both ways incl. SysEx (LEDs), like an unmodded iC.</sDescription>
+         <sDescription>USB MIDI pass-through: everything the MS-20 iC sends is also sent to the computer over the Ksoloti USB port (keys used for patch memory excepted).</sDescription>
          <inlets>
             <bool32 name="memarm"/>
          </inlets>
-         <outlets>
-            <bool32 name="legacy"/>
-         </outlets>
+         <outlets/>
          <displays/>
          <params/>
          <attribs/>
@@ -1642,79 +1724,45 @@ if(st==MIDI_CONTROL_CHANGE){
             <include>usbcfg.h</include>
          </includes>
          <code.declaration><![CDATA[
-// ---- USB MIDI bridge: iC (USB host port) <-> computer (Ksoloti USB port) ----
-// Current mode: everything the iC sends is passed on to the computer (except keys used for patch memory).
-// Legacy mode (momentary switch held when the VOLUME knob is switched on): engine silent, both directions passed
-// through, including SysEx, so a plugin can drive the iC's LEDs. The mode lasts until the next power-on.
-// Writes never wait: with no computer attached the USB queue stays full and messages are simply dropped.
-bool btn,legacy,pend,marm;uint32_t tk,ton;
-int m99,m98,m6;bool h99,h98,h6;
-uint8_t sx[2][64];int sxn[2];bool insx[2];          // SysEx reassembly: 0 = from the iC, 1 = from the computer
-static int mlen(uint8_t s){if(s<0xF0){uint8_t h=s&0xF0;return (h==0xC0||h==0xD0)?2:3;}if(s==0xF2)return 3;if(s==0xF1||s==0xF3)return 2;return 1;}
-bool usbRoom(int n){return (int)chOQGetEmptyI(&MDU1.oqueue)>=n;}   // MDU1 = the firmware's USB MIDI device driver
-__attribute__((noinline)) void usbPkt(uint8_t cin,uint8_t a,uint8_t b,uint8_t c){uint8_t p[4]={cin,a,b,c};chnWriteTimeout(&MDU1,p,4,TIME_IMMEDIATE);}
-__attribute__((noinline)) void toUSB(uint8_t s,uint8_t d1,uint8_t d2){
- if(!usbRoom(4))return;
- int l=mlen(s);uint8_t cin;
- if(s<0xF0)cin=s>>4;else if(s==0xF6||l==1)cin=(s==0xF6)?0x05:0x0F;else cin=(l==2)?0x02:0x03;
- usbPkt(cin,s,(l>1)?d1:0,(l>2)?d2:0);
+// ---- USB MIDI pass-through: everything the iC sends also goes to the computer (Ksoloti USB port) ----
+// Keys used for patch memory (switch held) are not sent. Writes never wait: with no computer attached
+// the USB queue stays full and messages are simply dropped.
+bool marm;
+__attribute__((noinline,optimize("Os"))) void toUSB(uint8_t s,uint8_t d1,uint8_t d2){
+ if(s<0x80||s==0xF0||s==0xF7)return;                       // SysEx is not passed on
+ if((int)chOQGetEmptyI(&MDU1.oqueue)<4)return;              // no room (no computer): drop
+ uint8_t h=s&0xF0,cin;int l;
+ if(s<0xF0){cin=s>>4;l=(h==0xC0||h==0xD0)?2:3;}
+ else if(s==0xF2){cin=0x03;l=3;}else if(s==0xF1||s==0xF3){cin=0x02;l=2;}else{cin=(s==0xF6)?0x05:0x0F;l=1;}
+ uint8_t p[4]={cin,s,(uint8_t)((l>1)?d1:0),(uint8_t)((l>2)?d2:0)};
+ chnWriteTimeout(&MDU1,p,4,TIME_IMMEDIATE);
 }
-__attribute__((noinline)) void sxUSB(const uint8_t *b,int n){
- int np=(n+2)/3;if(!usbRoom(np*4))return;
- int i=0;for(;i+3<n;i+=3)usbPkt(0x04,b[i],b[i+1],b[i+2]);
- int r=n-i;if(r==1)usbPkt(0x05,b[i],0,0);else if(r==2)usbPkt(0x06,b[i],b[i+1],0);else usbPkt(0x07,b[i],b[i+1],b[i+2]);
+
+/* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+
+if(dev==MIDI_DEVICE_USB_HOST){                              // from the iC
+ uint8_t h=status&0xF0;
+ if(!(marm&&(h==0x90||h==0x80)))toUSB(status,data1,data2); // memory keys stay inside
 }
-__attribute__((noinline)) void toIC(uint8_t s,uint8_t d1,uint8_t d2){
- if(MidiGetOutputBufferAvailable(MIDI_DEVICE_USB_HOST)<4)return;
- int l=mlen(s);if(l==1)MidiSend1(MIDI_DEVICE_USB_HOST,1,s);else if(l==2)MidiSend2(MIDI_DEVICE_USB_HOST,1,s,d1);else MidiSend3(MIDI_DEVICE_USB_HOST,1,s,d1,d2);
+
 }
-__attribute__((noinline)) void sxIC(uint8_t *b,int n){if(MidiGetOutputBufferAvailable(MIDI_DEVICE_USB_HOST)<(n+2)/3+1)return;MidiSendSysEx(MIDI_DEVICE_USB_HOST,1,b,(uint8_t)n);}
-// USB MIDI hands SysEx to patches as 3-byte chunks (F0 42 40 | 6E 01 01 | 00 3F F7): rebuild the whole message
-__attribute__((noinline)) bool sxChunk(int d,uint8_t a,uint8_t b,uint8_t c){
- if(a==0xF0){insx[d]=true;sxn[d]=0;}
- else if(!insx[d]||(a>=0x80&&a!=0xF7))return false;  // not part of a SysEx (real-time bytes inside one pass through normally)
- uint8_t v[3]={a,b,c};
- for(int i=0;i<3;i++){
-  if(sxn[d]>=64){insx[d]=false;return true;}        // too long: dropped
-  sx[d][sxn[d]++]=v[i];
-  if(v[i]==0xF7){insx[d]=false;if(d==0)sxUSB(sx[0],sxn[0]);else if(legacy)sxIC(sx[1],sxn[1]);return true;}
- }
- return true;
+
+/* init code, compiled for size (only runs on MIDI / at start / LED rate) */
+__attribute__((noinline,optimize("Os"))) void initOs(){
+
+marm=false;
+
 }
 ]]></code.declaration>
          <code.init><![CDATA[
-btn=legacy=pend=marm=false;tk=ton=0;m99=m98=m6=0;h99=h98=h6=false;sxn[0]=sxn[1]=0;insx[0]=insx[1]=false;
+initOs();
 ]]></code.init>
          <code.krate><![CDATA[
-tk++;
 marm=inlet_memarm;
-if(pend&&(tk-ton)>3000)pend=false;      /* 1 s after power-on the mode is settled */
-outlet_legacy=legacy;
 ]]></code.krate>
          <code.midihandler><![CDATA[
-if(dev==MIDI_DEVICE_USB_HOST){                                            // from the iC
- if((status&0xF0)==0xD0){
-  bool nb=(data1>0);
-  if(nb&&!btn&&pend)legacy=true;                                          // switch pressed right after power-on also counts
-  btn=nb;
- }
- if(status==MIDI_CONTROL_CHANGE){                                          // power switch: CC99=6, CC98=0, CC6=127 on / 0 off
-  if(data1==99){m99=data2;h99=true;h98=h6=false;}
-  else if(data1==98){m98=data2;h98=true;}
-  else if(data1==6){m6=data2;h6=true;}
-  if((data1==99||data1==98||data1==6)&&h99&&h98&&h6){
-   h99=h98=h6=false;
-   if(m99==6&&m98!=m6){legacy=btn;pend=!btn;ton=tk;}                      // power on: switch held = legacy mode
-  }
- }
- if(!sxChunk(0,status,data1,data2)){
-  uint8_t h=status&0xF0;
-  bool memkey=marm&&!legacy&&(h==0x90||h==0x80);                          // keys used for patch memory don't go to the computer
-  if(!memkey)toUSB(status,data1,data2);
- }
-}else if(dev==MIDI_DEVICE_USB_DEVICE){                                    // from the computer
- if(!sxChunk(1,status,data1,data2)&&legacy)toIC(status,data1,data2);     // legacy mode: everything goes on to the iC (LEDs etc.)
-}
+midiOs(dev,port,status,data1,data2);
 ]]></code.midihandler>
       </object>
    </patchobj>
@@ -2040,12 +2088,6 @@ if(dev==MIDI_DEVICE_USB_HOST){                                            // fro
       <net>
          <source obj="Patch_Memory" outlet="fn"/>
          <dest obj="MS20iC_LEDs" inlet="fn"/>
-      </net>
-      <net>
-         <source obj="USB_Bridge" outlet="legacy"/>
-         <dest obj="VCA_Macro" inlet="mute"/>
-         <dest obj="Patch_Memory" inlet="legacy"/>
-         <dest obj="MS20iC_LEDs" inlet="legacy"/>
       </net>
    </nets>
    <settings>

@@ -16,7 +16,7 @@ jobs:
           cd iPlug2 && git checkout d82b2e99b17c8f723d3f6e2a88ffd8b656f28e5d
 
       - name: Generate the engine from the Ksoloti patch
-        run: python3 engine/gen_engine.py patch/MS20_monopoly_v40.axp engine/engine_gen.h
+        run: python3 engine/gen_engine.py patch/MS20_monopoly_v42.axp engine/engine_gen.h
 
       - name: Engine tests (host layer, resampler, patch memory)
         run: |

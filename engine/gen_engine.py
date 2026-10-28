@@ -131,9 +131,16 @@ for y, x, n, kind, e in objs:
     init = SECTION.sub('', d.findtext('code.init') or '')
     # static arrays inside init (e.g. the delay memory) would be shared by every plugin instance:
     # move them into the class so each engine owns its own
-    for m in list(re.finditer(r'static\s+([A-Za-z_][\w]*)\s+(\w+)\s*((?:\[[^\]]+\])+)\s*;', init)):
-        decl += f'\n  {m.group(1)} {m.group(2)}{m.group(3)};   /* moved from init: one per instance */'
+    # (also inside functions in the declaration, e.g. initOs(), where the size-optimised patch keeps its init code)
+    ST = r'static\s+([A-Za-z_][\w]*)\s+(\w+)\s*((?:\[[^\]]+\])+)\s*;'
+    moved = []
+    for m in list(re.finditer(ST, init)):
+        moved.append(f'\n  {m.group(1)} {m.group(2)}{m.group(3)};   /* moved from init: one per instance */')
         init = init.replace(m.group(0), '')
+    for m in list(re.finditer(ST, decl)):
+        moved.append(f'\n  {m.group(1)} {m.group(2)}{m.group(3)};   /* moved from a function: one per instance */')
+        decl = decl.replace(m.group(0), '')
+    decl += ''.join(moved)
     L.append(decl)
     L.append('  void ks_init(rootc *_parent){ parent=_parent;\n' + init + '\n  }')
     kr = d.findtext('code.krate') or ''
