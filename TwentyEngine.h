@@ -13,6 +13,9 @@ const int kNumParams = ms20::NPARAMS;   // every parameter of the Ksoloti patch
 #endif
 
 using namespace iplug;
+#if IPLUG_EDITOR
+using namespace igraphics;
+#endif
 
 class TwentyEngine final : public Plugin
 {
