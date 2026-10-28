@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
+#include <stdio.h>
+#include <new>
 
 namespace ms20 {
 
@@ -61,5 +63,36 @@ extern thread_local void *g_sysexUser;
 static inline void MidiSendSysEx(midi_device_t, uint8_t, uint8_t bytes[], uint8_t len) { if (g_sysexSender) g_sysexSender(bytes, len, g_sysexUser); }
 static inline int MidiGetOutputBufferAvailable(midi_device_t) { return 63; }
 static inline void LogTextMessage(const char *, ...) {}
+
+
+// ---- SD card (FatFS) stand-ins: the patch memory file lives in a folder the host chooses ----
+// The patch writes "/MS20MEM.BIN"; on a computer that becomes <memory folder>/MS20MEM.BIN.
+typedef unsigned int UINT;
+typedef int FRESULT;
+struct FIL { FILE *f; };
+enum { FR_OK = 0, FR_NO_FILE = 4 };
+enum { FA_READ = 0x01, FA_OPEN_EXISTING = 0x00, FA_WRITE = 0x02, FA_CREATE_ALWAYS = 0x08 };
+inline char g_memDir[1024] = "";                  // set by the host (main thread) before loading
+inline uint32_t fbuff[256];                       // the firmware's general-purpose SD buffer
+static inline FRESULT f_open(FIL *o, const char *name, int mode) {
+    char path[1200]; snprintf(path, sizeof(path), "%s%s", g_memDir, (name[0] == '/') ? name + 1 : name);
+    o->f = fopen(path, (mode & FA_WRITE) ? "wb" : "rb"); return o->f ? FR_OK : FR_NO_FILE; }
+static inline FRESULT f_read(FIL *o, void *b, UINT n, UINT *br) { *br = (UINT)fread(b, 1, n, o->f); return FR_OK; }
+static inline FRESULT f_write(FIL *o, const void *b, UINT n, UINT *bw) { *bw = (UINT)fwrite(b, 1, n, o->f); return FR_OK; }
+static inline FRESULT f_close(FIL *o) { if (o->f) fclose(o->f); o->f = nullptr; return FR_OK; }
+
+// ---- ChibiOS thread stand-ins: the plugin has no background thread in the engine.
+// The host loads the memory file once and saves it from its own main thread when the patch asks (savereq).
+typedef int msg_t;
+struct Thread {};
+typedef msg_t (*tfunc_t)(void *);
+#define WORKING_AREA(name, size) char name[1]
+#define LOWPRIO 1
+static inline Thread *chThdCreateStatic(void *, int, int, tfunc_t, void *) { return nullptr; }
+static inline bool chThdShouldTerminate() { return true; }
+static inline void chThdExit(msg_t) {}
+static inline void chThdSleepMilliseconds(int) {}
+static inline void chThdTerminate(Thread *) {}
+static inline void chThdWait(Thread *) {}
 
 } // namespace ms20

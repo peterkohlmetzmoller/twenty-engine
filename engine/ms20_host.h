@@ -44,9 +44,9 @@ public:
   // call when the sample rate changes or the plugin is reset (not realtime)
   void reset(double hostRate) {
     int32_t keep[NPARAMS]; bool had = inited;
-    if (had) for (int i = 0; i < NPARAMS; i++) keep[i] = core->root.PExch[i].value;
+    if (had) { for (int i = 0; i < NPARAMS; i++) keep[i] = core->root.PExch[i].value; saveMemTable(); }
     core->init();
-    if (had) for (int i = 0; i < NPARAMS; i++) core->root.PExch[i].value = keep[i];
+    if (had) { for (int i = 0; i < NPARAMS; i++) core->root.PExch[i].value = keep[i]; restoreMemTable(); }
     for (int i = 0; i < NPARAMS; i++) known[i] = core->root.PExch[i].value;
     inited = true;
     rate = hostRate; step = ENGINE_SR / hostRate;
@@ -128,6 +128,17 @@ public:
 #endif
   double latencySamples() const { return (evlat) / step; }   // MIDI-to-audio delay in host samples
 
+  // --- patch memory (36 sounds on the keys) ---
+  // main thread, once after construction: folder for MS20MEM.BIN (ending in '/'); loads it if it exists
+  bool loadMemories(const char *folder) {
+    snprintf(g_memDir, sizeof(g_memDir), "%s", folder);
+    return core->o_Patch_Memory.loadFile();
+  }
+  // main thread, regularly (e.g. every 20 ms): writes the file after a save on the keys
+  void pollMemorySave() {
+    if (core->o_Patch_Memory.savereq) { core->o_Patch_Memory.savereq = 0; core->o_Patch_Memory.saveFile(); }
+  }
+
 private:
   static const int HW = 40;           // resampler half width in engine samples (80 taps, about 0.8 ms)
   static const int PH = 512;          // kernel phases
@@ -145,6 +156,11 @@ private:
   long long produced = 0;
   float ebL[RB], ebR[RB];
   float kern[(PH + 1) * 2 * HW];
+
+  // the memory table survives an engine reset (sample-rate change) like the parameters do
+  int32_t memKeep[sizeof(((O_Patch_Memory *)0)->_mem) / sizeof(int32_t)]; uint8_t validKeep[sizeof(((O_Patch_Memory *)0)->_valid)];
+  void saveMemTable() { memcpy(memKeep, core->o_Patch_Memory._mem, sizeof(memKeep)); memcpy(validKeep, core->o_Patch_Memory._valid, sizeof(validKeep)); }
+  void restoreMemTable() { memcpy(core->o_Patch_Memory._mem, memKeep, sizeof(memKeep)); memcpy(core->o_Patch_Memory._valid, validKeep, sizeof(validKeep)); }
 
   static void onSysex(const uint8_t *b, int len, void *user) {
     MS20Host *h = (MS20Host *)user; LedMsg m; m.len = len > 16 ? 16 : len;

@@ -1,6 +1,9 @@
 #include "TwentyEngine.h"
 #include "IPlug_include_in_plug_src.h"
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <sys/stat.h>
 
 using namespace ms20;
 
@@ -14,6 +17,18 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 {
 #if IPLUG_DSP
   mHost = std::make_unique<MS20Host>();
+  // Patch memory (36 sounds on the iC's keys) lives in ~/Library/Application Support/Twenty Engine/MS20MEM.BIN,
+  // shared by every instance and project, like the SD card in the hardware version. No file yet = factory sounds.
+  {
+    char dir[1024] = "";
+    const char *home = getenv("HOME");
+    if (home) {
+      snprintf(dir, sizeof(dir), "%s/Library/Application Support/Twenty Engine/", home);
+      char parent[1024]; snprintf(parent, sizeof(parent), "%s/Library/Application Support", home);
+      mkdir(parent, 0755); mkdir(dir, 0755);
+      mHost->loadMemories(dir);
+    }
+  }
 #endif
   // Same ranges as the Ksoloti editor shows them: knobs 0..64 (bipolar -64..64), selectors as integers.
   for (int i = 0; i < kNumParams; i++)
@@ -104,7 +119,9 @@ void TwentyEngine::OnIdle()
     EndInformHostOfParamChangeFromUI(p.idx);
     mFromEngine = false;
   }
-  // 2. LEDs on the iC
+  // 2. patch memory: write the file after a save on the keys (never on the audio thread)
+  mHost->pollMemorySave();
+  // 3. LEDs on the iC
   if (--mRescan <= 0) { mLed.Rescan(); mRescan = 100; }   // every ~2 s: finds the iC when it is plugged in later
   LedMsg m;
   while (mHost->popLed(m)) mLed.Send(m.b, m.len);

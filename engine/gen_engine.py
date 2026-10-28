@@ -11,9 +11,14 @@ root = ET.parse(axp).getroot()
 def esc(n):            # Ksoloti charEscape for instance names: '_' doubled
     return n.replace('_', '__')
 
+# Objects that only make sense inside the hardware are left out of the plugin; their outlets read 0.
+# USB_Bridge: in the plugin the iC is connected to the computer directly (no forwarding, no legacy mode).
+EXCLUDE = {'USB_Bridge'}
 objs = []              # (y, x, name, kind, data)
 for e in root:
     if e.tag not in ('patchobj', 'obj'):
+        continue
+    if e.get('name') in EXCLUDE:
         continue
     objs.append((int(e.get('y')), int(e.get('x')), e.get('name'), e.tag, e))
 objs.sort(key=lambda o: (o[0], o[1]))          # Ksoloti execution order
@@ -48,6 +53,9 @@ nets = []             # (cname, isbuffer, source(obj,outlet), [dests])
 for i, ne in enumerate(root.find('nets')):
     src = ne.find('source'); dests = [(d.get('obj'), d.get('inlet')) for d in ne.findall('dest')]
     so, sp = src.get('obj'), src.get('outlet')
+    dests = [d for d in dests if d[0] in ports]
+    if so not in ports:
+        nets.append((f'net{i}', False, (so, sp), dests)); continue   # source left out: stays 0
     typ = dict((p, t) for t, p in ports[so][1])[sp]
     nets.append((f'net{i}', isbuf(typ), (so, sp), dests))
 src_net = {n[2]: n for n in nets}
@@ -119,12 +127,12 @@ for y, x, n, kind, e in objs:
         L.append(f'  int32_t inlet_{p}[BUFSIZE];' if isbuf(t) else f'  int32_t inlet_{p};')
     for t, p in outs:
         L.append(f'  int32_t outlet_{p}[BUFSIZE];' if isbuf(t) else f'  int32_t outlet_{p};')
-    decl = SECTION.sub('', d.findtext('code.declaration') or '')
+    decl = SECTION.sub('', d.findtext('code.declaration') or '').replace('attr_parent', cls)
     init = SECTION.sub('', d.findtext('code.init') or '')
     # static arrays inside init (e.g. the delay memory) would be shared by every plugin instance:
     # move them into the class so each engine owns its own
-    for m in list(re.finditer(r'static\s+([A-Za-z_][\w]*)\s+(\w+)\s*\[([^\]]+)\]\s*;', init)):
-        decl += f'\n  {m.group(1)} {m.group(2)}[{m.group(3)}];   /* moved from init: one per instance */'
+    for m in list(re.finditer(r'static\s+([A-Za-z_][\w]*)\s+(\w+)\s*((?:\[[^\]]+\])+)\s*;', init)):
+        decl += f'\n  {m.group(1)} {m.group(2)}{m.group(3)};   /* moved from init: one per instance */'
         init = init.replace(m.group(0), '')
     L.append(decl)
     L.append('  void ks_init(rootc *_parent){ parent=_parent;\n' + init + '\n  }')
@@ -133,7 +141,7 @@ for y, x, n, kind, e in objs:
     mh = d.findtext('code.midihandler') or ''
     ccs = ''.join(f'        if ((status == MIDI_CONTROL_CHANGE)&&(data1 == {p[5]})) PExParameterChange(&parent->PExch[{p[0]}],{cc_value(p[3], p[6])},0xFFFD);\n'
                   for p in params if p[1] == n and p[5] is not None)
-    L.append('  void ks_midi(uint8_t status,uint8_t data1,uint8_t data2){\n' + mh + '\n' + ccs + '  }')
+    L.append('  void ks_midi(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){\n' + mh + '\n' + ccs + '  }')
     L.append('};')
     L.append('')
 
@@ -146,7 +154,7 @@ for cname, b, s, ds in nets:
     L.append(f'  int32_t {cname}' + ('[BUFSIZE];' if b else ';'))
 L.append('  int32_t audioInL[BUFSIZE], audioOutL[BUFSIZE], audioOutR[BUFSIZE];')
 L.append('  void init(){')
-L.append('    memset(this,0,sizeof(*this)); g_ks_rng = 0x12345678u;')
+L.append('    this->~EngineCore(); new (this) EngineCore(); g_ks_rng = 0x12345678u;   // value-initialised: zeroed, constant tables kept')
 for i, p in enumerate(params):
     L.append(f'    root.PExch[{p[0]}].value = {p[4]};')
 for n, cls in classes:
@@ -191,11 +199,11 @@ L.append('  }')
 L.append('  void midi(uint8_t status,uint8_t data1,uint8_t data2){')
 for y, x, n, kind, e in objs:
     if kind == 'patchobj':
-        L.append(f'    o_{re.sub(r"\\W", "_", n)}.ks_midi(status,data1,data2);')
+        L.append(f'    o_{re.sub(r"\\W", "_", n)}.ks_midi(MIDI_DEVICE_USB_HOST,1,status,data1,data2);')
 L.append('  }')
 L.append('};')
 L.append('')
-PRETTY = {'MS20_Voices':'VCO','EG1':'EG1','EG2':'EG2','Master_Mixer':'Mixer','Filter_Macro':'Filter','VCA_Macro':'VCA',
+PRETTY = {'Patch_Memory':'Memory','MS20_Voices':'VCO','EG1':'EG1','EG2':'EG2','Master_Mixer':'Mixer','Filter_Macro':'Filter','VCA_Macro':'VCA',
           'PatchBay':'Patch','MS20_Master_Tune':'Master','BBD_Delay':'Delay','MG_Morphing_LFO':'MG','ESP_Layer':'ESP','MS20iC_LEDs':'LED'}
 L.append('struct ParamInfo { const char *id; const char *object; const char *name; const char *label; const char *type; int32_t def; int cc; int hmax; };')
 L.append('static const ParamInfo kParamInfo[NPARAMS] = {')

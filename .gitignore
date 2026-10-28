@@ -6,3 +6,5 @@ tests/render_demo
 tests/*.wav
 tests/*.raw
 .DS_Store
+tests/memtest/
+tests/mem_test
