@@ -1,0 +1,57 @@
+name: Build AU
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-mac:
+    runs-on: macos-15-intel   # Intel Mac: auval then validates the Intel (x86_64) slice too; the build is still universal
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get iPlug2 (fixed version)
+        run: |
+          git clone https://github.com/iPlug2/iPlug2.git iPlug2
+          cd iPlug2 && git checkout d82b2e99b17c8f723d3f6e2a88ffd8b656f28e5d
+
+      - name: Generate the engine from the Ksoloti patch
+        run: python3 engine/gen_engine.py patch/MS20_monopoly_v42.axp engine/engine_gen.h
+
+      - name: Engine tests (host layer, resampler, patch memory)
+        run: |
+          cd tests
+          clang++ -std=c++17 -O2 -w -o host_test host_test.cpp && ./host_test
+          clang++ -std=c++17 -O2 -w -o rs_test rs_test.cpp && ./rs_test
+          clang++ -std=c++17 -O2 -w -o mem_test mem_test.cpp && ./mem_test
+
+      - name: "Configure (universal binary: Apple Silicon + Intel)"
+        run: cmake -S . -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build AU
+        run: |
+          set +e
+          cmake --build build --config Release --target TwentyEngine-au -- -quiet > build.log 2>&1
+          st=$?
+          grep -E "error:|error G|fatal" build.log | sort -u | head -25 | sed 's/^/::error::/'
+          exit $st
+
+      - name: Sign (ad hoc) and validate with auval
+        run: |
+          COMP=$(find build -name "TwentyEngine.component" -type d | head -1)
+          echo "built: $COMP"
+          codesign --force --deep -s - "$COMP"
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$COMP" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 2
+          auval -v aumu Tw20 PtLb
+          echo "COMP=$COMP" >> $GITHUB_ENV
+
+      - name: Package
+        run: ditto -c -k --keepParent "$COMP" TwentyEngine-AU.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TwentyEngine-AU
+          path: TwentyEngine-AU.zip

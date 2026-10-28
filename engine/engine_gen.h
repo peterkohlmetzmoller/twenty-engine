@@ -146,7 +146,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 uint8_t st=status&0xF0;
 if((st==MIDI_NOTE_ON)&&(data2>0)&&marm){
@@ -229,7 +229,7 @@ if((st==MIDI_NOTE_ON)&&(data2>0)&&marm){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 marm=0;v2s=0.f;v2i=0;hpinf=false;
 acnt=0;rng=1357911U;pk=0.f;ln=0.f;hp=0;cc_pw=0.f;pws=0.f;btn_dub=0;btn_phys=0;rp=0;holdt=0;mw=mws=vph=0.f;for(int k=0;k<12;k++)ap_s[k]=0.f;ph_fb=ph_a=ph_da=0.f;phwas=false;
@@ -455,7 +455,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 val=0.f;stg=0;tmr=0;pg=0;pm=0;
 for(int i=0;i<4;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654418544U;kn_f=1;
 
@@ -538,7 +538,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 epinf=false;for(int e=0;e<2;e++){val[e]=0.f;stg[e]=0;hld[e]=0;pg[e]=0;}
 for(int i=0;i<7;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654431178U;kn_f=1;
@@ -678,7 +678,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 h1p=h2p=l1p=l2p=h1a=h2a=l1a=l2a=cp=ca=pnk=sh=sl=0.f;pgp=pga=init=0;cfirst=1;cks=cks2=0.f;fgs=0.f;for(int k=0;k<12;k++){cc[k]=dcc[k]=0.f;}
 for(int i=0;i<4;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654451953U;kn_f=1;
 
@@ -769,7 +769,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 px=ep=ea=b1=b2=0.f;vgs=1.f;
 for(int i=0;i<3;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654423640U;kn_f=1;
 
@@ -871,7 +871,7 @@ void patchEvent(int t,int a,int b){
 }
          
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 // MS-20 iC patch panel: CC99 = event type, CC98 / CC6 = the two jack numbers (NRPN-style triple)
 if((status&0xF0)==MIDI_CONTROL_CHANGE){
@@ -887,7 +887,7 @@ if((status&0xF0)==MIDI_CONTROL_CHANGE){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 for(int i=0;i<35;i++){jack[i]=0;lk[i]=0;}monof=0;pwr=1;pon=0;
 // ---- jack table: confirmed on the MS-20 iC (one cable from TOTAL through every jack) ----
@@ -988,7 +988,7 @@ void sendLed(int i,int on){
 }
          
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 for(int i=0;i<NL;i++){want[i]=0;sent[i]=2;hold[i]=0;} // sent=2 (unknown): every LED is set once at patch start
 anim=-1;lpon=0;apos=0;adur=0;anext=0;ablink=0;lseq=0;ovn=0;ovt=0;ovmask=0;tick=lastt=tint=aph=0;ton=0;prevst=0;refresh=0;ri=0;gap=0;rr=0;
@@ -1113,7 +1113,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
  bbd = &_b[0];
 for(int i=0; i<131072; i++) bbd[i]=0; w_i=0; s_t=28000.f; l_s1=l_s2=h_s1=0.f; w_ph=f_ph=0; wf_rng=22446688U; d_t=d_s=d_t2=d_s2=m_sL=m_sR=mw=d_e=syb=lim=0.f;
@@ -1222,7 +1222,7 @@ void knob(int k,int cc){
 }
          
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 uint8_t st=status&0xF0;
 if(st==MIDI_NOTE_ON&&data2>0){
@@ -1242,7 +1242,7 @@ if(st==MIDI_NOTE_ON&&data2>0){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 nhard=0;btn=false;amode=0;tapm=0;etick=0;tpress=tlast=0;knobbed=false;ntap=0;for(int i=0;i<3;i++)tiv[i]=0.f;
 for(int l=0;l<NSET;l++)for(int k=0;k<NK;k++)zoned[l][k]=0;
@@ -1323,7 +1323,7 @@ static int32_t ccraw(int k,int cc){if(k==2)return (cc<22)?0:((cc<64)?1:((cc<106)
 static int rawcc(int k,int32_t r){int c=(k==1)?((r>>21)+64):(r>>20);if(c<0)c=0;if(c>127)c=127;return c;}
 void setp(int p,int32_t v){PExParameterChange(&parent->PExch[pidx[p]],v,0xFFFD);}
 void flash(int mask,int count){fmask=mask;fn=count;fseq++;}
-void recall(int n){
+__attribute__((noinline,optimize("Os"))) void recall(int n){
  if(n==NS){                                      // top C: panel
   for(int p=0;p<NP;p++){if(lastcc[p]>=0)setp(p,ccraw(kind[p],lastcc[p]));lock[p]=false;}
   inmem=-1;flash(31,1);return;
@@ -1332,18 +1332,18 @@ void recall(int n){
  for(int p=0;p<NP;p++){setp(p,mem[n][p]);if(kind[p]!=2){lock[p]=true;cur[p]=mem[n][p];}}
  inmem=n;flash(31,1);
 }
-void save(int n){
+__attribute__((noinline,optimize("Os"))) void save(int n){
  if(n>=NS)return;
  for(int p=0;p<NP;p++)mem[n][p]=parent->PExch[pidx[p]].value;
  valid[n]=1;inmem=n;savereq=1;flash(31,5);
 }
-void cable(int ty,int a,int b){
+__attribute__((noinline,optimize("Os"))) void cable(int ty,int a,int b){
  if(ty==6){if(a!=b){for(int p=0;p<NP;p++)lock[p]=false;inmem=-1;}return;}          // power on: the iC sends every knob next, the panel is the sound
  if((a==33&&b==3)||(a==3&&b==33)){if(ty==4)tapmode=true;else if(ty==5)tapmode=false;}  // SWITCH <-> ESP SIGNAL IN
  if(ty==5&&a==b&&(a==33||a==3))tapmode=false;                                            // either plug pulled (or the power-on dump)
 }
 // ---- SD card: /MS20MEM.BIN, written from a low-priority thread (no audio click), same method as Ksoloti's "saveload noclick" object
-bool loadFile(){
+__attribute__((noinline,optimize("Os"))) bool loadFile(){
  FIL f;UINT br;
  if(f_open(&f,"/MS20MEM.BIN",FA_READ|FA_OPEN_EXISTING)!=FR_OK)return false;   // no file yet: factory sounds
  int32_t hdr[3];
@@ -1356,7 +1356,7 @@ bool loadFile(){
  }
  f_close(&f);return true;
 }
-void saveFile(){
+__attribute__((noinline,optimize("Os"))) void saveFile(){
  FIL f;UINT bw;
  if(f_open(&f,"/MS20MEM.BIN",FA_WRITE|FA_CREATE_ALWAYS)!=FR_OK)return;
  int32_t hdr[3]={MAGIC,NS,NP};memcpy(fbuff,hdr,12);f_write(&f,fbuff,12,&bw);
@@ -1423,7 +1423,7 @@ int32_t facval(int n,int p){   // factory sounds, packed in bytes to save RAM: k
 }
 
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 uint8_t st=status&0xF0;
 if(st==MIDI_CONTROL_CHANGE){
@@ -1459,7 +1459,7 @@ if(st==MIDI_CONTROL_CHANGE){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 
 mem=_mem;valid=_valid;
@@ -1524,7 +1524,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 ph=phf=0; rng=987654321U; r_t=r_s1=r_s2=sr=0.f; in=0;
 for(int i=0;i<5;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654414431U;kn_f=1;
 
