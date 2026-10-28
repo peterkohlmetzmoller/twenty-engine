@@ -1,5 +1,5 @@
 <patch-1.0 appVersion="1.0.12">
-   <comment type="patch/comment" x="112" y="28" text="=== 8-VOICE KORG MS-20: ONE EG1 + ONE EG2 | ARP OFF = MS-20 POLY (VCO1+VCO2 PER VOICE) | ARP = VCO1 ORGAN GATE | LATCH = VCO1 CHORD HELD | v11: saw PW = 12-stage phaser, stereo spread BBD, ESP A/B layers | v39: USB MIDI bridge to the computer + legacy mode (switch held at power-on) | v38: HOLD at max = chord latch (new chord replaces the held one) | v36: VCO2 pitch continuous | v35: patch memory on the keys (hold switch + key: tap = recall, hold 2 s = save), 36 factory sounds, pickup, SWITCH->ESP SIGNAL IN = tap tempo | v31: 3.4 s power-on LED show, single-tap delay, tap tempo on the momentary switch, filter silent without notes, mono mode (patch KBD CV -> VCO1+2 CV IN), VCO2 pitch +-5, vibrato 4.6 Hz, ESP arp off = delay send, switch = tone; attack stops on key up, runaway feedback, ESP knobs follow the arp mode (no pickup), VCO1 32'-4', cleaner gain staging, latch chord replace, knob glide, iC LEDs, confirmed patch bay ==="/>
+   <comment type="patch/comment" x="112" y="28" text="=== 8-VOICE KORG MS-20: ONE EG1 + ONE EG2 | ARP OFF = MS-20 POLY (VCO1+VCO2 PER VOICE) | ARP = VCO1 ORGAN GATE | LATCH = VCO1 CHORD HELD | v11: saw PW = 12-stage phaser, stereo spread BBD, ESP A/B layers | v40: smaller in RAM | v39: USB MIDI bridge to the computer + legacy mode (switch held at power-on) | v38: HOLD at max = chord latch (new chord replaces the held one) | v36: VCO2 pitch continuous | v35: patch memory on the keys (hold switch + key: tap = recall, hold 2 s = save), 36 factory sounds, pickup, SWITCH->ESP SIGNAL IN = tap tempo | v31: 3.4 s power-on LED show, single-tap delay, tap tempo on the momentary switch, filter silent without notes, mono mode (patch KBD CV -> VCO1+2 CV IN), VCO2 pitch +-5, vibrato 4.6 Hz, ESP arp off = delay send, switch = tone; attack stops on key up, runaway feedback, ESP knobs follow the arp mode (no pickup), VCO1 32'-4', cleaner gain staging, latch chord replace, knob glide, iC LEDs, confirmed patch bay ==="/>
    <comment type="patch/comment" x="1092" y="84" text="PATCH BAY: 0 normal 1 MG tri 2 MG sq 3 EG1 4 EG1rev 5 EG2 6 EG2rev 7 S&amp;H 8 noise 9 wheel 10 button 11 kbdCV 12 kbdTrig 13 open"/>
    <patchobj type="patch/object" uuid="b100000000000000000000000000000000000500" name="MS20_Voices" x="112" y="98">
       <params>
@@ -1466,7 +1466,7 @@ static int32_t ccraw(int k,int cc){if(k==2)return (cc<22)?0:((cc<64)?1:((cc<106)
 static int rawcc(int k,int32_t r){int c=(k==1)?((r>>21)+64):(r>>20);if(c<0)c=0;if(c>127)c=127;return c;}
 void setp(int p,int32_t v){PExParameterChange(&parent->PExch[pidx[p]],v,0xFFFD);}
 void flash(int mask,int count){fmask=mask;fn=count;fseq++;}
-void recall(int n){
+__attribute__((noinline)) void recall(int n){
  if(n==NS){                                      // top C: panel
   for(int p=0;p<NP;p++){if(lastcc[p]>=0)setp(p,ccraw(kind[p],lastcc[p]));lock[p]=false;}
   inmem=-1;flash(31,1);return;
@@ -1475,18 +1475,18 @@ void recall(int n){
  for(int p=0;p<NP;p++){setp(p,mem[n][p]);if(kind[p]!=2){lock[p]=true;cur[p]=mem[n][p];}}
  inmem=n;flash(31,1);
 }
-void save(int n){
+__attribute__((noinline)) void save(int n){
  if(n>=NS)return;
  for(int p=0;p<NP;p++)mem[n][p]=parent->PExch[pidx[p]].value;
  valid[n]=1;inmem=n;savereq=1;flash(31,5);
 }
-void cable(int ty,int a,int b){
+__attribute__((noinline)) void cable(int ty,int a,int b){
  if(ty==6){if(a!=b){for(int p=0;p<NP;p++)lock[p]=false;inmem=-1;}return;}          // power on: the iC sends every knob next, the panel is the sound
  if((a==33&&b==3)||(a==3&&b==33)){if(ty==4)tapmode=true;else if(ty==5)tapmode=false;}  // SWITCH <-> ESP SIGNAL IN
  if(ty==5&&a==b&&(a==33||a==3))tapmode=false;                                            // either plug pulled (or the power-on dump)
 }
 // ---- SD card: /MS20MEM.BIN, written from a low-priority thread (no audio click), same method as Ksoloti's "saveload noclick" object
-bool loadFile(){
+__attribute__((noinline)) bool loadFile(){
  FIL f;UINT br;
  if(f_open(&f,"/MS20MEM.BIN",FA_READ|FA_OPEN_EXISTING)!=FR_OK)return false;   // no file yet: factory sounds
  int32_t hdr[3];
@@ -1495,18 +1495,16 @@ bool loadFile(){
  if(hdr[0]!=MAGIC||hdr[1]!=NS||hdr[2]!=NP){f_close(&f);return false;}
  for(int n=0;n<NS;n++){
   if(f_read(&f,fbuff,(NP+1)*4,&br)!=FR_OK||br!=(UINT)((NP+1)*4))break;
-  int32_t row[NP+1];memcpy(row,fbuff,(NP+1)*4);
-  if(row[0]==1){for(int p=0;p<NP;p++)mem[n][p]=row[p+1];valid[n]=1;}
+  if(fbuff[0]==1){memcpy(mem[n],&fbuff[1],NP*4);valid[n]=1;}
  }
  f_close(&f);return true;
 }
-void saveFile(){
+__attribute__((noinline)) void saveFile(){
  FIL f;UINT bw;
  if(f_open(&f,"/MS20MEM.BIN",FA_WRITE|FA_CREATE_ALWAYS)!=FR_OK)return;
  int32_t hdr[3]={MAGIC,NS,NP};memcpy(fbuff,hdr,12);f_write(&f,fbuff,12,&bw);
  for(int n=0;n<NS;n++){
-  int32_t row[NP+1];row[0]=valid[n];for(int p=0;p<NP;p++)row[p+1]=mem[n][p];
-  memcpy(fbuff,row,(NP+1)*4);f_write(&f,fbuff,(NP+1)*4,&bw);
+  fbuff[0]=valid[n];memcpy(&fbuff[1],mem[n],NP*4);f_write(&f,fbuff,(NP+1)*4,&bw);
  }
  f_close(&f);
 }
@@ -1519,7 +1517,7 @@ __attribute__((noinline)) msg_t memThread2(){
  chThdExit((msg_t)0);return (msg_t)0;
 }
 static msg_t memThread(void *arg){return ((attr_parent *)arg)->memThread2();}
-WORKING_AREA(waMem,1536);
+WORKING_AREA(waMem,1024);   /* same size as Ksoloti's own saveload-noclick object */
 Thread *thd;
 
 int32_t facval(int n,int p){   // factory sounds, packed in bytes to save RAM: knobs in half steps of the editor scale
@@ -1654,25 +1652,25 @@ int m99,m98,m6;bool h99,h98,h6;
 uint8_t sx[2][64];int sxn[2];bool insx[2];          // SysEx reassembly: 0 = from the iC, 1 = from the computer
 static int mlen(uint8_t s){if(s<0xF0){uint8_t h=s&0xF0;return (h==0xC0||h==0xD0)?2:3;}if(s==0xF2)return 3;if(s==0xF1||s==0xF3)return 2;return 1;}
 bool usbRoom(int n){return (int)chOQGetEmptyI(&MDU1.oqueue)>=n;}   // MDU1 = the firmware's USB MIDI device driver
-void usbPkt(uint8_t cin,uint8_t a,uint8_t b,uint8_t c){uint8_t p[4]={cin,a,b,c};chnWriteTimeout(&MDU1,p,4,TIME_IMMEDIATE);}
-void toUSB(uint8_t s,uint8_t d1,uint8_t d2){
+__attribute__((noinline)) void usbPkt(uint8_t cin,uint8_t a,uint8_t b,uint8_t c){uint8_t p[4]={cin,a,b,c};chnWriteTimeout(&MDU1,p,4,TIME_IMMEDIATE);}
+__attribute__((noinline)) void toUSB(uint8_t s,uint8_t d1,uint8_t d2){
  if(!usbRoom(4))return;
  int l=mlen(s);uint8_t cin;
  if(s<0xF0)cin=s>>4;else if(s==0xF6||l==1)cin=(s==0xF6)?0x05:0x0F;else cin=(l==2)?0x02:0x03;
  usbPkt(cin,s,(l>1)?d1:0,(l>2)?d2:0);
 }
-void sxUSB(const uint8_t *b,int n){
+__attribute__((noinline)) void sxUSB(const uint8_t *b,int n){
  int np=(n+2)/3;if(!usbRoom(np*4))return;
  int i=0;for(;i+3<n;i+=3)usbPkt(0x04,b[i],b[i+1],b[i+2]);
  int r=n-i;if(r==1)usbPkt(0x05,b[i],0,0);else if(r==2)usbPkt(0x06,b[i],b[i+1],0);else usbPkt(0x07,b[i],b[i+1],b[i+2]);
 }
-void toIC(uint8_t s,uint8_t d1,uint8_t d2){
+__attribute__((noinline)) void toIC(uint8_t s,uint8_t d1,uint8_t d2){
  if(MidiGetOutputBufferAvailable(MIDI_DEVICE_USB_HOST)<4)return;
  int l=mlen(s);if(l==1)MidiSend1(MIDI_DEVICE_USB_HOST,1,s);else if(l==2)MidiSend2(MIDI_DEVICE_USB_HOST,1,s,d1);else MidiSend3(MIDI_DEVICE_USB_HOST,1,s,d1,d2);
 }
-void sxIC(uint8_t *b,int n){if(MidiGetOutputBufferAvailable(MIDI_DEVICE_USB_HOST)<(n+2)/3+1)return;MidiSendSysEx(MIDI_DEVICE_USB_HOST,1,b,(uint8_t)n);}
+__attribute__((noinline)) void sxIC(uint8_t *b,int n){if(MidiGetOutputBufferAvailable(MIDI_DEVICE_USB_HOST)<(n+2)/3+1)return;MidiSendSysEx(MIDI_DEVICE_USB_HOST,1,b,(uint8_t)n);}
 // USB MIDI hands SysEx to patches as 3-byte chunks (F0 42 40 | 6E 01 01 | 00 3F F7): rebuild the whole message
-bool sxChunk(int d,uint8_t a,uint8_t b,uint8_t c){
+__attribute__((noinline)) bool sxChunk(int d,uint8_t a,uint8_t b,uint8_t c){
  if(a==0xF0){insx[d]=true;sxn[d]=0;}
  else if(!insx[d]||(a>=0x80&&a!=0xF7))return false;  // not part of a SysEx (real-time bytes inside one pass through normally)
  uint8_t v[3]={a,b,c};
