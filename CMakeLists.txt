@@ -33,3 +33,14 @@ iplug_add_plugin(${PROJECT_NAME}
     resources/font_data.h
   FORMATS ${TWENTY_FORMATS}
 )
+
+# The LED port and controller detection use Core MIDI on the Mac (every plugin format), WinMM on Windows
+foreach(_t ${PROJECT_NAME}-au ${PROJECT_NAME}-vst3)
+  if(TARGET ${_t})
+    if(APPLE)
+      target_link_libraries(${_t} PRIVATE "-framework CoreMIDI" "-framework CoreFoundation")
+    elseif(WIN32)
+      target_link_libraries(${_t} PRIVATE winmm)
+    endif()
+  endif()
+endforeach()

@@ -43,6 +43,7 @@ jobs:
           cmake --build build --config Release --target TwentyEngine-au --target TwentyEngine-vst3 -- -quiet > build.log 2>&1
           st=$?
           grep -E "error:|error G|fatal" build.log | sort -u | head -25 | sed 's/^/::error::/'
+          grep -E -A6 "Undefined symbols|duplicate symbol" build.log | head -30 | sed 's/^/::error::/'
           exit $st
 
       - name: Sign (ad hoc) and validate the AU (Intel)

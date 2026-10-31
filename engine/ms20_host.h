@@ -10,6 +10,9 @@
 #include "engine_gen.h"
 #include <atomic>
 #include <math.h>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846   /* not in MSVC's math.h by default */
+#endif
 
 namespace ms20 {
 
