@@ -2,11 +2,18 @@
 #include "IPlug_include_in_plug_src.h"
 #if IPLUG_EDITOR
 #include "IControls.h"
+#include "resources/font_data.h"
 #endif
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+static void MakeDir(const char* d) { _mkdir(d); }
+#else
+static void MakeDir(const char* d) { mkdir(d, 0755); }
+#endif
 
 using namespace ms20;
 
@@ -60,17 +67,28 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 {
 #if IPLUG_DSP
   mHost = std::make_unique<MS20Host>();
-  // Patch memory (36 sounds on the iC's keys) lives in ~/Library/Application Support/Twenty Engine/MS20MEM.BIN,
-  // shared by every instance and project, like the SD card in the hardware version. No file yet = factory sounds.
+  // Patch memory (36 sounds on the iC's keys) lives in one file, shared by every instance and project,
+  // like the SD card in the hardware version. No file yet = factory sounds.
+  //   Mac:     ~/Library/Application Support/Twenty Engine/MS20MEM.BIN
+  //   Windows: %APPDATA%\Twenty Engine\MS20MEM.BIN
   {
     char dir[1024] = "";
+#ifdef _WIN32
+    const char *base = getenv("APPDATA");
+    if (base) {
+      snprintf(dir, sizeof(dir), "%s/Twenty Engine/", base);
+      MakeDir(dir);
+      mHost->loadMemories(dir);
+    }
+#else
     const char *home = getenv("HOME");
     if (home) {
       snprintf(dir, sizeof(dir), "%s/Library/Application Support/Twenty Engine/", home);
       char parent[1024]; snprintf(parent, sizeof(parent), "%s/Library/Application Support", home);
-      mkdir(parent, 0755); mkdir(dir, 0755);
+      MakeDir(parent); MakeDir(dir);
       mHost->loadMemories(dir);
     }
+#endif
   }
 #endif
   // Same ranges as the Ksoloti editor shows them: knobs 0..64 (bipolar -64..64), selectors as integers.
@@ -97,7 +115,7 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
     return MakeGraphics(*this, PLUG_WIDTH, PLUG_HEIGHT, PLUG_FPS, GetScaleForScreen(PLUG_WIDTH, PLUG_HEIGHT));
   };
   mLayoutFunc = [&](IGraphics* pGraphics) {
-    pGraphics->LoadFont("Roboto-Regular", ROBOTO_FN);
+    pGraphics->LoadFont("Roboto-Regular", (void*)kRobotoTTF, (int)sizeof(kRobotoTTF));
     pGraphics->AttachControl(new StatusControl(pGraphics->GetBounds()));
   };
 #endif

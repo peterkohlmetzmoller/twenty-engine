@@ -12,7 +12,14 @@ find_package(iPlug2 REQUIRED)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# AU only. Minimal window: name + connection status (Logic shows the parameters in its own controls view)
+# Mac: AU + VST3. Windows: VST3.
+if(APPLE)
+  set(TWENTY_FORMATS AU VST3)
+else()
+  set(TWENTY_FORMATS VST3)
+endif()
+
+# Minimal window: name + connection status (Logic shows the parameters in its own controls view)
 iplug_add_plugin(${PROJECT_NAME}
   SOURCES
     TwentyEngine.cpp
@@ -23,7 +30,6 @@ iplug_add_plugin(${PROJECT_NAME}
     engine/ms20_host.h
     engine/engine_globals.cpp
     resources/resource.h
-  RESOURCES
-    resources/fonts/Roboto-Regular.ttf
-  FORMATS AU
+    resources/font_data.h
+  FORMATS ${TWENTY_FORMATS}
 )
