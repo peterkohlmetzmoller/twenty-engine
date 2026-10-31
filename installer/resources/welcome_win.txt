@@ -1,0 +1,8 @@
+Twenty Engine - an 8-voice polysynth engine for the Korg MS-20 iC.
+
+This installs the 64-bit VST3 plugin into the standard VST3 folder:
+C:\Program Files\Common Files\VST3
+
+It works in Ableton Live, Bitwig, Reaper, Cubase and other VST3 hosts. Your 36 memory sounds are kept in %APPDATA%\Twenty Engine and are not removed when you uninstall.
+
+Beta. MS-20 is a trademark of KORG Inc.; this is an independent project, not affiliated with KORG.

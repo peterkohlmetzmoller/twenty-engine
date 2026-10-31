@@ -161,7 +161,32 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path out/TwentyEngine.vst3 -DestinationPath TwentyEngine-VST3-Windows.zip
 
+      - name: Build the installer (.exe)
+        run: |
+          export TE_VERSION=$(grep -E '#define PLUG_VERSION_STR' config.h | sed -E 's/.*"(.*)".*/\1/')
+          ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          if [ ! -f "$ISCC" ]; then choco install innosetup -y --no-progress > /dev/null; fi
+          cd installer && "$ISCC" //Q windows.iss && cd .. && ls -la TwentyEngine-Setup.exe
+
+      - name: Test the installer (silent install, validate, uninstall)
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force "C:\Program Files\Common Files\VST3\TwentyEngine.vst3" -ErrorAction SilentlyContinue
+          Start-Process -Wait -FilePath .\TwentyEngine-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+          $inst = "C:\Program Files\Common Files\VST3\TwentyEngine.vst3"
+          if (!(Test-Path $inst)) { throw "not installed" }
+          $val = Get-ChildItem -Recurse -Filter validator.exe iPlug2\Dependencies\IPlug\VST3_SDK\vbuild | Select-Object -First 1
+          & $val.FullName $inst | Select-Object -Last 3
+          if ($LASTEXITCODE -ne 0) { throw "validator failed on the installed plugin" }
+          $un = Get-ChildItem "$inst\..\" -Filter "unins*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (!$un) { $un = Get-ChildItem "$inst" -Filter "unins*.exe" | Select-Object -First 1 }
+          Start-Process -Wait -FilePath $un.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+          Start-Sleep -Seconds 3
+          if (Test-Path $inst) { throw "uninstall left files" } else { "installed, validated and uninstalled cleanly" }
+
       - uses: actions/upload-artifact@v4
         with:
           name: TwentyEngine-Windows
-          path: TwentyEngine-VST3-Windows.zip
+          path: |
+            TwentyEngine-Setup.exe
+            TwentyEngine-VST3-Windows.zip
