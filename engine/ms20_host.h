@@ -136,7 +136,8 @@ public:
   }
   // main thread, regularly (e.g. every 20 ms): writes the file after a save on the keys
   void pollMemorySave() {
-    if (core->o_Patch_Memory.savereq) { core->o_Patch_Memory.savereq = 0; core->o_Patch_Memory.saveFile(); }
+    if (core->o_Patch_Memory.savereq) { core->o_Patch_Memory.savereq = 0;
+      if (core->o_Patch_Memory.saveFile()) core->o_Patch_Memory.flash(31, 5); else core->o_Patch_Memory.flash(12, 8); }   // saved: 5 x all LEDs, failed: 8 x PEAK+TRIG
   }
 
 private:

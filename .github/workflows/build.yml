@@ -1,0 +1,143 @@
+name: Build plugins
+
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  IPLUG2_COMMIT: d82b2e99b17c8f723d3f6e2a88ffd8b656f28e5d
+  VST3_TAG: v3.8.0_build_66
+  PATCH: patch/MS20_monopoly_v49.axp
+
+jobs:
+  # ---------------- Mac: AU + VST3, universal (Apple Silicon + Intel) ----------------
+  build-mac:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get iPlug2 and the VST3 SDK (fixed versions)
+        run: |
+          git clone -q https://github.com/iPlug2/iPlug2.git iPlug2
+          cd iPlug2 && git checkout -q $IPLUG2_COMMIT
+          cd Dependencies/IPlug && rm -rf VST3_SDK
+          git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
+          cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake
+
+      - name: Generate the engine from the Ksoloti patch
+        run: python3 engine/gen_engine.py $PATCH engine/engine_gen.h
+
+      - name: Engine tests (host layer, resampler, patch memory)
+        run: |
+          cd tests
+          clang++ -std=c++17 -O2 -w -o host_test host_test.cpp && ./host_test
+          clang++ -std=c++17 -O2 -w -o rs_test rs_test.cpp && ./rs_test
+          clang++ -std=c++17 -O2 -w -o mem_test mem_test.cpp && ./mem_test
+
+      - name: Configure
+        run: cmake -S . -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DIPLUG_DEPLOY_PLUGINS=OFF
+
+      - name: Build AU + VST3
+        run: |
+          set +e
+          cmake --build build --config Release --target TwentyEngine-au --target TwentyEngine-vst3 -- -quiet > build.log 2>&1
+          st=$?
+          grep -E "error:|error G|fatal" build.log | sort -u | head -25 | sed 's/^/::error::/'
+          exit $st
+
+      - name: Sign (ad hoc) and validate the AU (Intel)
+        run: |
+          COMP=$(find build -name "TwentyEngine.component" -type d | head -1)
+          VST3=$(find build -name "TwentyEngine.vst3" -type d | head -1)
+          echo "AU: $COMP  VST3: $VST3"
+          codesign --force --deep -s - "$COMP"
+          codesign --force --deep -s - "$VST3"
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$COMP" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 2
+          auval -v aumu Tw20 PtLb
+          mkdir -p out && cp -R "$COMP" "$VST3" out/
+
+      - name: Package
+        run: cd out && ditto -c -k --keepParent TwentyEngine.component ../TwentyEngine-AU.zip && ditto -c -k --keepParent TwentyEngine.vst3 ../TwentyEngine-VST3-Mac.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TwentyEngine-Mac
+          path: |
+            TwentyEngine-AU.zip
+            TwentyEngine-VST3-Mac.zip
+
+  # ---------------- Apple Silicon: validate the arm64 half of the same AU ----------------
+  test-apple-silicon:
+    needs: build-mac
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: TwentyEngine-Mac
+      - name: Install and validate (arm64)
+        run: |
+          uname -m
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          ditto -x -k TwentyEngine-AU.zip ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 2
+          auval -v aumu Tw20 PtLb
+
+  # ---------------- Windows: VST3 (64-bit), checked with Steinberg's validator ----------------
+  build-windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get iPlug2 and the VST3 SDK (fixed versions)
+        run: |
+          git clone -q https://github.com/iPlug2/iPlug2.git iPlug2
+          cd iPlug2 && git checkout -q $IPLUG2_COMMIT
+          cd Dependencies/IPlug && rm -rf VST3_SDK
+          git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
+          cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake vstgui4
+
+      - name: Generate the engine from the Ksoloti patch
+        run: python engine/gen_engine.py $PATCH engine/engine_gen.h
+
+      - name: Configure (Visual Studio + clang-cl)
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -T ClangCL -DIPLUG_DEPLOY_PLUGINS=OFF
+
+      - name: Build VST3
+        run: |
+          set +e
+          cmake --build build --config Release --target TwentyEngine-vst3 > build.log 2>&1
+          st=$?
+          grep -E "error|fatal" build.log | grep -v " 0 error" | sort -u | head -25 | sed 's/^/::error::/'
+          exit $st
+
+      - name: Build Steinberg's VST3 validator
+        run: |
+          cd iPlug2/Dependencies/IPlug/VST3_SDK
+          cmake -S . -B vbuild -G "Visual Studio 17 2022" -A x64 -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF > /dev/null
+          cmake --build vbuild --config Release --target validator > vlog.txt 2>&1 || (grep -E "error" vlog.txt | head -20 | sed 's/^/::error::/'; exit 1)
+
+      - name: Validate
+        run: |
+          VST3=$(find build -name "TwentyEngine.vst3" -type d | head -1)
+          VAL=$(find iPlug2/Dependencies/IPlug/VST3_SDK/vbuild -name "validator.exe" | head -1)
+          echo "VST3: $VST3  validator: $VAL"
+          "$VAL" "$VST3" > val.txt 2>&1; st=$?
+          tail -25 val.txt; grep -iE "failed|error" val.txt | head -10 | sed 's/^/::warning::/'
+          mkdir -p out && cp -R "$VST3" out/
+          exit $st
+
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path out/TwentyEngine.vst3 -DestinationPath TwentyEngine-VST3-Windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TwentyEngine-Windows
+          path: TwentyEngine-VST3-Windows.zip

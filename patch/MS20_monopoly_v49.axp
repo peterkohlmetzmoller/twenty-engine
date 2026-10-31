@@ -1,5 +1,5 @@
 <patch-1.0 appVersion="1.0.12">
-   <comment type="patch/comment" x="112" y="28" text="=== 8-VOICE KORG MS-20: ONE EG1 + ONE EG2 | ARP OFF = MS-20 POLY (VCO1+VCO2 PER VOICE) | ARP = VCO1 ORGAN GATE | LATCH = VCO1 CHORD HELD | v11: saw PW = 12-stage phaser, stereo spread BBD, ESP A/B layers | v42: iC MIDI always passed to the computer; MIDI/init code compiled for size | v38: HOLD at max = chord latch (new chord replaces the held one) | v36: VCO2 pitch continuous | v35: patch memory on the keys (hold switch + key: tap = recall, hold 2 s = save), 36 factory sounds, pickup, SWITCH->ESP SIGNAL IN = tap tempo | v31: 3.4 s power-on LED show, single-tap delay, tap tempo on the momentary switch, filter silent without notes, mono mode (patch KBD CV -> VCO1+2 CV IN), VCO2 pitch +-5, vibrato 4.6 Hz, ESP arp off = delay send, switch = tone; attack stops on key up, runaway feedback, ESP knobs follow the arp mode (no pickup), VCO1 32'-4', cleaner gain staging, latch chord replace, knob glide, iC LEDs, confirmed patch bay ==="/>
+   <comment type="patch/comment" x="112" y="28" text="=== TWENTY ENGINE v49 by Pete - free software under the GNU GPL v3 (gnu.org/licenses/gpl-3.0), built on Axoloti/Ksoloti - no warranty === 8-VOICE KORG MS-20: ONE EG1 + ONE EG2 | ARP OFF = MS-20 POLY (VCO1+VCO2 PER VOICE) | ARP = VCO1 ORGAN GATE | LATCH = VCO1 CHORD HELD | v11: saw PW = 12-stage phaser, stereo spread BBD, ESP A/B layers | v49: standard (v48b): no divisions in the oscillators, triangle corner correction off on the Ksoloti, 86 % peak at the extreme | v48: no divisions in the oscillators (high notes no longer cost more) | v47: lighter sine/triangle | v46: poly filter 2x oversampled (96 kHz), arp filter 48 kHz, 72 % peak with everything on | v43: Ksoloti 1.1.0+ (cold code in SRAM3), band-limited triangles + ring mod, SD card warning (8 x PEAK+TRIG) | v42: iC MIDI always passed to the computer; MIDI/init code compiled for size | v38: HOLD at max = chord latch (new chord replaces the held one) | v36: VCO2 pitch continuous | v35: patch memory on the keys (hold switch + key: tap = recall, hold 2 s = save), 36 factory sounds, pickup, SWITCH->ESP SIGNAL IN = tap tempo | v31: 3.4 s power-on LED show, single-tap delay, tap tempo on the momentary switch, filter silent without notes, mono mode (patch KBD CV -> VCO1+2 CV IN), VCO2 pitch +-5, vibrato 4.6 Hz, ESP arp off = delay send, switch = tone; attack stops on key up, runaway feedback, ESP knobs follow the arp mode (no pickup), VCO1 32'-4', cleaner gain staging, latch chord replace, knob glide, iC LEDs, confirmed patch bay ==="/>
    <comment type="patch/comment" x="1092" y="84" text="PATCH BAY: 0 normal 1 MG tri 2 MG sq 3 EG1 4 EG1rev 5 EG2 6 EG2rev 7 S&amp;H 8 noise 9 wheel 10 button 11 kbdCV 12 kbdTrig 13 open"/>
    <patchobj type="patch/object" uuid="b100000000000000000000000000000000000500" name="MS20_Voices" x="112" y="98">
       <params>
@@ -87,6 +87,7 @@ float v2s;int v2i; /* smoothed VCO2 PITCH offset, in pitch units (2^21 per semit
 int marm; /* momentary switch held (memory mode): keys pick memory slots and play nothing */
 // ---- poly voices: VCO1 + VCO2 per voice ----
 static const int NV=8; // VOICE COUNT: lower to 6 if the DSP load is too high
+float rin1[NV],rin2[NV];   /* 1/step per voice (v48): no divisions in the audio loop */
 float ph1[NV],ph2[NV],inc1[NV],inc2[NV],ve[NV],vgn[NV],vp[NV],dtn[NV],dtn2[NV],drf[NV],drt[NV];
 int32_t vn[NV];int vg[NV],vk[NV],vd[NV],vs[NV];uint32_t va[NV],vh[NV];
 uint32_t acnt,rng,drng,holdt;float pk,cc_pw,pws,ln;int hp,btn_dub,rp,btn_phys;
@@ -108,8 +109,13 @@ uint8_t h[16],a[16];int nh,na;float ap;int am,amp,mode;uint32_t acc,ledp,arng;in
 float ap_s[12],ph_fb,ph_a,ph_da;bool phwas;
 inline float ftan(float x){float x2=x*x;return x*(945.f-105.f*x2+x2*x2)/(945.f-420.f*x2+15.f*x2*x2);} // tan() without libm, <0.01 cent error up to 0.42*fs
 inline float softc(float x){if(x>1.5f)return 1.f;if(x<-1.5f)return -1.f;return x-0.148148f*x*x*x;}   // soft clip in the resonance loop (analog-style, no division) (fold gain max 4.5)
-inline float pblp(float t,float dt){if((t-dt)*((1.f-dt)-t)>0.f)return 0.f; /* one compare for the common case (identical result) */ if(t<dt){t/=dt;return t+t-t*t-1.f;}else if(t>1.f-dt){t=(t-1.f)/dt;return t*t+t+t+1.f;}return 0.f;}
-inline float bh(float p){float x=p*2.f-1.f;float ax=x<0.f?-x:x;return(16.f*x*(1.f-ax))/(5.f-4.f*ax*(1.f-ax));}
+inline float pblp(float t,float dt,float rdt){if((t-dt)*((1.f-dt)-t)>0.f)return 0.f; /* one compare for the common case (identical result) */ if(t<dt){t*=rdt;return t+t-t*t-1.f;}else if(t>1.f-dt){t=(t-1.f)*rdt;return t*t+t+t+1.f;}return 0.f;}
+// band-limited corners (polyBLAMP) for the triangles, band-limited square for the ring modulator (v43)
+inline float pblm(float t,float dt,float rdt){if((t-dt)*((1.f-dt)-t)>0.f)return 0.f;if(t<dt){t=t*rdt-1.f;return -0.33333333f*t*t*t;}t=(t-1.f)*rdt+1.f;return 0.33333333f*t*t*t;}
+inline float tri_bl(float t,float dt,float rdt){float o=(t<0.5f)?(t*4.f-1.f):(3.f-t*4.f);return o;   /* v48b: triangle corner correction off (CPU) */
+ float u=t-0.5f;if(u<0.f)u+=1.f;return o+4.f*dt*(pblm(t,dt,rdt)-pblm(u,dt,rdt));}
+inline float sq_bl(float t,float dt,float rdt){float o=(t<0.5f)?1.f:-1.f;o+=pblp(t,dt,rdt);float u=t-0.5f;if(u<0.f)u+=1.f;return o-pblp(u,dt,rdt);}
+inline float bh(float p){float x=p*2.f-1.f;float ax=x<0.f?-x:x;float y=4.f*x*(1.f-ax);float ay=y<0.f?-y:y;return y+0.225f*(y*ay-y);}   /* sine, no division (v47): max error 0.1 % */
          
 /* ---- knob feel: every move glides (~15 ms); some knobs land a hair off (+-half a knob step), fixed until the next move ---- */
 float kn_s[1];int32_t kn_l[1],kn_o[1];uint32_t kn_r;int kn_f;
@@ -121,7 +127,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c1"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 uint8_t st=status&0xF0;
 if((st==MIDI_NOTE_ON)&&(data2>0)&&marm){
@@ -204,11 +210,11 @@ if((st==MIDI_NOTE_ON)&&(data2>0)&&marm){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void initOs(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c2"))) void initOs(){
 
 marm=0;v2s=0.f;v2i=0;hpinf=false;
 acnt=0;rng=1357911U;pk=0.f;ln=0.f;hp=0;cc_pw=0.f;pws=0.f;btn_dub=0;btn_phys=0;rp=0;holdt=0;mw=mws=vph=0.f;for(int k=0;k<12;k++)ap_s[k]=0.f;ph_fb=ph_a=ph_da=0.f;phwas=false;
-for(int i=0;i<NV;i++){ph1[i]=i*0.125f;ph2[i]=0.31f+i*0.0625f;inc1[i]=inc2[i]=0.009f;ve[i]=vgn[i]=vp[i]=0.f;vn[i]=60;vg[i]=vk[i]=vd[i]=vs[i]=0;va[i]=vh[i]=0;}
+for(int i=0;i<NV;i++){ph1[i]=i*0.125f;ph2[i]=0.31f+i*0.0625f;inc1[i]=inc2[i]=0.009f;rin1[i]=rin2[i]=1.f/0.009f;ve[i]=vgn[i]=vp[i]=0.f;vn[i]=60;vg[i]=vk[i]=vd[i]=vs[i]=0;va[i]=vh[i]=0;}
 drng=24681357U;for(int i=0;i<NV;i++){drng=drng*196314165U+907633515U;dtn[i]=(int32_t)drng*2.93e-5f;drng=drng*196314165U+907633515U;dtn2[i]=(int32_t)drng*2.93e-5f;drf[i]=drt[i]=0.f;} // static detune +/-3 cents per VCO (2^21 = 1 semitone)
 for(int i=0;i<NV;i++){sc[i]=0;vt[i]=vlt[i]=0;tg[i]=gs[i]=ginc[i]=gmix[i]=0.f;gpos[i]=1.f;gon[i]=false;}kclk=0;porta=0.f;
 lon=0;cid=0;for(int i=0;i<NV;i++){vc[i]=0;vu[i]=0;}
@@ -325,10 +331,10 @@ for(int v=0;v<NV;v++){
   if(gon[v]){gpos[v]+=ginc[v];if(gpos[v]>=1.f){gpos[v]=1.f;gon[v]=false;}vp[v]=gs[v]+(tg[v]-gs[v])*gcurve(gpos[v],gmix[v]);} // polyglide
   else vp[v]=tg[v];
   int32_t q1=__SSAT((int32_t)(vp[v]+dtn[v]+drf[v])+oct1+inlet_pmodpoly+vib,28);
-  uint32_t f1;MTOFEXTENDED(q1,f1);inc1[v]=f1*2.3283e-10f;if(inc1[v]>0.48f)inc1[v]=0.48f;
+  uint32_t f1;MTOFEXTENDED(q1,f1);inc1[v]=f1*2.3283e-10f;if(inc1[v]>0.48f)inc1[v]=0.48f;rin1[v]=1.f/inc1[v];
   if(am==0){
    int32_t q2=__SSAT((int32_t)(vp[v]+dtn2[v]+drf[v])+oct2+inlet_pmodpoly+vib+v2cv,28);
-   uint32_t f2;MTOFEXTENDED(q2,f2);inc2[v]=f2*2.3283e-10f;if(inc2[v]>0.48f)inc2[v]=0.48f;
+   uint32_t f2;MTOFEXTENDED(q2,f2);inc2[v]=f2*2.3283e-10f;if(inc2[v]>0.48f)inc2[v]=0.48f;rin2[v]=1.f/inc2[v];
   }
  }
 }
@@ -344,19 +350,19 @@ float s1=0.f,s2=0.f;
 for(int v=0;v<NV;v++){
  vgn[v]+=0.02f*(ve[v]-vgn[v]); // ~1 ms de-click smoother on every voice amplitude
  if(vgn[v]>0.00005f){
-  float q=ph1[v]+inc1[v];if(q>=1.f)q-=1.f;ph1[v]=q;float dt=inc1[v];float o=0.f;
-  if(w1==0){float sw=bh(q);float tw=(q<0.5f)?(q*4.f-1.f):(3.f-q*4.f);o=sw+pws*(tw-sw);}
-  else if(w1==1){o=(2.f*q-1.f)-pblp(q,dt);
+  float q=ph1[v]+inc1[v];if(q>=1.f)q-=1.f;ph1[v]=q;float dt=inc1[v];float rdt=rin1[v];float o=0.f;
+  if(w1==0){float sw=bh(q);float tw=tri_bl(q,dt,rdt);o=sw+pws*(tw-sw);}
+  else if(w1==1){o=(2.f*q-1.f)-pblp(q,dt,rdt);
    }
-  else if(w1==2){if(dty>0.001f){float r=(q<dty)?1.f:-1.f;r+=pblp(q,dt);float psq=q-dty;if(psq<0.f)psq+=1.f;r-=pblp(psq,dt);o=(r-(2.f*dty-1.f))*0.85f;}}
+  else if(w1==2){if(dty>0.001f){float r=(q<dty)?1.f:-1.f;r+=pblp(q,dt,rdt);float psq=q-dty;if(psq<0.f)psq+=1.f;r-=pblp(psq,dt,rdt);o=(r-(2.f*dty-1.f))*0.85f;}}
   else{o=ns;}
   s1+=o*(vgn[v]*0.15f);
   if(am==0){
-   float r=ph2[v]+inc2[v];if(r>=1.f)r-=1.f;ph2[v]=r;float d2=inc2[v];float o2;
-   if(w2==0)o2=(r<0.5f)?(r*4.f-1.f):(3.f-r*4.f);
-   else if(w2==1)o2=(2.f*r-1.f)-pblp(r,d2);
-   else if(w2==2){o2=(r<0.5f)?1.f:-1.f;o2+=pblp(r,d2);float rs=r-0.5f;if(rs<0.f)rs+=1.f;o2-=pblp(rs,d2);}
-   else{o2=o*((r<0.5f)?1.f:-1.f);} // ring mod per voice: VCO1 x VCO2 square
+   float r=ph2[v]+inc2[v];if(r>=1.f)r-=1.f;ph2[v]=r;float d2=inc2[v];float rd2=rin2[v];float o2;
+   if(w2==0)o2=tri_bl(r,d2,rd2);
+   else if(w2==1)o2=(2.f*r-1.f)-pblp(r,d2,rd2);
+   else if(w2==2){o2=(r<0.5f)?1.f:-1.f;o2+=pblp(r,d2,rd2);float rs=r-0.5f;if(rs<0.f)rs+=1.f;o2-=pblp(rs,d2,rd2);}
+   else{o2=o*sq_bl(r,d2,rd2);} // ring mod per voice: VCO1 x VCO2 square
    s2+=o2*(vgn[v]*0.15f);
   }
  }
@@ -371,10 +377,10 @@ outlet_vco1=(int32_t)(s1*134217728.f);outlet_vco2=(int32_t)(s2*134217728.f);
 float ao1=0.f;
 if(am>0&&mono_on){
  uint32_t f1a;MTOFEXTENDED(__SSAT((int32_t)((ap-64.f)*2097152.f)+oct1+inlet_pmodarp+(int32_t)drf2+vib,28),f1a);
- float d1=f1a*2.3283e-10f;if(d1>0.48f)d1=0.48f;p1a+=d1;if(p1a>=1.f)p1a-=1.f;
- if(w1==0){float sw=bh(p1a);float tw=(p1a<0.5f)?(p1a*4.f-1.f):(3.f-p1a*4.f);ao1=sw+pws*(tw-sw);}
- else if(w1==1)ao1=(2.f*p1a-1.f)-pblp(p1a,d1);
- else if(w1==2){if(dty>0.001f){float r=(p1a<dty)?1.f:-1.f;r+=pblp(p1a,d1);float ps=p1a-dty;if(ps<0.f)ps+=1.f;r-=pblp(ps,d1);ao1=(r-(2.f*dty-1.f))*0.85f;}}
+ float d1=f1a*2.3283e-10f;if(d1>0.48f)d1=0.48f;float rd1=1.f/d1;   /* mono/arp VCO1: one voice, one division */p1a+=d1;if(p1a>=1.f)p1a-=1.f;
+ if(w1==0){float sw=bh(p1a);float tw=tri_bl(p1a,d1,rd1);ao1=sw+pws*(tw-sw);}
+ else if(w1==1)ao1=(2.f*p1a-1.f)-pblp(p1a,d1,rd1);
+ else if(w1==2){if(dty>0.001f){float r=(p1a<dty)?1.f:-1.f;r+=pblp(p1a,d1,rd1);float ps=p1a-dty;if(ps<0.f)ps+=1.f;r-=pblp(ps,d1,rd1);ao1=(r-(2.f*dty-1.f))*0.85f;}}
  else ao1=ns;
 }
 outlet_monov1=(int32_t)(ao1*0.2f*134217728.f);
@@ -382,11 +388,11 @@ outlet_monov1=(int32_t)(ao1*0.2f*134217728.f);
 float ao2=0.f;
 if(am>0){
  uint32_t f;MTOFEXTENDED(__SSAT((int32_t)((ap-64.f)*2097152.f)+oct2+inlet_pmodarp+(int32_t)drf2+vib+v2cv,28),f);
- float dt=f*2.3283e-10f;if(dt>0.48f)dt=0.48f;p2+=dt;if(p2>=1.f)p2-=1.f;
- if(w2==0)ao2=(p2<0.5f)?(p2*4.f-1.f):(3.f-p2*4.f);
- else if(w2==1)ao2=(2.f*p2-1.f)-pblp(p2,dt);
- else if(w2==2){ao2=(p2<0.5f)?1.f:-1.f;ao2+=pblp(p2,dt);float ps=p2-0.5f;if(ps<0.f)ps+=1.f;ao2-=pblp(ps,dt);}
- else{ao2=(mono_on?ao1:s1*2.5f)*((p2<0.5f)?1.f:-1.f);} // ring mod against VCO1 (organ chord, or the mono arp VCO1)
+ float dt=f*2.3283e-10f;if(dt>0.48f)dt=0.48f;float rdt=1.f/dt;p2+=dt;if(p2>=1.f)p2-=1.f;
+ if(w2==0)ao2=tri_bl(p2,dt,rdt);
+ else if(w2==1)ao2=(2.f*p2-1.f)-pblp(p2,dt,rdt);
+ else if(w2==2){ao2=(p2<0.5f)?1.f:-1.f;ao2+=pblp(p2,dt,rdt);float ps=p2-0.5f;if(ps<0.f)ps+=1.f;ao2-=pblp(ps,dt,rdt);}
+ else{ao2=(mono_on?ao1:s1*2.5f)*sq_bl(p2,dt,rdt);} // ring mod against VCO1 (organ chord, or the mono arp VCO1)
 }
 outlet_arp=(int32_t)(ao2*0.2f*134217728.f);
          ]]></code.srate>
@@ -438,7 +444,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void initOs(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c3"))) void initOs(){
 val=0.f;stg=0;tmr=0;pg=0;pm=0;
 for(int i=0;i<4;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654418544U;kn_f=1;
 
@@ -531,7 +537,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void initOs(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c4"))) void initOs(){
 
 epinf=false;for(int e=0;e<2;e++){val[e]=0.f;stg[e]=0;hld[e]=0;pg[e]=0;}
 for(int i=0;i<7;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654431178U;kn_f=1;
@@ -671,6 +677,12 @@ outlet_polyout=(int32_t)(p_m*0.5f*134217728.f);outlet_arpout=(int32_t)(a_m*0.5f*
          <includes/>
          <code.declaration><![CDATA[
 float h1p,h2p,l1p,l2p,h1a,h2a,l1a,l2a,cp,ca,pnk,sh,sl;int pgp,pga,init;
+/* v44: the filters run at 96 kHz. Half-band FIR (27 taps, linear phase): up = 7 multiplies, down = 7 multiplies */
+/* histories as ring buffers stored twice, so the newest 14 (or 8) samples are always contiguous: no shifting */
+float rxp[28],rep[28],rop[16],rxa[28],rea[28],roa[16];int ixp,iep,iop,ixa,iea,ioa;
+inline float* hbp(float*b,int&ix,int n,float v){ix=(ix==0)?n-1:ix-1;b[ix]=v;b[ix+n]=v;return b+ix;}
+inline float hbs(const float*b){return 0.001819877f*(b[0]+b[13])-0.005222563f*(b[1]+b[12])+0.012064004f*(b[2]+b[11])-0.024375518f*(b[3]+b[10])
+ +0.046728258f*(b[4]+b[9])-0.095109546f*(b[5]+b[8])+0.314496715f*(b[6]+b[7]);}
 float cc[12],dcc[12];int cfirst;float cks,cks2;float fgs; /* fgs: poly filter output gate */ // cks, cks2: softened click/noise (2-pole) // filter coefficients glide across each 16-sample block
 inline float sat(float x,float mx){float s=x*(0.5f/mx);if(s>4.5f)return mx*2.f;if(s<-4.5f)return mx*-2.f;return (mx*2.f)*(s*(27.f+s*s))/(27.f+9.f*s*s);}
          
@@ -684,8 +696,8 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void initOs(){
-h1p=h2p=l1p=l2p=h1a=h2a=l1a=l2a=cp=ca=pnk=sh=sl=0.f;pgp=pga=init=0;cfirst=1;cks=cks2=0.f;fgs=0.f;for(int k=0;k<12;k++){cc[k]=dcc[k]=0.f;}
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c5"))) void initOs(){
+h1p=h2p=l1p=l2p=h1a=h2a=l1a=l2a=cp=ca=pnk=sh=sl=0.f;pgp=pga=init=0;cfirst=1;cks=cks2=0.f;fgs=0.f;for(int k=0;k<12;k++){cc[k]=dcc[k]=0.f;}for(int k=0;k<28;k++){rxp[k]=rep[k]=rxa[k]=rea[k]=0.f;}for(int k=0;k<16;k++){rop[k]=roa[k]=0.f;}ixp=iep=iop=ixa=iea=ioa=0;
 for(int i=0;i<4;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654451953U;kn_f=1;
 
 }
@@ -705,21 +717,33 @@ if(!init){sh=kn_hpfcut;sl=kn_lpfcut;init=1;}sh+=0.22f*(kn_hpfcut-sh);sl+=0.22f*(
 if(inlet_polygate&&!pgp)cp=1.f;pgp=inlet_polygate;if(inlet_arpgate&&!pga)ca=1.f;pga=inlet_arpgate;
 float kh=2.f-2.2f*(kn_hpfpeak*7.45e-9f);float kl=2.f-2.08f*(kn_lpfpeak*7.45e-9f);float cn=param_clicknoise*7.45e-9f;
 uint32_t fhp,flp;MTOFEXTENDED(__SSAT((int32_t)sh+inlet_polyhpfmod,28),fhp);MTOFEXTENDED(__SSAT((int32_t)sl+inlet_polylpfmod,28),flp);
-float ghp=fhp*3.65e-10f;if(ghp>0.72f)ghp=0.72f;if(ghp<0.0004f)ghp=0.0004f;
-float glp=flp*3.65e-10f;if(glp>0.75f)glp=0.75f;if(glp<0.0008f)glp=0.0008f;
+float ghp=fhp*1.825e-10f;if(ghp>0.36f)ghp=0.36f;if(ghp<0.0002f)ghp=0.0002f;
+float glp=flp*1.825e-10f;if(glp>0.375f)glp=0.375f;if(glp<0.0004f)glp=0.0004f;
 float a1hp=1.f/(1.f+ghp*(ghp+kh));float a2hp=ghp*a1hp;float a3hp=ghp*a2hp;
 float a1lp=1.f/(1.f+glp*(glp+kl));float a2lp=glp*a1lp;float a3lp=glp*a2lp;
 uint32_t fha,fla;MTOFEXTENDED(__SSAT((int32_t)sh+inlet_arphpfmod,28),fha);MTOFEXTENDED(__SSAT((int32_t)sl+inlet_arplpfmod,28),fla);
-float gha=fha*3.65e-10f;if(gha>0.72f)gha=0.72f;if(gha<0.0004f)gha=0.0004f;
+float gha=fha*3.65e-10f;if(gha>0.72f)gha=0.72f;if(gha<0.0004f)gha=0.0004f;   /* arp filter: 48 kHz */
 float gla=fla*3.65e-10f;if(gla>0.75f)gla=0.75f;if(gla<0.0008f)gla=0.0008f;
 float a1ha=1.f/(1.f+gha*(gha+kh));float a2ha=gha*a1ha;float a3ha=gha*a2ha;
 float a1la=1.f/(1.f+gla*(gla+kl));float a2la=gla*a1la;float a3la=gla*a2la;
-if(inlet_mode==0){h1a=h2a=l1a=l2a=0.f;} /* arp filter idle: start clean when the arp is switched on */
+if(inlet_mode==0){h1a=h2a=l1a=l2a=0.f;for(int k=0;k<28;k++){rxa[k]=rea[k]=0.f;}for(int k=0;k<16;k++)roa[k]=0.f;} /* arp filter idle: start clean when the arp is switched on */
 {float tg[12]={a1hp,a2hp,a3hp,a1lp,a2lp,a3lp,a1ha,a2ha,a3ha,a1la,a2la,a3la};
  if(cfirst){for(int k=0;k<12;k++)cc[k]=tg[k];cfirst=0;}
- for(int k=0;k<12;k++){dcc[k]=(tg[k]-cc[k])*0.0625f;}
+ for(int k=0;k<12;k++){dcc[k]=(tg[k]-cc[k])*0.03125f;}   /* 32 filter steps per block now */
  a1hp=cc[0];a2hp=cc[1];a3hp=cc[2];a1lp=cc[3];a2lp=cc[4];a3lp=cc[5];a1ha=cc[6];a2ha=cc[7];a3ha=cc[8];a1la=cc[9];a2la=cc[10];a3la=cc[11]; // start of the ramp
  for(int k=0;k<12;k++)cc[k]=tg[k];}       // the ramp ends on the new values
+auto stP=[&](float v0p)->float{   /* poly: HPF -> LPF, one 96 kHz step */
+ a1hp+=dcc[0];a2hp+=dcc[1];a3hp+=dcc[2];a1lp+=dcc[3];a2lp+=dcc[4];a3lp+=dcc[5];
+ float v3hp=v0p-h2p;float v1hp=a1hp*h1p+a2hp*v3hp;float v2hp=h2p+a2hp*h1p+a3hp*v3hp;
+ h1p=sat(2.f*v1hp-h1p,1.f);h2p=2.f*v2hp-h2p;float hop=sat(v0p-kh*v1hp-v2hp,1.f);
+ float v3lp=hop-l2p;float v1lp=a1lp*l1p+a2lp*v3lp;float v2lp=l2p+a2lp*l1p+a3lp*v3lp;
+ l1p=sat(2.f*v1lp-l1p,0.67f);l2p=2.f*v2lp-l2p;return sat(v2lp,1.f);};
+auto stA=[&](float v0a)->float{   /* arp filter, same */
+ a1ha+=2.f*dcc[6];a2ha+=2.f*dcc[7];a3ha+=2.f*dcc[8];a1la+=2.f*dcc[9];a2la+=2.f*dcc[10];a3la+=2.f*dcc[11];   /* 16 steps per block */
+ float v3ha=v0a-h2a;float v1ha=a1ha*h1a+a2ha*v3ha;float v2ha=h2a+a2ha*h1a+a3ha*v3ha;
+ h1a=sat(2.f*v1ha-h1a,1.f);h2a=2.f*v2ha-h2a;float hoa=sat(v0a-kh*v1ha-v2ha,1.f);
+ float v3la=hoa-l2a;float v1la=a1la*l1a+a2la*v3la;float v2la=l2a+a2la*l1a+a3la*v3la;
+ l1a=sat(2.f*v1la-l1a,0.67f);l2a=2.f*v2la-l2a;return sat(v2la,1.f);};
          ]]></code.krate>
          <code.srate><![CDATA[
 /* key click + noise: keyboard only (never the arp), added AFTER the filter so the cutoff never touches it (MS-20 style) */
@@ -729,18 +753,13 @@ float w=0.f,ck=0.f;if(cn>0.f){w=(int32_t)(GenerateRandomNumber())*4.65e-10f;pnk=
 cp*=0.993f;
 fgs+=0.01f*(fgt-fgs);                      /* ~2 ms smoothing */
 float v0p=inlet_polyin*7.45e-9f;
-a1hp+=dcc[0];a2hp+=dcc[1];a3hp+=dcc[2];a1lp+=dcc[3];a2lp+=dcc[4];a3lp+=dcc[5]; /* per-sample coefficient glide: no stepping on fast sweeps */
-float v3hp=v0p-h2p;float v1hp=a1hp*h1p+a2hp*v3hp;float v2hp=h2p+a2hp*h1p+a3hp*v3hp;
-h1p=sat(2.f*v1hp-h1p,1.f);h2p=2.f*v2hp-h2p;float hop=sat(v0p-kh*v1hp-v2hp,1.f);
-float v3lp=hop-l2p;float v1lp=a1lp*l1p+a2lp*v3lp;float v2lp=l2p+a2lp*l1p+a3lp*v3lp;
-l1p=sat(2.f*v1lp-l1p,0.67f);l2p=2.f*v2lp-l2p;outlet_polyout=(int32_t)((sat(v2lp,1.f)*fgs+ck)*134217728.f); /* filter only heard while a voice envelope is open; click/noise post filter */
+const float*ux=hbp(rxp,ixp,14,v0p);float yp0=stP(2.f*hbs(ux));float yp1=stP(ux[6]);   /* up: two 96 kHz samples, filter twice */
+float yp=hbs(hbp(rep,iep,14,yp0))+0.5f*rop[iop+6];hbp(rop,iop,8,yp1);                  /* down: half-band back to 48 kHz */
+outlet_polyout=(int32_t)((yp*fgs+ck)*134217728.f); /* filter only heard while a voice envelope is open; click/noise post filter */
 if(inlet_mode!=0){ /* arp filter: only needed in arp modes (silent in MS-20 mode) */
 float v0a=inlet_arpin*7.45e-9f;            /* arp: never a click */
-a1ha+=dcc[6];a2ha+=dcc[7];a3ha+=dcc[8];a1la+=dcc[9];a2la+=dcc[10];a3la+=dcc[11];
-float v3ha=v0a-h2a;float v1ha=a1ha*h1a+a2ha*v3ha;float v2ha=h2a+a2ha*h1a+a3ha*v3ha;
-h1a=sat(2.f*v1ha-h1a,1.f);h2a=2.f*v2ha-h2a;float hoa=sat(v0a-kh*v1ha-v2ha,1.f);
-float v3la=hoa-l2a;float v1la=a1la*l1a+a2la*v3la;float v2la=l2a+a2la*l1a+a3la*v3la;
-l1a=sat(2.f*v1la-l1a,0.67f);l2a=2.f*v2la-l2a;outlet_arpout=(int32_t)(sat(v2la,1.f)*134217728.f);
+float ya=stA(v0a);   /* arp filter at 48 kHz (saves CPU in arp modes) */
+outlet_arpout=(int32_t)(ya*134217728.f);
 }else{outlet_arpout=0;}
          ]]></code.srate>
       </object>
@@ -781,7 +800,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void initOs(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c6"))) void initOs(){
 px=ep=ea=b1=b2=0.f;vgs=1.f;
 for(int i=0;i<3;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654423640U;kn_f=1;
 
@@ -926,7 +945,7 @@ void patchEvent(int t,int a,int b){
 }
          
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c7"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 // MS-20 iC patch panel: CC99 = event type, CC98 / CC6 = the two jack numbers (NRPN-style triple)
 if((status&0xF0)==MIDI_CONTROL_CHANGE){
@@ -942,7 +961,7 @@ if((status&0xF0)==MIDI_CONTROL_CHANGE){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void initOs(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c8"))) void initOs(){
 
 for(int i=0;i<35;i++){jack[i]=0;lk[i]=0;}monof=0;pwr=1;pon=0;
 // ---- jack table: confirmed on the MS-20 iC (one cable from TOTAL through every jack) ----
@@ -1099,7 +1118,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void initOs(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c9"))) void initOs(){
 
 static int16_t _b[131072] __attribute__((section(".sdram"))); bbd = &_b[0];
 for(int i=0; i<131072; i++) bbd[i]=0; w_i=0; s_t=28000.f; l_s1=l_s2=h_s1=0.f; w_ph=f_ph=0; wf_rng=22446688U; d_t=d_s=d_t2=d_s2=m_sL=m_sR=mw=d_e=syb=lim=0.f;
@@ -1218,7 +1237,7 @@ void knob(int k,int cc){
 }
          
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c10"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 uint8_t st=status&0xF0;
 if(st==MIDI_NOTE_ON&&data2>0){
@@ -1238,7 +1257,7 @@ if(st==MIDI_NOTE_ON&&data2>0){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void initOs(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c11"))) void initOs(){
 
 nhard=0;btn=false;amode=0;tapm=0;etick=0;tpress=tlast=0;knobbed=false;ntap=0;for(int i=0;i<3;i++)tiv[i]=0.f;
 for(int l=0;l<NSET;l++)for(int k=0;k<NK;k++)zoned[l][k]=0;
@@ -1341,7 +1360,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void initOs(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c12"))) void initOs(){
 ph=phf=0; rng=987654321U; r_t=r_s1=r_s2=sr=0.f; in=0;
 for(int i=0;i<5;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654414431U;kn_f=1;
 
@@ -1435,7 +1454,7 @@ void sendLed(int i,int on){
 }
          
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void initOs(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c13"))) void initOs(){
 
 for(int i=0;i<NL;i++){want[i]=0;sent[i]=2;hold[i]=0;} // sent=2 (unknown): every LED is set once at patch start
 anim=-1;lpon=0;apos=0;adur=0;anext=0;ablink=0;lseq=0;ovn=0;ovt=0;ovmask=0;tick=lastt=tint=aph=0;ton=0;prevst=0;refresh=0;ri=0;gap=0;rr=0;
@@ -1534,12 +1553,12 @@ int lastcc[NP];int32_t cur[NP];bool lock[NP];
 bool btn,armed,saved,tapmode;uint32_t tk,tpress,kdown;int keyn,inmem;
 int fseq,fmask,fn;
 int m99,m98,m6;bool h99,h98,h6;
-volatile int savereq;
+volatile int savereq; bool sderr;
 static int32_t ccraw(int k,int cc){if(k==2)return (cc<22)?0:((cc<64)?1:((cc<106)?2:3));if(cc==127)return 0x07FFFFFF;return (k==1)?((cc-64)<<21):(cc<<20);}   // same scaling as Ksoloti's CC mapping / the rotary decoding in MS20_Voices
 static int rawcc(int k,int32_t r){int c=(k==1)?((r>>21)+64):(r>>20);if(c<0)c=0;if(c>127)c=127;return c;}
 void setp(int p,int32_t v){PExParameterChange(&parent->PExch[pidx[p]],v,0xFFFD);}
 void flash(int mask,int count){fmask=mask;fn=count;fseq++;}
-__attribute__((noinline,optimize("Os"))) void recall(int n){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c14"))) void recall(int n){
  if(n==NS){                                      // top C: panel
   for(int p=0;p<NP;p++){if(lastcc[p]>=0)setp(p,ccraw(kind[p],lastcc[p]));lock[p]=false;}
   inmem=-1;flash(31,1);return;
@@ -1548,20 +1567,20 @@ __attribute__((noinline,optimize("Os"))) void recall(int n){
  for(int p=0;p<NP;p++){setp(p,mem[n][p]);if(kind[p]!=2){lock[p]=true;cur[p]=mem[n][p];}}
  inmem=n;flash(31,1);
 }
-__attribute__((noinline,optimize("Os"))) void save(int n){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c15"))) void save(int n){
  if(n>=NS)return;
  for(int p=0;p<NP;p++)mem[n][p]=parent->PExch[pidx[p]].value;
- valid[n]=1;inmem=n;savereq=1;flash(31,5);
+ valid[n]=1;inmem=n;savereq=1;
 }
-__attribute__((noinline,optimize("Os"))) void cable(int ty,int a,int b){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c16"))) void cable(int ty,int a,int b){
  if(ty==6){if(a!=b){for(int p=0;p<NP;p++)lock[p]=false;inmem=-1;}return;}          // power on: the iC sends every knob next, the panel is the sound
  if((a==33&&b==3)||(a==3&&b==33)){if(ty==4)tapmode=true;else if(ty==5)tapmode=false;}  // SWITCH <-> ESP SIGNAL IN
  if(ty==5&&a==b&&(a==33||a==3))tapmode=false;                                            // either plug pulled (or the power-on dump)
 }
 // ---- SD card: /MS20MEM.BIN, written from a low-priority thread (no audio click), same method as Ksoloti's "saveload noclick" object
-__attribute__((noinline,optimize("Os"))) bool loadFile(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c17"))) bool loadFile(){
  FIL f;UINT br;
- if(f_open(&f,"/MS20MEM.BIN",FA_READ|FA_OPEN_EXISTING)!=FR_OK)return false;   // no file yet: factory sounds
+ {FRESULT r=f_open(&f,"/MS20MEM.BIN",FA_READ|FA_OPEN_EXISTING);if(r!=FR_OK){sderr=(r!=FR_NO_FILE);return false;}}   // no file yet: factory sounds; anything else: card problem
  int32_t hdr[3];
  if(f_read(&f,fbuff,12,&br)!=FR_OK||br!=12){f_close(&f);return false;}
  memcpy(hdr,fbuff,12);
@@ -1572,19 +1591,21 @@ __attribute__((noinline,optimize("Os"))) bool loadFile(){
  }
  f_close(&f);return true;
 }
-__attribute__((noinline,optimize("Os"))) void saveFile(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c18"))) bool saveFile(){
  FIL f;UINT bw;
- if(f_open(&f,"/MS20MEM.BIN",FA_WRITE|FA_CREATE_ALWAYS)!=FR_OK)return;
- int32_t hdr[3]={MAGIC,NS,NP};memcpy(fbuff,hdr,12);f_write(&f,fbuff,12,&bw);
+ if(f_open(&f,"/MS20MEM.BIN",FA_WRITE|FA_CREATE_ALWAYS)!=FR_OK)return false;
+ UINT tot=0;
+ int32_t hdr[3]={MAGIC,NS,NP};memcpy(fbuff,hdr,12);f_write(&f,fbuff,12,&bw);tot+=bw;
  for(int n=0;n<NS;n++){
-  fbuff[0]=valid[n];memcpy(&fbuff[1],mem[n],NP*4);f_write(&f,fbuff,(NP+1)*4,&bw);
+  fbuff[0]=valid[n];memcpy(&fbuff[1],mem[n],NP*4);f_write(&f,fbuff,(NP+1)*4,&bw);tot+=bw;
  }
- f_close(&f);
+ return (f_close(&f)==FR_OK)&&(tot==(UINT)(12+NS*(NP+1)*4));
 }
 __attribute__((noinline)) msg_t memThread2(){
  loadFile();
+ if(sderr){chThdSleepMilliseconds(4000);flash(12,8);}   // no / unreadable SD card: warn after the power-on light show
  while(!chThdShouldTerminate()){
-  if(savereq){savereq=0;saveFile();}
+  if(savereq){savereq=0;if(saveFile())flash(31,5);else flash(12,8);}   // saved / card problem
   chThdSleepMilliseconds(20);
  }
  chThdExit((msg_t)0);return (msg_t)0;
@@ -1639,7 +1660,7 @@ int32_t facval(int n,int p){   // factory sounds, packed in bytes to save RAM: k
 }
 
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c19"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 uint8_t st=status&0xF0;
 if(st==MIDI_CONTROL_CHANGE){
@@ -1675,14 +1696,14 @@ if(st==MIDI_CONTROL_CHANGE){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void initOs(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c20"))) void initOs(){
 
 static int32_t _mem[NS][NP] __attribute__((section(".sdram")));static uint8_t _valid[NS] __attribute__((section(".sdram")));
 mem=_mem;valid=_valid;
 for(int n=0;n<NS;n++){valid[n]=(n<36)?1:0;for(int p=0;p<NP;p++)mem[n][p]=(n<36)?facval(n,p):0;}
 for(int p=0;p<NP;p++){lastcc[p]=-1;cur[p]=0;lock[p]=false;}
 btn=armed=saved=tapmode=false;tk=tpress=kdown=0;keyn=-1;inmem=-1;fseq=0;fmask=0;fn=0;
-m99=m98=m6=0;h99=h98=h6=false;savereq=0;
+m99=m98=m6=0;h99=h98=h6=false;savereq=0;sderr=false;
 thd=chThdCreateStatic(waMem,sizeof(waMem),LOWPRIO,(tfunc_t)memThread,(void *)this);
 
 }
@@ -1728,7 +1749,7 @@ midiOs(dev,port,status,data1,data2);
 // Keys used for patch memory (switch held) are not sent. Writes never wait: with no computer attached
 // the USB queue stays full and messages are simply dropped.
 bool marm;
-__attribute__((noinline,optimize("Os"))) void toUSB(uint8_t s,uint8_t d1,uint8_t d2){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c21"))) void toUSB(uint8_t s,uint8_t d1,uint8_t d2){
  if(s<0x80||s==0xF0||s==0xF7)return;                       // SysEx is not passed on
  if((int)chOQGetEmptyI(&MDU1.oqueue)<4)return;              // no room (no computer): drop
  uint8_t h=s&0xF0,cin;int l;
@@ -1739,7 +1760,7 @@ __attribute__((noinline,optimize("Os"))) void toUSB(uint8_t s,uint8_t d1,uint8_t
 }
 
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c22"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 if(dev==MIDI_DEVICE_USB_HOST){                              // from the iC
  uint8_t h=status&0xF0;
@@ -1749,7 +1770,7 @@ if(dev==MIDI_DEVICE_USB_HOST){                              // from the iC
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"))) void initOs(){
+__attribute__((noinline,optimize("Os"),section(".sram3.text.c23"))) void initOs(){
 
 marm=false;
 
