@@ -1,0 +1,17 @@
+#!/bin/sh
+# Twenty Engine installer: after the files are in place
+# 1. remove older copies installed by hand in the user's own Library, so the host doesn't see two versions
+USER_NAME=$(stat -f%Su /dev/console 2>/dev/null)
+if [ -n "$USER_NAME" ] && [ "$USER_NAME" != "root" ]; then
+  USER_HOME=$(dscl . -read "/Users/$USER_NAME" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+  if [ -n "$USER_HOME" ]; then
+    rm -rf "$USER_HOME/Library/Audio/Plug-Ins/Components/TwentyEngine.component"
+    rm -rf "$USER_HOME/Library/Audio/Plug-Ins/VST3/TwentyEngine.vst3"
+  fi
+fi
+# 2. make sure nothing is flagged as "downloaded from the internet"
+xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/Components/TwentyEngine.component" 2>/dev/null
+xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/VST3/TwentyEngine.vst3" 2>/dev/null
+# 3. let macOS rescan Audio Units
+killall -9 AudioComponentRegistrar 2>/dev/null
+exit 0

@@ -63,10 +63,33 @@ jobs:
       - name: Package
         run: cd out && ditto -c -k --keepParent TwentyEngine.component ../TwentyEngine-AU.zip && ditto -c -k --keepParent TwentyEngine.vst3 ../TwentyEngine-VST3-Mac.zip
 
+      - name: Build the installer (.pkg)
+        run: |
+          VER=$(grep -E '#define PLUG_VERSION_STR' config.h | sed -E 's/.*"(.*)".*/\1/')
+          mkdir -p pkgroot/au pkgroot/vst3
+          cp -R out/TwentyEngine.component pkgroot/au/
+          cp -R out/TwentyEngine.vst3 pkgroot/vst3/
+          pkgbuild --root pkgroot/au --identifier com.petelabs.twentyengine.au --version "$VER" \
+            --install-location /Library/Audio/Plug-Ins/Components --scripts installer/scripts au.pkg
+          pkgbuild --root pkgroot/vst3 --identifier com.petelabs.twentyengine.vst3 --version "$VER" \
+            --install-location /Library/Audio/Plug-Ins/VST3 vst3.pkg
+          productbuild --distribution installer/distribution.xml --resources installer/resources --package-path . TwentyEngine-Installer.pkg
+          ls -la TwentyEngine-Installer.pkg
+
+      - name: Test the installer (install, then validate the installed AU)
+        run: |
+          rm -rf ~/Library/Audio/Plug-Ins/Components/TwentyEngine.component
+          sudo installer -pkg TwentyEngine-Installer.pkg -target /
+          ls -d /Library/Audio/Plug-Ins/Components/TwentyEngine.component /Library/Audio/Plug-Ins/VST3/TwentyEngine.vst3
+          killall -9 AudioComponentRegistrar || true
+          sleep 2
+          auval -v aumu Tw20 PtLb
+
       - uses: actions/upload-artifact@v4
         with:
           name: TwentyEngine-Mac
           path: |
+            TwentyEngine-Installer.pkg
             TwentyEngine-AU.zip
             TwentyEngine-VST3-Mac.zip
 

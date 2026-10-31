@@ -1,0 +1,7 @@
+Twenty Engine is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License version 3 as published by the Free Software Foundation.
+
+It is built on the Axoloti / Ksoloti ecosystem (GPL v3) and uses iPlug2, the Steinberg VST 3 SDK (MIT) and the Roboto font (Apache License 2.0).
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details: https://www.gnu.org/licenses/gpl-3.0.html
+
+The source code is published alongside the plugin.
