@@ -79,6 +79,7 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       snprintf(dir, sizeof(dir), "%s/Twenty Engine/", base);
       MakeDir(dir);
       mHost->loadMemories(dir);
+      char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug.txt", dir); mDbg = fopen(lp, "w");
     }
 #else
     const char *home = getenv("HOME");
@@ -87,6 +88,7 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       char parent[1024]; snprintf(parent, sizeof(parent), "%s/Library/Application Support", home);
       MakeDir(parent); MakeDir(dir);
       mHost->loadMemories(dir);
+      char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug.txt", dir); mDbg = fopen(lp, "w");
     }
 #endif
   }
@@ -140,8 +142,15 @@ double TwentyEngine::FromRaw(int idx, int32_t raw)
   return (double)raw;
 }
 
+void TwentyEngine::Dbg(const char* fmt, ...)
+{
+  if (!mDbg || mDbgLines > 4000) return;
+  va_list a; va_start(a, fmt); vfprintf(mDbg, fmt, a); va_end(a); fputc('\n', mDbg); fflush(mDbg); mDbgLines++;
+}
+
 void TwentyEngine::OnReset()
 {
+  mDbgResets++;
   mHost->reset(GetSampleRate());
   // the reset keeps the engine's settings; make sure the plugin's current values are applied
   for (int i = 0; i < kNumParams; i++) mHost->setParamRaw(i, ToRaw(i, GetParam(i)->Value()));
@@ -171,6 +180,7 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 
 void TwentyEngine::OnParamChange(int paramIdx, EParamSource source, int sampleOffset)
 {
+  if (!mFromEngine) mDbgQ.push({paramIdx, (int)source, ToRaw(paramIdx, GetParam(paramIdx)->Value())});
   if (mFromEngine) return;   // the engine already has this value (it made the change)
   mHost->setParamRaw(paramIdx, ToRaw(paramIdx, GetParam(paramIdx)->Value()));
 }
@@ -178,10 +188,16 @@ void TwentyEngine::OnParamChange(int paramIdx, EParamSource source, int sampleOf
 void TwentyEngine::OnIdle()
 {
   // main thread, about every 20 ms
+  // 0. beta diagnostics
+  { int slot = mHost->memSlot(); if (slot != mDbgSlot) { Dbg("MEMORY slot %d (-1 = panel)  LPF cut %.2f  VCO1 wave %d  PW %.2f", slot,
+      mHost->getParamRaw(PARAM_INDEX_Filter__Macro_lpfcut) / 2097152.0, (int)mHost->getParamRaw(PARAM_INDEX_MS20__Voices_vco1wave), mHost->getParamRaw(PARAM_INDEX_MS20__Voices_pw) / 2097152.0); mDbgSlot = slot; }
+    int r = mDbgResets.load(); if (r != mDbgResetsSeen) { Dbg("RESET from the host (%d so far)", r); mDbgResetsSeen = r; }
+    DbgEv e; while (mDbgQ.pop(e)) Dbg("HOST sets param %d '%s' = %.2f  (source %d)", e.idx, kParamInfo[e.idx].label, e.raw / 2097152.0, e.src); }
   // 1. changes made by the engine (iC knobs via CC, power-on dump, ESP knob layers, tap tempo, patch bay)
   ParamSet p;
   while (mHost->popEngineChange(p))
   {
+    mDbgEngine++;
     if (p.idx < 0 || p.idx >= kNumParams) continue;
     const double v = FromRaw(p.idx, p.raw);
     mFromEngine = true;

@@ -79,6 +79,7 @@ public:
   bool popLed(LedMsg &m) { return leds.pop(m); }
   // read the current value (any thread; a plain aligned 32-bit read)
   int32_t getParamRaw(int idx) const { return core->root.PExch[idx].value; }
+  int memSlot() const { return core->o_Patch_Memory.inmem; }   // -1 = panel, else the recalled slot (diagnostics)
 
   // --- audio (audio thread) ---
   void process(float *outL, float *outR, int n) {

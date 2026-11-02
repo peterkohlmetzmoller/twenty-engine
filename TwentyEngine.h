@@ -10,6 +10,9 @@ const int kNumParams = ms20::NPARAMS;   // every parameter of the Ksoloti patch
 #if IPLUG_DSP
 #include "engine/ms20_host.h"
 #include <memory>
+#include <atomic>
+#include <cstdio>
+#include <cstdarg>
 #endif
 
 using namespace iplug;
@@ -38,5 +41,11 @@ private:
   bool mFromEngine = false;     // true while we push an engine-side change to the host
   int mRescan = 0;
   float mScratchL[512], mScratchR[512];
+  // ---- beta diagnostics: what touches the parameters around a memory recall
+  struct DbgEv { int idx; int src; int32_t raw; };
+  ms20::SpscQueue<DbgEv, 2048> mDbgQ;
+  std::atomic<int> mDbgResets { 0 };
+  FILE* mDbg = nullptr; int mDbgLines = 0; int mDbgSlot = -2; int mDbgResetsSeen = 0; int mDbgEngine = 0;
+  void Dbg(const char* fmt, ...);
 #endif
 };
