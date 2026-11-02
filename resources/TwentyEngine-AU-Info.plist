@@ -10,9 +10,9 @@
 			<key>factoryFunction</key>
 			<string>TwentyEngine_Factory</string>
 			<key>manufacturer</key>
-			<string>PtLb</string>
+			<string>Pkmo</string>
 			<key>name</key>
-			<string>PeteLabs: TwentyEngine</string>
+			<string>Peter Kohlmetz Moller: Twenty Engine</string>
 			<key>sandboxSafe</key>
 			<true/>
 			<key>subtype</key>
@@ -30,9 +30,9 @@
 	<key>CFBundleExecutable</key>
 	<string>TwentyEngine</string>
 	<key>CFBundleGetInfoString</key>
-	<string>TwentyEngine v1.0.0 Copyright 2026 PeteLabs</string>
+	<string>TwentyEngine v1.0.0 Copyright 2026 Peter Kohlmetz Moller</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.PeteLabs.audiounit.TwentyEngine</string>
+	<string>com.peterkohlmetzmoller.audiounit.TwentyEngine</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

@@ -9,7 +9,7 @@
 	<key>CFBundleGetInfoString</key>
 	<string>TwentyEngine v1.0.0 Copyright 2025 Acme Inc</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.PeteLabs.app.TwentyEngine.AUv3</string>
+	<string>com.peterkohlmetzmoller.app.TwentyEngine.AUv3</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -27,7 +27,7 @@
 		<key>NSExtensionAttributes</key>
 		<dict>
 			<key>AudioComponentBundle</key>
-			<string>com.PeteLabs.app.TwentyEngine.AUv3Framework</string>
+			<string>com.peterkohlmetzmoller.app.TwentyEngine.AUv3Framework</string>
 			<key>AudioComponents</key>
 			<array>
 				<dict>
@@ -36,7 +36,7 @@
 					<key>manufacturer</key>
 					<string>Acme</string>
 					<key>name</key>
-					<string>PeteLabs: TwentyEngine</string>
+					<string>Peter Kohlmetz Moller: Twenty Engine</string>
 					<key>sandboxSafe</key>
 					<true/>
 					<key>subtype</key>

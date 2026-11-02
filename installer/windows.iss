@@ -4,7 +4,7 @@
 AppId={{6E2B8C14-7A3F-4D1E-9B20-20E5A1C0FFEE}
 AppName=Twenty Engine
 AppVersion={#AppVer}
-AppPublisher=PeteLabs
+AppPublisher=Peter Kohlmetz Moller
 DefaultDirName={commoncf64}\VST3\TwentyEngine.vst3
 DisableDirPage=yes
 DisableProgramGroupPage=yes

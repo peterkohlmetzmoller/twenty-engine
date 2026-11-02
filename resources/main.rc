@@ -210,7 +210,7 @@ BEGIN
             VALUE "FileDescription", "TwentyEngine"
             VALUE "InternalName", "TwentyEngine"
             VALUE "ProductName", "TwentyEngine"
-            VALUE "CompanyName", "PeteLabs"
+            VALUE "CompanyName", "Peter Kohlmetz Moller"
             VALUE "LegalCopyright", "Copyright 2020 Acme Inc"
             VALUE "LegalTrademarks", "VST is a trademark of Steinberg Media Technologies GmbH, Audio Unit is a trademark of Apple, Inc."
         END

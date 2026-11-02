@@ -57,7 +57,7 @@ jobs:
           cp -R "$COMP" ~/Library/Audio/Plug-Ins/Components/
           killall -9 AudioComponentRegistrar || true
           sleep 2
-          auval -v aumu Tw20 PtLb
+          auval -v aumu Tw20 Pkmo
           mkdir -p out && cp -R "$COMP" "$VST3" out/
 
       - name: Package
@@ -69,9 +69,9 @@ jobs:
           mkdir -p pkgroot/au pkgroot/vst3
           cp -R out/TwentyEngine.component pkgroot/au/
           cp -R out/TwentyEngine.vst3 pkgroot/vst3/
-          pkgbuild --root pkgroot/au --identifier com.petelabs.twentyengine.au --version "$VER" \
+          pkgbuild --root pkgroot/au --identifier com.peterkohlmetzmoller.twentyengine.au --version "$VER" \
             --install-location /Library/Audio/Plug-Ins/Components --scripts installer/scripts au.pkg
-          pkgbuild --root pkgroot/vst3 --identifier com.petelabs.twentyengine.vst3 --version "$VER" \
+          pkgbuild --root pkgroot/vst3 --identifier com.peterkohlmetzmoller.twentyengine.vst3 --version "$VER" \
             --install-location /Library/Audio/Plug-Ins/VST3 vst3.pkg
           productbuild --distribution installer/distribution.xml --resources installer/resources --package-path . TwentyEngine-Installer.pkg
           ls -la TwentyEngine-Installer.pkg
@@ -83,7 +83,7 @@ jobs:
           ls -d /Library/Audio/Plug-Ins/Components/TwentyEngine.component /Library/Audio/Plug-Ins/VST3/TwentyEngine.vst3
           killall -9 AudioComponentRegistrar || true
           sleep 2
-          auval -v aumu Tw20 PtLb
+          auval -v aumu Tw20 Pkmo
 
       - uses: actions/upload-artifact@v4
         with:
@@ -108,7 +108,7 @@ jobs:
           ditto -x -k TwentyEngine-AU.zip ~/Library/Audio/Plug-Ins/Components/
           killall -9 AudioComponentRegistrar || true
           sleep 2
-          auval -v aumu Tw20 PtLb
+          auval -v aumu Tw20 Pkmo
 
   # ---------------- Windows: VST3 (64-bit), checked with Steinberg's validator ----------------
   build-windows:

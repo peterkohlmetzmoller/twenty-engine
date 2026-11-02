@@ -11,11 +11,11 @@
         <line choice="vst3"/>
     </choices-outline>
     <choice id="au" title="Audio Unit (Logic, MainStage, GarageBand)" start_selected="true">
-        <pkg-ref id="com.petelabs.twentyengine.au"/>
+        <pkg-ref id="com.peterkohlmetzmoller.twentyengine.au"/>
     </choice>
     <choice id="vst3" title="VST3 (Ableton Live, Bitwig, Reaper, Cubase …)" start_selected="true">
-        <pkg-ref id="com.petelabs.twentyengine.vst3"/>
+        <pkg-ref id="com.peterkohlmetzmoller.twentyengine.vst3"/>
     </choice>
-    <pkg-ref id="com.petelabs.twentyengine.au">au.pkg</pkg-ref>
-    <pkg-ref id="com.petelabs.twentyengine.vst3">vst3.pkg</pkg-ref>
+    <pkg-ref id="com.peterkohlmetzmoller.twentyengine.au">au.pkg</pkg-ref>
+    <pkg-ref id="com.peterkohlmetzmoller.twentyengine.vst3">vst3.pkg</pkg-ref>
 </installer-gui-script>

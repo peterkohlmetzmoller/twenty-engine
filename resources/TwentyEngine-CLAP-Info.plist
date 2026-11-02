@@ -9,7 +9,7 @@
 	<key>CFBundleGetInfoString</key>
 	<string>TwentyEngine v1.0.0 Copyright 2025 Acme Inc</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.PeteLabs.clap.TwentyEngine</string>
+	<string>com.peterkohlmetzmoller.clap.TwentyEngine</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
