@@ -24,6 +24,24 @@ jobs:
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake
 
+      - name: AAX SDK (optional, from private secrets)
+        shell: bash
+        env:
+          AAX_SDK_B64_1: ${{ secrets.AAX_SDK_B64_1 }}
+          AAX_SDK_B64_2: ${{ secrets.AAX_SDK_B64_2 }}
+          AAX_SDK_B64_3: ${{ secrets.AAX_SDK_B64_3 }}
+          AAX_SDK_B64_4: ${{ secrets.AAX_SDK_B64_4 }}
+          AAX_SDK_B64_5: ${{ secrets.AAX_SDK_B64_5 }}
+          AAX_SDK_B64_6: ${{ secrets.AAX_SDK_B64_6 }}
+          AAX_SDK_B64_7: ${{ secrets.AAX_SDK_B64_7 }}
+        run: |
+          if [ -n "$AAX_SDK_B64_1" ]; then
+            echo "${AAX_SDK_B64_1}${AAX_SDK_B64_2}${AAX_SDK_B64_3}${AAX_SDK_B64_4}${AAX_SDK_B64_5}${AAX_SDK_B64_6}${AAX_SDK_B64_7}" | base64 -d | tar -xJ -C iPlug2/Dependencies/IPlug/
+            ls iPlug2/Dependencies/IPlug/AAX_SDK/CMakeLists.txt && echo "HAVE_AAX=1" >> $GITHUB_ENV
+          else
+            echo "No AAX SDK secret: AAX is skipped."
+          fi
+
       - name: Generate the engine from the Ksoloti patch
         run: python3 engine/gen_engine.py $PATCH engine/engine_gen.h
 
@@ -63,6 +81,13 @@ jobs:
       - name: Package
         run: cd out && ditto -c -k --keepParent TwentyEngine.component ../TwentyEngine-AU.zip && ditto -c -k --keepParent TwentyEngine.vst3 ../TwentyEngine-VST3-Mac.zip
 
+      - name: Build AAX (unsigned, only with the AAX SDK)
+        if: env.HAVE_AAX == '1'
+        run: |
+          cmake --build build --config Release --target TwentyEngine-aax -- -quiet > aax.log 2>&1 || (grep -E "error:" aax.log | head -20 | sed 's/^/::error::/'; exit 1)
+          AAX=$(find build -name "*.aaxplugin" -type d | head -1); echo "AAX: $AAX"
+          ditto -c -k --keepParent "$AAX" TwentyEngine-AAX-Mac-unsigned.zip
+
       - name: Build the installer (.pkg)
         run: |
           VER=$(grep -E '#define PLUG_VERSION_STR' config.h | sed -E 's/.*"(.*)".*/\1/')
@@ -92,6 +117,7 @@ jobs:
             TwentyEngine-Installer.pkg
             TwentyEngine-AU.zip
             TwentyEngine-VST3-Mac.zip
+            TwentyEngine-AAX-Mac-unsigned.zip
 
   # ---------------- Apple Silicon: validate the arm64 half of the same AU ----------------
   test-apple-silicon:
@@ -127,6 +153,24 @@ jobs:
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake vstgui4
 
+      - name: AAX SDK (optional, from private secrets)
+        shell: bash
+        env:
+          AAX_SDK_B64_1: ${{ secrets.AAX_SDK_B64_1 }}
+          AAX_SDK_B64_2: ${{ secrets.AAX_SDK_B64_2 }}
+          AAX_SDK_B64_3: ${{ secrets.AAX_SDK_B64_3 }}
+          AAX_SDK_B64_4: ${{ secrets.AAX_SDK_B64_4 }}
+          AAX_SDK_B64_5: ${{ secrets.AAX_SDK_B64_5 }}
+          AAX_SDK_B64_6: ${{ secrets.AAX_SDK_B64_6 }}
+          AAX_SDK_B64_7: ${{ secrets.AAX_SDK_B64_7 }}
+        run: |
+          if [ -n "$AAX_SDK_B64_1" ]; then
+            echo "${AAX_SDK_B64_1}${AAX_SDK_B64_2}${AAX_SDK_B64_3}${AAX_SDK_B64_4}${AAX_SDK_B64_5}${AAX_SDK_B64_6}${AAX_SDK_B64_7}" | base64 -d | tar -xJ -C iPlug2/Dependencies/IPlug/
+            ls iPlug2/Dependencies/IPlug/AAX_SDK/CMakeLists.txt && echo "HAVE_AAX=1" >> $GITHUB_ENV
+          else
+            echo "No AAX SDK secret: AAX is skipped."
+          fi
+
       - name: Generate the engine from the Ksoloti patch
         run: python engine/gen_engine.py $PATCH engine/engine_gen.h
 
@@ -161,6 +205,13 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path out/TwentyEngine.vst3 -DestinationPath TwentyEngine-VST3-Windows.zip
 
+      - name: Build AAX (unsigned, only with the AAX SDK)
+        if: env.HAVE_AAX == '1'
+        run: |
+          cmake --build build --config Release --target TwentyEngine-aax > aax.log 2>&1 || (grep -E "error" aax.log | grep -v " 0 error" | head -20 | sed 's/^/::error::/'; exit 1)
+          AAX=$(find build -name "*.aaxplugin" -type d | head -1); echo "AAX: $AAX"
+          powershell -Command "Compress-Archive -Path '$AAX' -DestinationPath TwentyEngine-AAX-Windows-unsigned.zip"
+
       - name: Build the installer (.exe)
         run: |
           export TE_VERSION=$(grep -E '#define PLUG_VERSION_STR' config.h | sed -E 's/.*"(.*)".*/\1/')
@@ -190,3 +241,4 @@ jobs:
           path: |
             TwentyEngine-Setup.exe
             TwentyEngine-VST3-Windows.zip
+            TwentyEngine-AAX-Windows-unsigned.zip

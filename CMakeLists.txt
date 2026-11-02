@@ -13,10 +13,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Mac: AU + VST3. Windows: VST3.
+# AAX (Pro Tools) is built only when the AAX SDK is present in iPlug2/Dependencies/IPlug/AAX_SDK
+# (free from Avid for registered developers); without it iPlug2 skips the AAX target.
 if(APPLE)
-  set(TWENTY_FORMATS AU VST3)
+  set(TWENTY_FORMATS AU VST3 AAX)
 else()
-  set(TWENTY_FORMATS VST3)
+  set(TWENTY_FORMATS VST3 AAX)
 endif()
 
 # Minimal window: name + connection status (Logic shows the parameters in its own controls view)
@@ -35,7 +37,7 @@ iplug_add_plugin(${PROJECT_NAME}
 )
 
 # The LED port and controller detection use Core MIDI on the Mac (every plugin format), WinMM on Windows
-foreach(_t ${PROJECT_NAME}-au ${PROJECT_NAME}-vst3)
+foreach(_t ${PROJECT_NAME}-au ${PROJECT_NAME}-vst3 ${PROJECT_NAME}-aax)
   if(TARGET ${_t})
     if(APPLE)
       target_link_libraries(${_t} PRIVATE "-framework CoreMIDI" "-framework CoreFoundation")
