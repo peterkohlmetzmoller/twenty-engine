@@ -1,5 +1,5 @@
 <patch-1.0 appVersion="1.0.12">
-   <comment type="patch/comment" x="112" y="28" text="=== TWENTY ENGINE v50 by Pete - free software under the GNU GPL v3 (gnu.org/licenses/gpl-3.0), built on Axoloti/Ksoloti - no warranty === 8-VOICE KORG MS-20: ONE EG1 + ONE EG2 | ARP OFF = MS-20 POLY (VCO1+VCO2 PER VOICE) | ARP = VCO1 ORGAN GATE | LATCH = VCO1 CHORD HELD | v11: saw PW = 12-stage phaser, stereo spread BBD, ESP A/B layers | v50: lowest iC key = note 60 (memory map was one octave off), memory keys reach the plugin through the Ksoloti thru as CC 102/103 | v49: standard (v48b): no divisions in the oscillators, triangle corner correction off on the Ksoloti, 86 % peak at the extreme | v48: no divisions in the oscillators (high notes no longer cost more) | v47: lighter sine/triangle | v46: poly filter 2x oversampled (96 kHz), arp filter 48 kHz, 72 % peak with everything on | v43: Ksoloti 1.1.0+ (cold code in SRAM3), band-limited triangles + ring mod, SD card warning (8 x PEAK+TRIG) | v42: iC MIDI always passed to the computer; MIDI/init code compiled for size | v38: HOLD at max = chord latch (new chord replaces the held one) | v36: VCO2 pitch continuous | v35: patch memory on the keys (hold switch + key: tap = recall, hold 2 s = save), 36 factory sounds, pickup, SWITCH->ESP SIGNAL IN = tap tempo | v31: 3.4 s power-on LED show, single-tap delay, tap tempo on the momentary switch, filter silent without notes, mono mode (patch KBD CV -> VCO1+2 CV IN), VCO2 pitch +-5, vibrato 4.6 Hz, ESP arp off = delay send, switch = tone; attack stops on key up, runaway feedback, ESP knobs follow the arp mode (no pickup), VCO1 32'-4', cleaner gain staging, latch chord replace, knob glide, iC LEDs, confirmed patch bay ==="/>
+   <comment type="patch/comment" x="112" y="28" text="=== TWENTY ENGINE v50c by Pete - free software under the GNU GPL v3 (gnu.org/licenses/gpl-3.0), built on Axoloti/Ksoloti - no warranty === 8-VOICE KORG MS-20: ONE EG1 + ONE EG2 | ARP OFF = MS-20 POLY (VCO1+VCO2 PER VOICE) | ARP = VCO1 ORGAN GATE | LATCH = VCO1 CHORD HELD | v11: saw PW = 12-stage phaser, stereo spread BBD, ESP A/B layers | v50c: no SRAM3 (all in main memory), memory keys reach the plugin through the Ksoloti thru as CC 102/103 | v49: standard (v48b): no divisions in the oscillators, triangle corner correction off on the Ksoloti, 86 % peak at the extreme | v48: no divisions in the oscillators (high notes no longer cost more) | v47: lighter sine/triangle | v46: poly filter 2x oversampled (96 kHz), arp filter 48 kHz, 72 % peak with everything on | v43: Ksoloti 1.1.0+ (cold code in SRAM3), band-limited triangles + ring mod, SD card warning (8 x PEAK+TRIG) | v42: iC MIDI always passed to the computer; MIDI/init code compiled for size | v38: HOLD at max = chord latch (new chord replaces the held one) | v36: VCO2 pitch continuous | v35: patch memory on the keys (hold switch + key: tap = recall, hold 2 s = save), 36 factory sounds, pickup, SWITCH->ESP SIGNAL IN = tap tempo | v31: 3.4 s power-on LED show, single-tap delay, tap tempo on the momentary switch, filter silent without notes, mono mode (patch KBD CV -> VCO1+2 CV IN), VCO2 pitch +-5, vibrato 4.6 Hz, ESP arp off = delay send, switch = tone; attack stops on key up, runaway feedback, ESP knobs follow the arp mode (no pickup), VCO1 32'-4', cleaner gain staging, latch chord replace, knob glide, iC LEDs, confirmed patch bay ==="/>
    <comment type="patch/comment" x="1092" y="84" text="PATCH BAY: 0 normal 1 MG tri 2 MG sq 3 EG1 4 EG1rev 5 EG2 6 EG2rev 7 S&amp;H 8 noise 9 wheel 10 button 11 kbdCV 12 kbdTrig 13 open"/>
    <patchobj type="patch/object" uuid="b100000000000000000000000000000000000500" name="MS20_Voices" x="112" y="98">
       <params>
@@ -127,7 +127,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c1"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 uint8_t st=status&0xF0;
 if((st==MIDI_NOTE_ON)&&(data2>0)&&marm){
@@ -210,7 +210,7 @@ if((st==MIDI_NOTE_ON)&&(data2>0)&&marm){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c2"))) void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 marm=0;v2s=0.f;v2i=0;hpinf=false;
 acnt=0;rng=1357911U;pk=0.f;ln=0.f;hp=0;cc_pw=0.f;pws=0.f;btn_dub=0;btn_phys=0;rp=0;holdt=0;mw=mws=vph=0.f;for(int k=0;k<12;k++)ap_s[k]=0.f;ph_fb=ph_a=ph_da=0.f;phwas=false;
@@ -444,7 +444,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c3"))) void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 val=0.f;stg=0;tmr=0;pg=0;pm=0;
 for(int i=0;i<4;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654418544U;kn_f=1;
 
@@ -537,7 +537,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c4"))) void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 epinf=false;for(int e=0;e<2;e++){val[e]=0.f;stg[e]=0;hld[e]=0;pg[e]=0;}
 for(int i=0;i<7;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654431178U;kn_f=1;
@@ -696,7 +696,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c5"))) void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 h1p=h2p=l1p=l2p=h1a=h2a=l1a=l2a=cp=ca=pnk=sh=sl=0.f;pgp=pga=init=0;cfirst=1;cks=cks2=0.f;fgs=0.f;for(int k=0;k<12;k++){cc[k]=dcc[k]=0.f;}for(int k=0;k<28;k++){rxp[k]=rep[k]=rxa[k]=rea[k]=0.f;}for(int k=0;k<16;k++){rop[k]=roa[k]=0.f;}ixp=iep=iop=ixa=iea=ioa=0;
 for(int i=0;i<4;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654451953U;kn_f=1;
 
@@ -800,7 +800,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c6"))) void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 px=ep=ea=b1=b2=0.f;vgs=1.f;
 for(int i=0;i<3;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654423640U;kn_f=1;
 
@@ -945,7 +945,7 @@ void patchEvent(int t,int a,int b){
 }
          
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c7"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 // MS-20 iC patch panel: CC99 = event type, CC98 / CC6 = the two jack numbers (NRPN-style triple)
 if((status&0xF0)==MIDI_CONTROL_CHANGE){
@@ -961,7 +961,7 @@ if((status&0xF0)==MIDI_CONTROL_CHANGE){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c8"))) void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 for(int i=0;i<35;i++){jack[i]=0;lk[i]=0;}monof=0;pwr=1;pon=0;
 // ---- jack table: confirmed on the MS-20 iC (one cable from TOTAL through every jack) ----
@@ -1118,7 +1118,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c9"))) void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 static int16_t _b[131072] __attribute__((section(".sdram"))); bbd = &_b[0];
 for(int i=0; i<131072; i++) bbd[i]=0; w_i=0; s_t=28000.f; l_s1=l_s2=h_s1=0.f; w_ph=f_ph=0; wf_rng=22446688U; d_t=d_s=d_t2=d_s2=m_sL=m_sR=mw=d_e=syb=lim=0.f;
@@ -1237,7 +1237,7 @@ void knob(int k,int cc){
 }
          
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c10"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 uint8_t st=status&0xF0;
 if(st==MIDI_NOTE_ON&&data2>0){
@@ -1257,7 +1257,7 @@ if(st==MIDI_NOTE_ON&&data2>0){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c11"))) void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 nhard=0;btn=false;amode=0;tapm=0;etick=0;tpress=tlast=0;knobbed=false;ntap=0;for(int i=0;i<3;i++)tiv[i]=0.f;
 for(int l=0;l<NSET;l++)for(int k=0;k<NK;k++)zoned[l][k]=0;
@@ -1360,7 +1360,7 @@ inline int32_t kn_upd(int i,int32_t p,int32_t lo,int32_t hi,int32_t half){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c12"))) void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 ph=phf=0; rng=987654321U; r_t=r_s1=r_s2=sr=0.f; in=0;
 for(int i=0;i<5;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654414431U;kn_f=1;
 
@@ -1454,7 +1454,7 @@ void sendLed(int i,int on){
 }
          
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c13"))) void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 for(int i=0;i<NL;i++){want[i]=0;sent[i]=2;hold[i]=0;} // sent=2 (unknown): every LED is set once at patch start
 anim=-1;lpon=0;apos=0;adur=0;anext=0;ablink=0;lseq=0;ovn=0;ovt=0;ovmask=0;tick=lastt=tint=aph=0;ton=0;prevst=0;refresh=0;ri=0;gap=0;rr=0;
@@ -1542,7 +1542,7 @@ if(gap==0&&MidiGetOutputBufferAvailable(MIDI_DEVICE_USB_HOST)>=4){ /* at least 1
 // Factory sounds: 1=Punch Saw Bass 2=Acid Reso 3=Sub Pulse 4=Wide Pulse Bass 5=Octave Bass 6=Fifth Bass 7=Ring Bass 8=Sine Thump 9=Round Bass 10=Wobble 11=Glide Bass 12=Phaser Bass 13=Poly Strings 14=Brass 15=Organ 16=Soft Keys 17=Bell 18=Glass Pad 19=Sweep Pad 20=Phaser Pad 21=Clav 22=Harpsi 23=Vowel Pad 24=Poly Synth 25=Fourth Lead 26=Square Lead 27=Screamer 28=Soft Flute 29=Reed 30=Theremin 31=Rising Zap 32=Laser 33=Random Bleeps 34=Wind 35=Ring Metal 36=Slow Swell
 static const int NP=29;          // stored values per slot
 static const int NS=36;            // slots: the 36 lowest keys
-static const int BASE=60;          // MIDI note of the lowest iC key (slot 1): C3 = 60, measured on the iC; BASE+36 (top C) = panel. Change here if the keyboard sends another range.
+static const int BASE=48;          // MIDI note of the lowest iC key (slot 1): 48, measured on the iC (MIDI Monitor shows it as C3); BASE+36 (top C) = panel. Change here if the keyboard sends another range.
 static const uint32_t ARMT=6000;   // 2 s (3000 control ticks per second): key hold to save
 static const int32_t MAGIC=0x4D533230; // 'MS20'
 const int pidx[NP]={PARAM_INDEX_MS20__Voices_vco1wave,PARAM_INDEX_MS20__Voices_vco1oct,PARAM_INDEX_MS20__Voices_pw,PARAM_INDEX_MS20__Voices_portamento,PARAM_INDEX_MS20__Voices_vco2wave,PARAM_INDEX_MS20__Voices_vco2oct,PARAM_INDEX_MS20__Voices_vco2semi,PARAM_INDEX_EG1_delay,PARAM_INDEX_EG1_attack,PARAM_INDEX_EG1_release,PARAM_INDEX_EG1_amount,PARAM_INDEX_EG2_hold,PARAM_INDEX_EG2_attack,PARAM_INDEX_EG2_decay,PARAM_INDEX_EG2_sustain,PARAM_INDEX_EG2_release,PARAM_INDEX_EG2_lpfdepth,PARAM_INDEX_EG2_hpfdepth,PARAM_INDEX_Master__Mixer_vco1,PARAM_INDEX_Master__Mixer_vco2,PARAM_INDEX_Filter__Macro_hpfcut,PARAM_INDEX_Filter__Macro_hpfpeak,PARAM_INDEX_Filter__Macro_lpfcut,PARAM_INDEX_Filter__Macro_lpfpeak,PARAM_INDEX_MG__Morphing__LFO_rate,PARAM_INDEX_MG__Morphing__LFO_shape,PARAM_INDEX_MG__Morphing__LFO_pitchmod,PARAM_INDEX_MG__Morphing__LFO_lpfmod,PARAM_INDEX_MG__Morphing__LFO_hpfmod};
@@ -1558,7 +1558,7 @@ static int32_t ccraw(int k,int cc){if(k==2)return (cc<22)?0:((cc<64)?1:((cc<106)
 static int rawcc(int k,int32_t r){int c=(k==1)?((r>>21)+64):(r>>20);if(c<0)c=0;if(c>127)c=127;return c;}
 void setp(int p,int32_t v){PExParameterChange(&parent->PExch[pidx[p]],v,0xFFFD);}
 void flash(int mask,int count){fmask=mask;fn=count;fseq++;}
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c14"))) void recall(int n){
+__attribute__((noinline,optimize("Os"))) void recall(int n){
  if(n==NS){                                      // top C: panel
   for(int p=0;p<NP;p++){if(lastcc[p]>=0)setp(p,ccraw(kind[p],lastcc[p]));lock[p]=false;}
   inmem=-1;flash(31,1);return;
@@ -1567,18 +1567,18 @@ __attribute__((noinline,optimize("Os"),section(".sram3.text.c14"))) void recall(
  for(int p=0;p<NP;p++){setp(p,mem[n][p]);if(kind[p]!=2){lock[p]=true;cur[p]=mem[n][p];}}
  inmem=n;flash(31,1);
 }
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c15"))) void save(int n){
+__attribute__((noinline,optimize("Os"))) void save(int n){
  if(n>=NS)return;
  for(int p=0;p<NP;p++)mem[n][p]=parent->PExch[pidx[p]].value;
  valid[n]=1;inmem=n;savereq=1;
 }
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c16"))) void cable(int ty,int a,int b){
+__attribute__((noinline,optimize("Os"))) void cable(int ty,int a,int b){
  if(ty==6){if(a!=b){for(int p=0;p<NP;p++)lock[p]=false;inmem=-1;}return;}          // power on: the iC sends every knob next, the panel is the sound
  if((a==33&&b==3)||(a==3&&b==33)){if(ty==4)tapmode=true;else if(ty==5)tapmode=false;}  // SWITCH <-> ESP SIGNAL IN
  if(ty==5&&a==b&&(a==33||a==3))tapmode=false;                                            // either plug pulled (or the power-on dump)
 }
 // ---- SD card: /MS20MEM.BIN, written from a low-priority thread (no audio click), same method as Ksoloti's "saveload noclick" object
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c17"))) bool loadFile(){
+__attribute__((noinline,optimize("Os"))) bool loadFile(){
  FIL f;UINT br;
  {FRESULT r=f_open(&f,"/MS20MEM.BIN",FA_READ|FA_OPEN_EXISTING);if(r!=FR_OK){sderr=(r!=FR_NO_FILE);return false;}}   // no file yet: factory sounds; anything else: card problem
  int32_t hdr[3];
@@ -1591,7 +1591,7 @@ __attribute__((noinline,optimize("Os"),section(".sram3.text.c17"))) bool loadFil
  }
  f_close(&f);return true;
 }
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c18"))) bool saveFile(){
+__attribute__((noinline,optimize("Os"))) bool saveFile(){
  FIL f;UINT bw;
  if(f_open(&f,"/MS20MEM.BIN",FA_WRITE|FA_CREATE_ALWAYS)!=FR_OK)return false;
  UINT tot=0;
@@ -1660,7 +1660,7 @@ int32_t facval(int n,int p){   // factory sounds, packed in bytes to save RAM: k
 }
 
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c19"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 uint8_t st=status&0xF0;
 if(st==MIDI_CONTROL_CHANGE&&(data1==102||data1==103)){                  // memory key from a Twenty Engine Ksoloti thru: CC 102 = key down, 103 = up
@@ -1699,7 +1699,7 @@ if(st==MIDI_CONTROL_CHANGE){
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c20"))) void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 static int32_t _mem[NS][NP] __attribute__((section(".sdram")));static uint8_t _valid[NS] __attribute__((section(".sdram")));
 mem=_mem;valid=_valid;
@@ -1752,7 +1752,7 @@ midiOs(dev,port,status,data1,data2);
 // Keys pressed for patch memory are sent as CC 102 (down) / CC 103 (up) with the note number, so other software stays silent and the plugin edition can still use them. Writes never wait: with no computer attached
 // the USB queue stays full and messages are simply dropped.
 bool marm;
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c21"))) void toUSB(uint8_t s,uint8_t d1,uint8_t d2){
+__attribute__((noinline,optimize("Os"))) void toUSB(uint8_t s,uint8_t d1,uint8_t d2){
  if(s<0x80||s==0xF0||s==0xF7)return;                       // SysEx is not passed on
  if((int)chOQGetEmptyI(&MDU1.oqueue)<4)return;              // no room (no computer): drop
  uint8_t h=s&0xF0,cin;int l;
@@ -1763,7 +1763,7 @@ __attribute__((noinline,optimize("Os"),section(".sram3.text.c21"))) void toUSB(u
 }
 
 /* midihandler code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c22"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+__attribute__((noinline,optimize("Os"))) void midiOs(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
 
 if(dev==MIDI_DEVICE_USB_HOST){                              // from the iC
  uint8_t h=status&0xF0;
@@ -1775,7 +1775,7 @@ if(dev==MIDI_DEVICE_USB_HOST){                              // from the iC
 }
 
 /* init code, compiled for size (only runs on MIDI / at start / LED rate) */
-__attribute__((noinline,optimize("Os"),section(".sram3.text.c23"))) void initOs(){
+__attribute__((noinline,optimize("Os"))) void initOs(){
 
 marm=false;
 

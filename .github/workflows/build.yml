@@ -7,7 +7,7 @@ on:
 env:
   IPLUG2_COMMIT: d82b2e99b17c8f723d3f6e2a88ffd8b656f28e5d
   VST3_TAG: v3.8.0_build_66
-  PATCH: patch/MS20_monopoly_v50.axp
+  PATCH: patch/MS20_monopoly_v50c.axp
 
 jobs:
   # ---------------- Mac: AU + VST3, universal (Apple Silicon + Intel) ----------------
