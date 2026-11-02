@@ -45,6 +45,8 @@ private:
   struct DbgEv { int idx; int src; int32_t raw; };
   ms20::SpscQueue<DbgEv, 2048> mDbgQ;
   std::atomic<int> mDbgResets { 0 };
+  struct DbgMidi { uint8_t s, d1, d2; int off; };
+  ms20::SpscQueue<DbgMidi, 2048> mDbgMidiQ;
   FILE* mDbg = nullptr; int mDbgLines = 0; int mDbgSlot = -2; int mDbgResetsSeen = 0; int mDbgEngine = 0;
   void Dbg(const char* fmt, ...);
 #endif
