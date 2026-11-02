@@ -79,7 +79,7 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       snprintf(dir, sizeof(dir), "%s/Twenty Engine/", base);
       MakeDir(dir);
       mHost->loadMemories(dir);
-      char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug.txt", dir); mDbg = fopen(lp, "w");
+      /* beta diagnostics log (off): char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug.txt", dir); mDbg = fopen(lp, "w"); */
     }
 #else
     const char *home = getenv("HOME");
@@ -88,7 +88,7 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       char parent[1024]; snprintf(parent, sizeof(parent), "%s/Library/Application Support", home);
       MakeDir(parent); MakeDir(dir);
       mHost->loadMemories(dir);
-      char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug.txt", dir); mDbg = fopen(lp, "w");
+      /* beta diagnostics log (off): char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug.txt", dir); mDbg = fopen(lp, "w"); */
     }
 #endif
   }
