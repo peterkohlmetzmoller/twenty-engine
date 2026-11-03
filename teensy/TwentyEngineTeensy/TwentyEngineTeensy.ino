@@ -2,21 +2,29 @@
 // Copyright (C) Peter Kohlmetz Moller. GPL v3 (see LICENSE in the repository).
 //
 // The same engine as the Ksoloti patch and the plugin (engine_gen.h, generated from the .axp),
-// in the plugin's HQ form: oversampled arp filter and triangle correction on.
+// in the HQ form: oversampled oscillators and arp filter, triangle correction, analog drift.
 //
 //  - MS-20 iC on the USB host port: keys, knobs, switches, patch cables, LED feedback
-//  - audio out: the audio board's headphone and line out, 48 kHz
+//  - audio out: the audio board's headphone and line out, 48 kHz, dithered to 16 bit
 //  - audio in: line in (left) -> the engine's external input (EXT SIGNAL)
-//  - patch memory on the keys: MS20MEM.BIN on the SD card in the Teensy's own slot
+//  - patch memory on the keys: saved in the Teensy's own flash (no SD card needed);
+//    an SD card in the Teensy's slot, if present, gets a backup copy (MS20MEM.BIN)
 //  - USB device (Tools > USB Type > "Serial + MIDI"): shows up as "Twenty Engine";
 //    everything from the iC is passed through (memory keys as CC 102/103, silent in a DAW),
 //    notes/CC from the computer play the engine, SysEx from the computer goes to the iC
 //
 // Serial Monitor prints the engine's CPU load every 2 seconds.
 
+// ================= SETTINGS =================
+#define MS20_OSF 2          // oscillators: 2 = 96 kHz oversampling (cleaner high notes), 1 = as on the Ksoloti (less CPU)
+static const float DRIFT = 0.5f;   // analog drift 0.0 .. 1.0: 0 = as on the Ksoloti, 1 = loose vintage poly
+static const float HEADPHONE_VOLUME = 0.8f;   // 0.0 .. 1.0
+// ============================================
+
 #include <Audio.h>
 #include <USBHost_t36.h>
 #include <SD.h>
+#include <LittleFS.h>
 #include <utility/imxrt_hw.h>
 #include "engine_gen.h"
 
@@ -28,6 +36,10 @@ static const int SAMPLE_RATE = 48000;          // the engine runs at 48 kHz, lik
 USBHost myusb;
 USBHub hub1(myusb);
 MIDIDevice_BigBuffer ic(myusb);
+
+// ---------------- memory storage ----------------
+LittleFS_Program flashFS;                       // 256 KB at the top of the Teensy's 8 MB program flash
+bool flashOK = false, sdOK = false;
 
 // ---------------- the engine ----------------
 EngineCore *core = nullptr;                     // 274 KB, allocated in RAM2 (the BBD delay line is most of it)
@@ -78,9 +90,8 @@ public:
       for (int i = 0; i < BUFSIZE; i++) core->audioInL[i] = in ? ((int32_t)in->data[b + i]) << 12 : 0;
       core->process();
       for (int i = 0; i < BUFSIZE; i++) {
-        int32_t L = core->audioOutL[i] >> 12, R = core->audioOutR[i] >> 12;   // frac32 (1<<27 = full scale) -> 16 bit
-        l->data[b + i] = (int16_t)(L > 32767 ? 32767 : (L < -32768 ? -32768 : L));
-        r->data[b + i] = (int16_t)(R > 32767 ? 32767 : (R < -32768 ? -32768 : R));
+        l->data[b + i] = to16(core->audioOutL[i]);
+        r->data[b + i] = to16(core->audioOutR[i]);
       }
     }
 
@@ -92,6 +103,14 @@ public:
   }
 private:
   audio_block_t *inputQueueArray[1];
+  uint32_t dith = 22222u;
+  // frac32 (1<<27 = full scale) -> 16 bit with TPDF dither (+-1 LSB triangular): quiet tails fade smoothly
+  inline int16_t to16(int32_t x) {
+    dith = dith * 1664525u + 1013904223u; int32_t r1 = (int32_t)(dith >> 20);   // 0..4095
+    dith = dith * 1664525u + 1013904223u; int32_t r2 = (int32_t)(dith >> 20);
+    int32_t y = (x + r1 + r2 - 2048) >> 12;     // 4096 engine units = 1 LSB; -2048 + 2048 rounding offset keeps it centred
+    return (int16_t)(y > 32767 ? 32767 : (y < -32768 ? -32768 : y));
+  }
 };
 
 AudioInputI2S        lineIn;
@@ -115,6 +134,26 @@ void setI2SFreq(int freq) {
              | CCM_CS1CDR_SAI1_CLK_PODF(n2 - 1);
 }
 
+// ---------------- patch memory: flash first, SD card as backup ----------------
+bool loadMemories() {
+  if (flashOK) { g_fs = &flashFS; if (core->o_Patch_Memory.loadFile()) return true; }
+  if (sdOK) {                                    // nothing in flash yet: take the SD card's file (e.g. from a Ksoloti) and keep it in flash
+    g_fs = &SD;
+    if (core->o_Patch_Memory.loadFile()) {
+      if (flashOK) { g_fs = &flashFS; core->o_Patch_Memory.saveFile(); }
+      return true;
+    }
+  }
+  return false;                                  // factory sounds
+}
+
+bool saveMemories() {
+  bool ok = false;
+  if (flashOK) { g_fs = &flashFS; ok = core->o_Patch_Memory.saveFile(); }
+  if (sdOK) { g_fs = &SD; bool s = core->o_Patch_Memory.saveFile(); if (!flashOK) ok = s; }   // backup copy
+  return ok;
+}
+
 // ---------------- MIDI thru ----------------
 bool memArmed = false;                           // momentary switch held = keys pick memory slots
 
@@ -132,27 +171,33 @@ void fromIC(uint8_t type, uint8_t ch, uint8_t d1, uint8_t d2) {
 // ---------------- setup / loop ----------------
 void setup() {
   Serial.begin(115200);
-  AudioMemory(16);
+  AudioMemory(24);
   setI2SFreq(SAMPLE_RATE);
 
   codec.enable();
   codec.inputSelect(AUDIO_INPUT_LINEIN);
-  codec.volume(0.6);                             // headphone level
+  codec.volume(HEADPHONE_VOLUME);
+  codec.lineOutLevel(13);                        // line out at maximum: 3.16 V p-p (default 29 = 1.29 V p-p)
+  codec.lineInLevel(5);                          // line in sensitivity: 1.33 V p-p (default)
 
+  g_drift = DRIFT;
   core = new EngineCore();
   core->init();
   g_sysexSender = onSysex;
   g_sysexUser = nullptr;
 
-  g_sdOK = SD.begin(BUILTIN_SDCARD);
-  bool loaded = core->o_Patch_Memory.loadFile();
+  flashOK = flashFS.begin(256 * 1024);
+  sdOK = SD.begin(BUILTIN_SDCARD);
+  bool loaded = loadMemories();
 
   myusb.begin();
   engineReady = true;
 
   Serial.println("Twenty Engine (Teensy 4.1)");
-  Serial.printf("SD card: %s, memory file: %s\n", g_sdOK ? "found" : "NOT FOUND (memory saves won't work)",
-                loaded ? "loaded" : "not found yet (factory sounds)");
+  Serial.printf("oscillators %d x 48 kHz, drift %.2f, audio block %d samples (%.1f ms)\n",
+                MS20_OSF, DRIFT, AUDIO_BLOCK_SAMPLES, 1000.0f * AUDIO_BLOCK_SAMPLES / SAMPLE_RATE);
+  Serial.printf("memory: flash %s, SD card %s, sounds %s\n", flashOK ? "OK" : "FAILED",
+                sdOK ? "found (backup)" : "none", loaded ? "loaded" : "factory");
 }
 
 void loop() {
@@ -179,11 +224,11 @@ void loop() {
     ledTail = (ledTail + 1) & 63;
   }
 
-  // save to SD after a long press on a memory key
+  // save after a long press on a memory key
   if (core->o_Patch_Memory.savereq) {
     core->o_Patch_Memory.savereq = 0;
-    if (core->o_Patch_Memory.saveFile()) core->o_Patch_Memory.flash(31, 5);   // saved: all LEDs blink 5 times
-    else core->o_Patch_Memory.flash(12, 8);                                     // failed: PEAK+TRIG blink 8 times
+    if (saveMemories()) core->o_Patch_Memory.flash(31, 5);   // saved: all LEDs blink 5 times
+    else core->o_Patch_Memory.flash(12, 8);                   // failed: PEAK+TRIG blink 8 times
   }
 
   // CPU load

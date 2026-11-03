@@ -102,6 +102,41 @@ SIZEOPT = re.compile(r'__attribute__\s*\(\(\s*noinline\s*,\s*optimize\s*\(\s*"Os
 HQ = {
  'MS20_Voices': [
   ('return o;   /* v48b: triangle corner correction off (CPU) */', '/* plugin HQ: triangle corner correction on */'),
+  # HQ: poly oscillators at MS20_OSF x 48 kHz (2 = 96 kHz), back to 48 kHz through the filter's half-band FIR
+  ('float ap_s[12],ph_fb,ph_a,ph_da;bool phwas;',
+   'float ap_s[12],ph_fb,ph_a,ph_da;bool phwas;\n'
+   'static_assert(MS20_OSF==1||MS20_OSF==2,"MS20_OSF: 1 or 2");\n'
+   '/* HQ: half-band decimators for the oversampled oscillators (same FIR as the filter) */\n'
+   'float dr1[28],do1[16],dr2[28],do2[16];int di1,dj1,di2,dj2;\n'
+   'inline float* hbp(float*b,int&ix,int n,float v){ix=(ix==0)?n-1:ix-1;b[ix]=v;b[ix+n]=v;return b+ix;}\n'
+   'inline float hbs(const float*b){return 0.001819877f*(b[0]+b[13])-0.005222563f*(b[1]+b[12])+0.012064004f*(b[2]+b[11])-0.024375518f*(b[3]+b[10])\n'
+   ' +0.046728258f*(b[4]+b[9])-0.095109546f*(b[5]+b[8])+0.314496715f*(b[6]+b[7]);}\n'
+   '/* HQ: analog drift - fixed per-voice character (attack, decay, release, level), scaled by g_drift */\n'
+   'float vrr[NV][4];'),
+  ('ph_fb=ph_a=ph_da=0.f;phwas=false;',
+   'ph_fb=ph_a=ph_da=0.f;phwas=false;\n'
+   'for(int k=0;k<28;k++){dr1[k]=dr2[k]=0.f;}for(int k=0;k<16;k++){do1[k]=do2[k]=0.f;}di1=dj1=di2=dj2=0;\n'
+   '{uint32_t r=97531U;for(int i=0;i<NV;i++)for(int k=0;k<4;k++){r=r*196314165U+907633515U;vrr[i][k]=(int32_t)r*4.6566e-10f;}}'),
+  ('inc1[v]=f1*2.3283e-10f;if(inc1[v]>0.48f)', 'inc1[v]=f1*(2.3283e-10f/MS20_OSF);if(inc1[v]>0.48f)'),
+  ('inc2[v]=f2*2.3283e-10f;if(inc2[v]>0.48f)', 'inc2[v]=f2*(2.3283e-10f/MS20_OSF);if(inc2[v]>0.48f)'),
+  # HQ drift: detune x1..2, slow pitch wander x1..4 (+-0.8 .. +-3.2 cents), envelope times +-15 %, level +-0.8 dB
+  ('(int32_t)(vp[v]+dtn[v]+drf[v])', '(int32_t)(vp[v]+dtn[v]*(1.f+g_drift)+drf[v]*(1.f+3.f*g_drift))'),
+  ('(int32_t)(vp[v]+dtn2[v]+drf[v])', '(int32_t)(vp[v]+dtn2[v]*(1.f+g_drift)+drf[v]*(1.f+3.f*g_drift))'),
+  ('ve[v]+=(1.05f-ve[v])*eac;', 've[v]+=(1.05f-ve[v])*eac*(1.f+0.15f*g_drift*vrr[v][0]);'),
+  ('ve[v]+=(sus-ve[v])*edc;', 've[v]+=(sus-ve[v])*edc*(1.f+0.15f*g_drift*vrr[v][1]);'),
+  ('ve[v]+=(0.f-ve[v])*erc-0.00001f;', 've[v]+=(0.f-ve[v])*erc*(1.f+0.15f*g_drift*vrr[v][2])-0.00001f;'),
+  ('float s1=0.f,s2=0.f;\nfor(int v=0;v<NV;v++){\n vgn[v]+=0.02f*(ve[v]-vgn[v]); // ~1 ms de-click smoother on every voice amplitude\n if(vgn[v]>0.00005f){',
+   'float s1=0.f,s2=0.f;float s1o[2]={0.f,0.f},s2o[2]={0.f,0.f};\nfor(int v=0;v<NV;v++){\n vgn[v]+=0.02f*(ve[v]-vgn[v]); // ~1 ms de-click smoother on every voice amplitude\n'
+   ' float lv=vgn[v]*0.15f*(1.f+0.1f*g_drift*vrr[v][3]);   /* HQ drift: voice level */\n'
+   ' if(vgn[v]>0.00005f)for(int os=0;os<MS20_OSF;os++){   /* HQ: oscillators at MS20_OSF x 48 kHz */'),
+  ('s1+=o*(vgn[v]*0.15f);', 's1o[os]+=o*lv;'),
+  ('s2+=o2*(vgn[v]*0.15f);', 's2o[os]+=o2*lv;'),
+  ('if(phon){                                    // 12 allpass',
+   'if(MS20_OSF==2){   /* HQ: half-band down to 48 kHz */\n'
+   ' s1=hbs(hbp(dr1,di1,14,s1o[0]))+0.5f*do1[dj1+6];hbp(do1,dj1,8,s1o[1]);\n'
+   ' s2=hbs(hbp(dr2,di2,14,s2o[0]))+0.5f*do2[dj2+6];hbp(do2,dj2,8,s2o[1]);\n'
+   '}else{s1=s1o[0];s2=s2o[0];}\n'
+   'if(phon){                                    // 12 allpass'),
  ],
  'Filter_Macro': [
   ('float gha=fha*3.65e-10f;if(gha>0.72f)gha=0.72f;if(gha<0.0004f)gha=0.0004f;   /* arp filter: 48 kHz */',

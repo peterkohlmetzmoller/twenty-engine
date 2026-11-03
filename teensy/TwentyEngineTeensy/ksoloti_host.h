@@ -62,6 +62,12 @@ static inline uint32_t mtof_host(int32_t p) {
 extern MS20_TLS uint32_t g_ks_rng;   // firmware random generator state (reset by EngineCore::init)
 static inline uint32_t GenerateRandomNumber() { g_ks_rng = g_ks_rng * 1664525u + 1013904223u; return g_ks_rng; }
 
+// ---- HQ settings (the generated engine only; the Ksoloti patch itself is unchanged) ----
+#ifndef MS20_OSF
+#define MS20_OSF 2                 // poly oscillators at 2 x 48 kHz (1 = as on the Ksoloti)
+#endif
+inline float g_drift = 0.f;        // analog drift amount 0..1 (0 = as on the Ksoloti)
+
 // Parameter storage (the Ksoloti "PExch" table). The host reads and writes .value.
 struct ParameterExchange_t { int32_t value; int32_t signals; };
 
@@ -85,13 +91,13 @@ enum { FR_OK = 0, FR_DISK_ERR = 1, FR_NO_FILE = 4 };
 enum { FA_READ = 0x01, FA_OPEN_EXISTING = 0x00, FA_WRITE = 0x02, FA_CREATE_ALWAYS = 0x08 };
 inline uint32_t fbuff[256];                       // the firmware's general-purpose SD buffer
 #if defined(TEENSYDUINO)
-// Teensy 4.1: the built-in SD slot; the sketch calls SD.begin(BUILTIN_SDCARD) and sets g_sdOK
-inline bool g_sdOK = false;
+// Teensy 4.1: the sketch points g_fs at a file system (internal flash via LittleFS, or the SD card)
+inline FS *g_fs = nullptr;
 struct FIL { File f; };
 static inline FRESULT f_open(FIL *o, const char *name, int mode) {
-    if (!g_sdOK) return FR_DISK_ERR;
-    if (mode & FA_WRITE) { SD.remove(name); o->f = SD.open(name, FILE_WRITE_BEGIN); }
-    else o->f = SD.open(name, FILE_READ);
+    if (!g_fs) return FR_DISK_ERR;
+    if (mode & FA_WRITE) { g_fs->remove(name); o->f = g_fs->open(name, FILE_WRITE_BEGIN); }
+    else o->f = g_fs->open(name, FILE_READ);
     return o->f ? FR_OK : FR_NO_FILE; }
 static inline FRESULT f_read(FIL *o, void *b, UINT n, UINT *br) { int r = o->f.read(b, n); *br = r > 0 ? (UINT)r : 0; return FR_OK; }
 static inline FRESULT f_write(FIL *o, const void *b, UINT n, UINT *bw) { *bw = (UINT)o->f.write((const uint8_t *)b, n); return FR_OK; }

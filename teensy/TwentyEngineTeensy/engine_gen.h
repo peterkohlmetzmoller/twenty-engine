@@ -132,6 +132,14 @@ inline float gcurve(float x,float m){        // soft / hard glide curves (33 poi
 uint8_t h[16],a[16];int nh,na;float ap;int am,amp,mode;uint32_t acc,ledp,arng;int ai,ao;bool aup,zk;float p2,drf2,drt2;
 // ---- 12-stage phaser (Moogerfooger MF-103 style) on the VCO1 bus: saw + PW ----
 float ap_s[12],ph_fb,ph_a,ph_da;bool phwas;
+static_assert(MS20_OSF==1||MS20_OSF==2,"MS20_OSF: 1 or 2");
+/* HQ: half-band decimators for the oversampled oscillators (same FIR as the filter) */
+float dr1[28],do1[16],dr2[28],do2[16];int di1,dj1,di2,dj2;
+inline float* hbp(float*b,int&ix,int n,float v){ix=(ix==0)?n-1:ix-1;b[ix]=v;b[ix+n]=v;return b+ix;}
+inline float hbs(const float*b){return 0.001819877f*(b[0]+b[13])-0.005222563f*(b[1]+b[12])+0.012064004f*(b[2]+b[11])-0.024375518f*(b[3]+b[10])
+ +0.046728258f*(b[4]+b[9])-0.095109546f*(b[5]+b[8])+0.314496715f*(b[6]+b[7]);}
+/* HQ: analog drift - fixed per-voice character (attack, decay, release, level), scaled by g_drift */
+float vrr[NV][4];
 inline float ftan(float x){float x2=x*x;return x*(945.f-105.f*x2+x2*x2)/(945.f-420.f*x2+15.f*x2*x2);} // tan() without libm, <0.01 cent error up to 0.42*fs
 inline float softc(float x){if(x>1.5f)return 1.f;if(x<-1.5f)return -1.f;return x-0.148148f*x*x*x;}   // soft clip in the resonance loop (analog-style, no division) (fold gain max 4.5)
 inline float pblp(float t,float dt,float rdt){if((t-dt)*((1.f-dt)-t)>0.f)return 0.f; /* one compare for the common case (identical result) */ if(t<dt){t*=rdt;return t+t-t*t-1.f;}else if(t>1.f-dt){t=(t-1.f)*rdt;return t*t+t+t+1.f;}return 0.f;}
@@ -239,6 +247,8 @@ void initOs(){
 
 marm=0;v2s=0.f;v2i=0;hpinf=false;
 acnt=0;rng=1357911U;pk=0.f;ln=0.f;hp=0;cc_pw=0.f;pws=0.f;btn_dub=0;btn_phys=0;rp=0;holdt=0;mw=mws=vph=0.f;for(int k=0;k<12;k++)ap_s[k]=0.f;ph_fb=ph_a=ph_da=0.f;phwas=false;
+for(int k=0;k<28;k++){dr1[k]=dr2[k]=0.f;}for(int k=0;k<16;k++){do1[k]=do2[k]=0.f;}di1=dj1=di2=dj2=0;
+{uint32_t r=97531U;for(int i=0;i<NV;i++)for(int k=0;k<4;k++){r=r*196314165U+907633515U;vrr[i][k]=(int32_t)r*4.6566e-10f;}}
 for(int i=0;i<NV;i++){ph1[i]=i*0.125f;ph2[i]=0.31f+i*0.0625f;inc1[i]=inc2[i]=0.009f;rin1[i]=rin2[i]=1.f/0.009f;ve[i]=vgn[i]=vp[i]=0.f;vn[i]=60;vg[i]=vk[i]=vd[i]=vs[i]=0;va[i]=vh[i]=0;}
 drng=24681357U;for(int i=0;i<NV;i++){drng=drng*196314165U+907633515U;dtn[i]=(int32_t)drng*2.93e-5f;drng=drng*196314165U+907633515U;dtn2[i]=(int32_t)drng*2.93e-5f;drf[i]=drt[i]=0.f;} // static detune +/-3 cents per VCO (2^21 = 1 semitone)
 for(int i=0;i<NV;i++){sc[i]=0;vt[i]=vlt[i]=0;tg[i]=gs[i]=ginc[i]=gmix[i]=0.f;gpos[i]=1.f;gon[i]=false;}kclk=0;porta=0.f;
@@ -348,9 +358,9 @@ for(int v=0;v<NV;v++){
  if(vg[v])ag=1;                                     // velocity no longer triggers the dub splash
  if(am==0){
   // MS-20 EG2 per voice: Attack -> Decay to Sustain; after key release Hold keeps it at Sustain, then Release
-  if(vs[v]==1){if(!vg[v]&&vh[v]==0&&!hinf)vs[v]=3;else{if(!vg[v]&&!hinf&&vh[v]>0)vh[v]--;ve[v]+=(1.05f-ve[v])*eac;if(ve[v]>=1.f){ve[v]=1.f;vs[v]=2;}}} /* key up during the attack: Hold, then Release from where it is */
-  else if(vs[v]==2){if(!vg[v]&&!hinf){if(vh[v]>0)vh[v]--;else vs[v]=3;}ve[v]+=(sus-ve[v])*edc;}
-  else if(vs[v]==3){ve[v]+=(0.f-ve[v])*erc-0.00001f;if(ve[v]<=0.f){ve[v]=0.f;vs[v]=0;}}
+  if(vs[v]==1){if(!vg[v]&&vh[v]==0&&!hinf)vs[v]=3;else{if(!vg[v]&&!hinf&&vh[v]>0)vh[v]--;ve[v]+=(1.05f-ve[v])*eac*(1.f+0.15f*g_drift*vrr[v][0]);if(ve[v]>=1.f){ve[v]=1.f;vs[v]=2;}}} /* key up during the attack: Hold, then Release from where it is */
+  else if(vs[v]==2){if(!vg[v]&&!hinf){if(vh[v]>0)vh[v]--;else vs[v]=3;}ve[v]+=(sus-ve[v])*edc*(1.f+0.15f*g_drift*vrr[v][1]);}
+  else if(vs[v]==3){ve[v]+=(0.f-ve[v])*erc*(1.f+0.15f*g_drift*vrr[v][2])-0.00001f;if(ve[v]<=0.f){ve[v]=0.f;vs[v]=0;}}
  }else{
   ve[v]=vg[v]?1.f:0.f; // organ gate: on/off, the srate smoother only removes the click
  }
@@ -358,11 +368,11 @@ for(int v=0;v<NV;v++){
   act++;
   if(gon[v]){gpos[v]+=ginc[v];if(gpos[v]>=1.f){gpos[v]=1.f;gon[v]=false;}vp[v]=gs[v]+(tg[v]-gs[v])*gcurve(gpos[v],gmix[v]);} // polyglide
   else vp[v]=tg[v];
-  int32_t q1=__SSAT((int32_t)(vp[v]+dtn[v]+drf[v])+oct1+inlet_pmodpoly+vib,28);
-  uint32_t f1;MTOFEXTENDED(q1,f1);inc1[v]=f1*2.3283e-10f;if(inc1[v]>0.48f)inc1[v]=0.48f;rin1[v]=1.f/inc1[v];
+  int32_t q1=__SSAT((int32_t)(vp[v]+dtn[v]*(1.f+g_drift)+drf[v]*(1.f+3.f*g_drift))+oct1+inlet_pmodpoly+vib,28);
+  uint32_t f1;MTOFEXTENDED(q1,f1);inc1[v]=f1*(2.3283e-10f/MS20_OSF);if(inc1[v]>0.48f)inc1[v]=0.48f;rin1[v]=1.f/inc1[v];
   if(am==0){
-   int32_t q2=__SSAT((int32_t)(vp[v]+dtn2[v]+drf[v])+oct2+inlet_pmodpoly+vib+v2cv,28);
-   uint32_t f2;MTOFEXTENDED(q2,f2);inc2[v]=f2*2.3283e-10f;if(inc2[v]>0.48f)inc2[v]=0.48f;rin2[v]=1.f/inc2[v];
+   int32_t q2=__SSAT((int32_t)(vp[v]+dtn2[v]*(1.f+g_drift)+drf[v]*(1.f+3.f*g_drift))+oct2+inlet_pmodpoly+vib+v2cv,28);
+   uint32_t f2;MTOFEXTENDED(q2,f2);inc2[v]=f2*(2.3283e-10f/MS20_OSF);if(inc2[v]>0.48f)inc2[v]=0.48f;rin2[v]=1.f/inc2[v];
   }
  }
 }
@@ -375,27 +385,32 @@ outlet_kbdcv=(int32_t)ln;outlet_wheel=(int32_t)(mws*134217728.f);outlet_button=b
 
 float ns=0.f;
 if(w1==3){rng=rng*196314165U+907633515U;float w_n=(int32_t)rng*4.6566e-10f;pk=0.96f*pk+0.04f*w_n;ns=w_n*0.45f+pws*(pk*1.5f-w_n*0.45f);} // noise only when VCO1 is on noise
-float s1=0.f,s2=0.f;
+float s1=0.f,s2=0.f;float s1o[2]={0.f,0.f},s2o[2]={0.f,0.f};
 for(int v=0;v<NV;v++){
  vgn[v]+=0.02f*(ve[v]-vgn[v]); // ~1 ms de-click smoother on every voice amplitude
- if(vgn[v]>0.00005f){
+ float lv=vgn[v]*0.15f*(1.f+0.1f*g_drift*vrr[v][3]);   /* HQ drift: voice level */
+ if(vgn[v]>0.00005f)for(int os=0;os<MS20_OSF;os++){   /* HQ: oscillators at MS20_OSF x 48 kHz */
   float q=ph1[v]+inc1[v];if(q>=1.f)q-=1.f;ph1[v]=q;float dt=inc1[v];float rdt=rin1[v];float o=0.f;
   if(w1==0){float sw=bh(q);float tw=tri_bl(q,dt,rdt);o=sw+pws*(tw-sw);}
   else if(w1==1){o=(2.f*q-1.f)-pblp(q,dt,rdt);
    }
   else if(w1==2){if(dty>0.001f){float r=(q<dty)?1.f:-1.f;r+=pblp(q,dt,rdt);float psq=q-dty;if(psq<0.f)psq+=1.f;r-=pblp(psq,dt,rdt);o=(r-(2.f*dty-1.f))*0.85f;}}
   else{o=ns;}
-  s1+=o*(vgn[v]*0.15f);
+  s1o[os]+=o*lv;
   if(am==0){
    float r=ph2[v]+inc2[v];if(r>=1.f)r-=1.f;ph2[v]=r;float d2=inc2[v];float rd2=rin2[v];float o2;
    if(w2==0)o2=tri_bl(r,d2,rd2);
    else if(w2==1)o2=(2.f*r-1.f)-pblp(r,d2,rd2);
    else if(w2==2){o2=(r<0.5f)?1.f:-1.f;o2+=pblp(r,d2,rd2);float rs=r-0.5f;if(rs<0.f)rs+=1.f;o2-=pblp(rs,d2,rd2);}
    else{o2=o*sq_bl(r,d2,rd2);} // ring mod per voice: VCO1 x VCO2 square
-   s2+=o2*(vgn[v]*0.15f);
+   s2o[os]+=o2*lv;
   }
  }
 }
+if(MS20_OSF==2){   /* HQ: half-band down to 48 kHz */
+ s1=hbs(hbp(dr1,di1,14,s1o[0]))+0.5f*do1[dj1+6];hbp(do1,dj1,8,s1o[1]);
+ s2=hbs(hbp(dr2,di2,14,s2o[0]))+0.5f*do2[dj2+6];hbp(do2,dj2,8,s2o[1]);
+}else{s1=s1o[0];s2=s2o[0];}
 if(phon){                                    // 12 allpass stages + resonance on the summed VCO1 voices
  ph_a+=ph_da;float a=ph_a;float y=s1+phres*softc(ph_fb);
  for(int k=0;k<12;k++){float o=a*y+ap_s[k];ap_s[k]=y-a*o;y=o;}
