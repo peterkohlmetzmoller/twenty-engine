@@ -11,6 +11,12 @@
 #endif
 #include <stdio.h>
 #include <new>
+#if defined(TEENSYDUINO)
+#include <SD.h>
+#define MS20_TLS                     /* Teensy: bare metal, one audio thread - no thread-local storage */
+#else
+#define MS20_TLS thread_local
+#endif
 
 namespace ms20 {
 
@@ -25,8 +31,12 @@ typedef int32_t int32buffer[BUFSIZE];
 
 enum midi_device_t { MIDI_DEVICE_DIN = 0, MIDI_DEVICE_USB_DEVICE, MIDI_DEVICE_USB_HOST, MIDI_DEVICE_INTERNAL };
 
+#if defined(__SSAT) && defined(__USAT)
+// Teensy (CMSIS, like the Ksoloti): __SSAT/__USAT are the ARM saturate instructions; the bit count must be a constant
+#else
 static inline int32_t __SSAT(int32_t x, int b) { int32_t m = (1 << (b - 1)); if (x > m - 1) return m - 1; if (x < -m) return -m; return x; }
 static inline int32_t __USAT(int32_t x, int b) { int32_t m = (1 << b) - 1; if (x > m) return m; if (x < 0) return 0; return x; }
+#endif
 
 // Ksoloti's mtof for 48 kHz: pitch (2^21 per semitone, 0 = MIDI 64) -> phase increment f/48000 * 2^32.
 // Built from a 260-entry semitone table with linear interpolation, like the firmware's lookup.
@@ -49,7 +59,7 @@ static inline uint32_t mtof_host(int32_t p) {
 }
 #define MTOFEXTENDED(pitch, frequency) frequency = ms20::mtof_host(pitch);
 
-extern thread_local uint32_t g_ks_rng;   // firmware random generator state (reset by EngineCore::init)
+extern MS20_TLS uint32_t g_ks_rng;   // firmware random generator state (reset by EngineCore::init)
 static inline uint32_t GenerateRandomNumber() { g_ks_rng = g_ks_rng * 1664525u + 1013904223u; return g_ks_rng; }
 
 // Parameter storage (the Ksoloti "PExch" table). The host reads and writes .value.
@@ -61,28 +71,42 @@ static inline void PExParameterChange(ParameterExchange_t *p, int32_t v, uint32_
 
 // MIDI out to the controller (LED SysEx). The host installs the sender.
 typedef void (*SysexSender)(const uint8_t *bytes, int len, void *user);
-extern thread_local SysexSender g_sysexSender;
-extern thread_local void *g_sysexUser;
+extern MS20_TLS SysexSender g_sysexSender;
+extern MS20_TLS void *g_sysexUser;
 static inline void MidiSendSysEx(midi_device_t, uint8_t, uint8_t bytes[], uint8_t len) { if (g_sysexSender) g_sysexSender(bytes, len, g_sysexUser); }
 static inline int MidiGetOutputBufferAvailable(midi_device_t) { return 63; }
 static inline void LogTextMessage(const char *, ...) {}
 
 
-// ---- SD card (FatFS) stand-ins: the patch memory file lives in a folder the host chooses ----
-// The patch writes "/MS20MEM.BIN"; on a computer that becomes <memory folder>/MS20MEM.BIN.
+// ---- SD card (FatFS) stand-ins: the patch memory file MS20MEM.BIN ----
 typedef unsigned int UINT;
 typedef int FRESULT;
-struct FIL { FILE *f; };
-enum { FR_OK = 0, FR_NO_FILE = 4 };
+enum { FR_OK = 0, FR_DISK_ERR = 1, FR_NO_FILE = 4 };
 enum { FA_READ = 0x01, FA_OPEN_EXISTING = 0x00, FA_WRITE = 0x02, FA_CREATE_ALWAYS = 0x08 };
-inline char g_memDir[1024] = "";                  // set by the host (main thread) before loading
 inline uint32_t fbuff[256];                       // the firmware's general-purpose SD buffer
+#if defined(TEENSYDUINO)
+// Teensy 4.1: the built-in SD slot; the sketch calls SD.begin(BUILTIN_SDCARD) and sets g_sdOK
+inline bool g_sdOK = false;
+struct FIL { File f; };
+static inline FRESULT f_open(FIL *o, const char *name, int mode) {
+    if (!g_sdOK) return FR_DISK_ERR;
+    if (mode & FA_WRITE) { SD.remove(name); o->f = SD.open(name, FILE_WRITE_BEGIN); }
+    else o->f = SD.open(name, FILE_READ);
+    return o->f ? FR_OK : FR_NO_FILE; }
+static inline FRESULT f_read(FIL *o, void *b, UINT n, UINT *br) { int r = o->f.read(b, n); *br = r > 0 ? (UINT)r : 0; return FR_OK; }
+static inline FRESULT f_write(FIL *o, const void *b, UINT n, UINT *bw) { *bw = (UINT)o->f.write((const uint8_t *)b, n); return FR_OK; }
+static inline FRESULT f_close(FIL *o) { o->f.close(); return FR_OK; }
+#else
+// computer: the patch writes "/MS20MEM.BIN"; that becomes <memory folder>/MS20MEM.BIN
+struct FIL { FILE *f; };
+inline char g_memDir[1024] = "";                  // set by the host (main thread) before loading
 static inline FRESULT f_open(FIL *o, const char *name, int mode) {
     char path[1200]; snprintf(path, sizeof(path), "%s%s", g_memDir, (name[0] == '/') ? name + 1 : name);
     o->f = fopen(path, (mode & FA_WRITE) ? "wb" : "rb"); return o->f ? FR_OK : FR_NO_FILE; }
 static inline FRESULT f_read(FIL *o, void *b, UINT n, UINT *br) { *br = (UINT)fread(b, 1, n, o->f); return FR_OK; }
 static inline FRESULT f_write(FIL *o, const void *b, UINT n, UINT *bw) { *bw = (UINT)fwrite(b, 1, n, o->f); return FR_OK; }
 static inline FRESULT f_close(FIL *o) { if (o->f) fclose(o->f); o->f = nullptr; return FR_OK; }
+#endif
 
 // ---- ChibiOS thread stand-ins: the plugin has no background thread in the engine.
 // The host loads the memory file once and saves it from its own main thread when the patch asks (savereq).
