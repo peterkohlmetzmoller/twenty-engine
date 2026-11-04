@@ -5,7 +5,7 @@
     <license file="license.txt" mime-type="text/plain"/>
     <options customize="allow" require-scripts="false" hostArchitectures="x86_64,arm64"/>
     <domains enable_localSystem="true"/>
-    <volume-check><allowed-os-versions><os-version min="11.0"/></allowed-os-versions></volume-check>
+    <volume-check><allowed-os-versions><os-version min="10.13"/></allowed-os-versions></volume-check>
     <choices-outline>
         <line choice="au"/>
         <line choice="vst3"/>

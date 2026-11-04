@@ -53,7 +53,7 @@ jobs:
           clang++ -std=c++17 -O2 -w -o mem_test mem_test.cpp && ./mem_test
 
       - name: Configure
-        run: cmake -S . -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DIPLUG_DEPLOY_PLUGINS=OFF
+        run: cmake -S . -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DIPLUG_DEPLOY_PLUGINS=OFF
 
       - name: Build AU + VST3
         run: |
@@ -77,6 +77,12 @@ jobs:
           sleep 2
           auval -v aumu Tw20 Pkmo
           mkdir -p out && cp -R "$COMP" "$VST3" out/
+          # the oldest macOS each binary runs on (must be 10.13 for Catalina / High Sierra users)
+          for B in "$COMP/Contents/MacOS/"* "$VST3/Contents/MacOS/"*; do
+            for A in x86_64 arm64; do echo "$(basename "$B") $A: $(vtool -arch $A -show-build "$B" 2>/dev/null | awk '/minos/{print $2}')"; done
+          done
+          MINOS=$(vtool -arch x86_64 -show-build "$COMP/Contents/MacOS/"* | awk '/minos/{print $2}')
+          [ "$MINOS" = "10.13" ] || { echo "::error::Intel AU minimum macOS is $MINOS, expected 10.13"; exit 1; }
 
       - name: Package
         run: cd out && ditto -c -k --keepParent TwentyEngine.component ../TwentyEngine-AU.zip && ditto -c -k --keepParent TwentyEngine.vst3 ../TwentyEngine-VST3-Mac.zip
