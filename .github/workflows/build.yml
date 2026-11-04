@@ -79,9 +79,10 @@ jobs:
           mkdir -p out && cp -R "$COMP" "$VST3" out/
           # the oldest macOS each binary runs on (must be 10.13 for Catalina / High Sierra users)
           for B in "$COMP/Contents/MacOS/"* "$VST3/Contents/MacOS/"*; do
-            for A in x86_64 arm64; do echo "$(basename "$B") $A: $(vtool -arch $A -show-build "$B" 2>/dev/null | awk '/minos/{print $2}')"; done
+            for A in x86_64 arm64; do echo "$(basename "$B") $A: $(vtool -arch $A -show-build "$B" 2>/dev/null | awk '/^ *(minos|version) /{print $2; exit}')"; done
           done
-          MINOS=$(vtool -arch x86_64 -show-build "$COMP/Contents/MacOS/"* | awk '/minos/{print $2}')
+          # below 10.14 the minimum sits in LC_VERSION_MIN_MACOSX ("version"), from 10.14 in LC_BUILD_VERSION ("minos")
+          MINOS=$(vtool -arch x86_64 -show-build "$COMP/Contents/MacOS/"* | awk '/^ *(minos|version) /{print $2; exit}')
           [ "$MINOS" = "10.13" ] || { echo "::error::Intel AU minimum macOS is $MINOS, expected 10.13"; exit 1; }
 
       - name: Package
