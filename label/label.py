@@ -16,14 +16,14 @@ STYLE = os.environ.get('STYLE', 'boxed')   # 'boxed' = arp items in white boxes,
 BG = HexColor('#121212'); INK = HexColor(os.environ.get('INK', '#ecebe6')); ARPC = HexColor(os.environ.get('ARPC', os.environ.get('INK', '#ecebe6'))); GREY = HexColor('#9a9a9a'); RULE = HexColor('#4a4a4a')
 
 MEAS = dict(            # mm
-  width=130.0, height=32.0,          # sticker size (Pete): 30 mm + 2 mm extra black at the top
+  width=130.0, height=33.5,          # sticker size (Pete): 30 mm + 2 mm extra black at the top
   span=104.0,                        # first to last knob centre (Pete)
   hole=7.5,                          # PLACEHOLDER: hole for the pot bushing / nut
   skirt=20.0,                        # knob skirt diameter (Pete)
-  row_y=12.3,                        # knob centres from the bottom edge (both name rows are above the knobs now)
+  row_y=15.0,                        # knob centres from the bottom edge (both name rows are above the knobs now)
 )
 DRAFT = True
-NAME_PT = 8.4                       # cap height ~2.2 mm, like the MS-20 panel lettering
+NAME_PT = 7.8                       # cap height ~2.2 mm, like the MS-20 panel lettering
 
 def boxed(c, x, y, t, font, size, padx=1.0, pady=0.75):
     if STYLE == 'italic':                      # arp items: italic, same colour as everything else
@@ -56,9 +56,9 @@ def label(c, ox, oy):
     x0 = ox + (W - m['span'] * mm) / 2
     # knob order as on Pete's iC: PLAY MODE first (left) ... SEND last (right)
     xs = [x0 + i * m['span'] * mm / 4 for i in range(5)]
-    ydly = cy + R + 3.4 * mm          # delay names (upright), just above the tick marks
-    ytop = ydly + 3.4 * mm            # arp names (italic), above them
-    ybot = oy + 1.3 * mm              # POLY / LATCH at the arc ends
+    ydly = cy + R + 2.6 * mm          # delay names (upright), just above the tick marks
+    ytop = ydly + 3.0 * mm            # arp names (italic), above them
+    ybot = oy + 2.4 * mm              # POLY / LATCH at the arc ends
     arp = [None, 'RATE', 'OCTAVES', 'ORDER', 'DELAY AMOUNT']
     dly = [None, 'TIME', 'FEEDBACK', 'WOW / FLUTTER', 'DELAY AMOUNT']
     for i, x in enumerate(xs):

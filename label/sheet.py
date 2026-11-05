@@ -18,12 +18,15 @@ c.drawString(20 * mm, 266.5 * mm, 'Cut at the corner marks. ESP label: punch or 
 # ESP label, 130 x 32 mm
 ox, oy = 40 * mm, 215 * mm
 W, H = esp.label(c, ox, oy); esp.crop_marks(c, ox, oy, W, H)
-c.setFillColor(G); c.setFont('Cond', 8); c.drawString(ox, oy - 8 * mm, 'ESP knobs - 130 x 32 mm (hole 7.5 mm: placeholder until measured)')
+c.setFillColor(G); c.setFont('Cond', 8); c.drawString(ox, oy - 8 * mm, 'ESP knobs - 130 x 33.5 mm, test 2 (hole 7.5 mm: placeholder until measured)')
 
-# PW legend, 45 x 12 mm
+# PW legend, scaled to 75 % (34 x 9 mm) after the first test print
+PW_SCALE = 0.75
 ox, oy = 40 * mm, 175 * mm
-pw.sticker(c, ox, oy); pw.crop(c, ox, oy)
-c.setFillColor(G); c.setFont('Cond', 8); c.drawString(ox, oy - 8 * mm, 'PW knob - 45 x 12 mm')
+c.saveState(); c.translate(ox, oy); c.scale(PW_SCALE, PW_SCALE); pw.sticker(c, 0, 0); c.restoreState()
+pw_W, pw_H = pw.W * PW_SCALE, pw.H * PW_SCALE
+esp.crop_marks(c, ox, oy, pw_W, pw_H)
+c.setFillColor(G); c.setFont('Cond', 8); c.drawString(ox, oy - 8 * mm, 'PW knob - %.0f x %.0f mm' % (pw_W / mm, pw_H / mm))
 
 # 50 mm check bar
 c.setStrokeColor(K); c.setLineWidth(0.6); y = 145 * mm
