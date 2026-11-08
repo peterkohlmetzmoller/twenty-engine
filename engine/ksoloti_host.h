@@ -14,6 +14,8 @@
 #if defined(TEENSYDUINO)
 #include <SD.h>
 #define MS20_TLS                     /* Teensy: bare metal, one audio thread - no thread-local storage */
+#elif defined(MS20_RAMFILE)
+#define MS20_TLS                     /* Daisy: bare metal, one audio thread - no thread-local storage */
 #else
 #define MS20_TLS thread_local
 #endif
@@ -88,7 +90,9 @@ static inline void LogTextMessage(const char *, ...) {}
 typedef unsigned int UINT;
 typedef int FRESULT;
 enum { FR_OK = 0, FR_DISK_ERR = 1, FR_NO_FILE = 4 };
+#ifndef FA_READ   /* FatFs (e.g. in libDaisy) already defines these as macros, with the same values */
 enum { FA_READ = 0x01, FA_OPEN_EXISTING = 0x00, FA_WRITE = 0x02, FA_CREATE_ALWAYS = 0x08 };
+#endif
 inline uint32_t fbuff[256];                       // the firmware's general-purpose SD buffer
 #if defined(TEENSYDUINO)
 // Teensy 4.1: the sketch points g_fs at a file system (internal flash via LittleFS, or the SD card)
@@ -102,6 +106,24 @@ static inline FRESULT f_open(FIL *o, const char *name, int mode) {
 static inline FRESULT f_read(FIL *o, void *b, UINT n, UINT *br) { int r = o->f.read(b, n); *br = r > 0 ? (UINT)r : 0; return FR_OK; }
 static inline FRESULT f_write(FIL *o, const void *b, UINT n, UINT *bw) { *bw = (UINT)o->f.write((const uint8_t *)b, n); return FR_OK; }
 static inline FRESULT f_close(FIL *o) { o->f.close(); return FR_OK; }
+#elif defined(MS20_RAMFILE)
+// Daisy: the memory file lives in RAM; the firmware loads it from / saves it to the QSPI flash
+// (g_ramFileDirty = a save finished and should be written to flash)
+inline uint8_t g_ramFile[8192];
+inline uint32_t g_ramFileLen = 0;
+inline volatile bool g_ramFileDirty = false;
+struct FIL { uint32_t pos; bool wr; };
+static inline FRESULT f_open(FIL *o, const char *, int mode) {
+    o->pos = 0; o->wr = (mode & FA_WRITE) != 0;
+    if (o->wr) { g_ramFileLen = 0; return FR_OK; }
+    return g_ramFileLen ? FR_OK : FR_NO_FILE; }
+static inline FRESULT f_read(FIL *o, void *b, UINT n, UINT *br) {
+    UINT k = (o->pos + n <= g_ramFileLen) ? n : (g_ramFileLen > o->pos ? g_ramFileLen - o->pos : 0);
+    memcpy(b, g_ramFile + o->pos, k); o->pos += k; *br = k; return FR_OK; }
+static inline FRESULT f_write(FIL *o, const void *b, UINT n, UINT *bw) {
+    UINT k = (o->pos + n <= sizeof(g_ramFile)) ? n : (UINT)(sizeof(g_ramFile) - o->pos);
+    memcpy(g_ramFile + o->pos, b, k); o->pos += k; g_ramFileLen = o->pos; *bw = k; return FR_OK; }
+static inline FRESULT f_close(FIL *o) { if (o->wr) g_ramFileDirty = true; return FR_OK; }
 #else
 // computer: the patch writes "/MS20MEM.BIN"; that becomes <memory folder>/MS20MEM.BIN
 struct FIL { FILE *f; };
