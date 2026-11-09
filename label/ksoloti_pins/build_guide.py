@@ -47,8 +47,10 @@ def pinlist(x, y, rows):
 def recipe(title, sub, steps, boxes):
     header()
     c.setFillColor(INK); c.setFont('Cond', 22); c.drawString(18 * mm, H - 30 * mm, title)
-    c.setFont('Cond', 10.5); c.setFillColor(GREY); c.drawString(18 * mm, H - 37 * mm, sub)
-    y = H - 52 * mm; tx = 34 * mm; tw = W - 18 * mm - tx
+    c.setFont('Cond', 10.5); c.setFillColor(GREY)
+    sl = wrap(sub, 'Cond', 10.5, W - 36 * mm)
+    for k, l in enumerate(sl): c.drawString(18 * mm, H - 37 * mm - k * 5 * mm, l)
+    y = H - 52 * mm - (len(sl) - 1) * 5 * mm; tx = 34 * mm; tw = W - 18 * mm - tx
     for i, (stitle, sbody, extra) in enumerate(steps):
         c.setFillColor(OR); c.circle(23 * mm, y + 1.4 * mm, 4.2 * mm, stroke=0, fill=1)
         c.setFillColor(HexColor('#ffffff')); c.setFont('CondB', 11); c.drawCentredString(23 * mm, y - 0.4 * mm, str(i + 1))
@@ -178,6 +180,26 @@ y = section(y, 'Ksoloti Core · USB-C to PH2.0', '"USB-C to PH2.0 4P cable"  · 
 y = section(y, 'Teensy 4.1 · micro-USB to PH2.0', '"Micro USB to PH2.0 4P cable"  ·  "Micro USB 4 pin PH2.0 cable"', ['ali_micro_angled.png', 'ali_micro_straight.png'])
 c.setFillColor(GREY); c.setFont('Cond', 7.5); c.drawString(18 * mm, 10 * mm, 'Product photos: AliExpress listings.')
 c.showPage()
+
+# ================= software install =================
+guide = 'Software · Ksoloti'
+recipe('Software · Ksoloti Core', 'What you need: a computer, a FAT32 micro-SD card in the Ksoloti, and the Twenty Engine patch (.axp file).', [
+    ('Install the Ksoloti Patcher', 'Download Ksoloti Patcher 1.1.0 or newer from github.com/ksoloti/ksoloti/releases (pick the file for your computer) and install it. Version 1.1.0 is listed as a pre-release.', None),
+    ('Connect', 'Put a micro-SD card (FAT32) in the Ksoloti. Connect the computer to the MS-20ic\'s USB socket and start the Patcher. It should say "connected".', None),
+    ('Update the firmware', 'In the Patcher: Board > Firmware > Flash. If the board is not found, hold button S1 while you connect the USB cable, then choose Board > Firmware > Flash (Rescue).', None),
+    ('Open the patch', 'File > Open, and choose the Twenty Engine .axp file. Click "Live" to try it: the MS-20ic plays.', None),
+    ('Save it as the startup patch', 'In the patch window: File > Upload to SD Card as Startup. From now on the Ksoloti starts Twenty Engine by itself, with or without a computer.', None),
+    ('Done', 'Disconnect, power the MS-20ic from any USB supply and play. Your sounds are saved on the SD card.', None)], {})
+
+guide = 'Software · Teensy'
+recipe('Software · Teensy 4.1', 'What you need: a computer, the Arduino IDE with Teensy support, and the Twenty Engine sketch (TwentyEngineTeensy folder).', [
+    ('Install the Arduino IDE', 'Download Arduino IDE 2 from arduino.cc/en/software and install it.', None),
+    ('Add Teensy support', 'Arduino IDE > Settings (Windows: File > Preferences). Under "Additional boards manager URLs", add: https://www.pjrc.com/teensy/package_teensy_index.json. Then open the Boards Manager, search for "teensy" and install it.', None),
+    ('Set the audio to low latency', 'Open AudioStream.h in a text editor and change "#define AUDIO_BLOCK_SAMPLES 128" to 16. Mac: ~/Library/Arduino15/packages/teensy/hardware/avr/<version>/cores/teensy4/. Windows: %LOCALAPPDATA%\\Arduino15\\packages\\teensy\\hardware\\avr\\<version>\\cores\\teensy4\\.', None),
+    ('Open the sketch', 'Unzip the TwentyEngineTeensy folder and open TwentyEngineTeensy.ino. Keep all the files in the folder together.', None),
+    ('Choose the settings', 'Tools > Board > Teensy 4.1. Tools > USB Type > Serial + MIDI. Tools > CPU Speed > 600 MHz.', None),
+    ('Upload', 'Connect the computer to the MS-20ic\'s USB socket and click Upload. If the Teensy Loader asks for it, press the small button on the Teensy once.', None),
+    ('Done', 'The MS-20ic plays, and the computer shows "Twenty Engine" as a MIDI device. Sounds are saved in the Teensy\'s own memory; no SD card needed.', None)], {})
 
 # ================= FAQ =================
 guide = 'FAQ'
