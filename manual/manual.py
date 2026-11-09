@@ -316,7 +316,7 @@ rows = [
      '<b>Pulse</b>: square wave; PULSE WIDTH narrows it (PWM).<br/><b>Noise</b>: per-voice noise, pitched by the filter.'],
     [num(2), 'PULSE WIDTH', '14', 'Shape control for VCO 1, see above. Fully left = pure sine, pure saw or 50% square.'],
     [num(3), 'VCO 1 SCALE', '15', "32', 16', 8', 4'. VCO 1 reaches one octave lower than VCO 2."],
-    [num(4), 'PORTAMENTO', '5', '<b>Poly</b>: Multibend glide. Play legato within two semitones and the held note bends to the new pitch, like a pedal-steel string; '
+    [num(4), 'PORTAMENTO', '5', '<b>Poly</b>: glide by my custom-made <i>Multibend Like A Pedal Steel Guitar</i> algorithm. Play legato within two semitones and the held note bends to the new pitch, like a pedal-steel string; '
      'soft key = slow bend (up to 2.5 s at full), hard key = fast. Fully left = off.<br/><b>Mono</b>: classic portamento; at half way a glide takes about 0.9 s.'],
     [num(5), 'VCO 2 WAVEFORM', '82', 'Four shapes. <b>Note:</b> the engine order is triangle, sawtooth, square, ring modulator, so the first three positions are one step off the panel symbols (see the box below).'],
     [num(6), 'PITCH', '19', 'Detunes VCO 2 smoothly by up to 5 semitones down or up. The middle of the knob is a small in-tune zone, and just outside it the detune is very fine (a few cents) for slow analog beating. The ends are exactly −5 and +5 semitones.'],
@@ -433,7 +433,7 @@ right = stack(
       'Pull the cable to get patch memory back.'),
     p('<b>Hard keys.</b> A note played at velocity 125–127 selects the second ESP layer while that note sounds.'),
     p('<b>Mod wheel</b> (CC1): vibrato on all voices, 4.6 Hz, up to ±50 cents. The wheel is also available as a patch-panel source (WHEEL jack).'),
-    p('<b>Keyboard.</b> Eight-voice polyphony in poly mode. Velocity sets the Multibend glide speed (section 3). In mono mode: lowest note wins, single trigger, classic portamento.'),
+    p('<b>Keyboard.</b> Eight-voice polyphony in poly mode. Velocity sets the glide speed of the <i>Multibend Like A Pedal Steel Guitar</i> algorithm (section 3). In mono mode: lowest note wins, single trigger, classic portamento.'),
     Note('Knob feel', 'When you move a knob the engine glides to the new value quickly and lands with a tiny random offset, so a knob never lands in exactly the same place twice. '
          'It is very subtle, but it keeps repeated tweaks alive, like on an analog panel.'))
 story.append(side(left, right, 64 * mm))
