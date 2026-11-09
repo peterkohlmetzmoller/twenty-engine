@@ -16,6 +16,23 @@ COL = {'Red': HexColor('#d8322a'), 'White': HexColor('#ffffff'), 'Green': HexCol
        'Left': HexColor('#2f6fd6'), 'Right': HexColor('#e8b420'), 'Ground': HexColor('#151515')}
 c = canvas.Canvas(sys.argv[1], pagesize=A4)
 c.setTitle('Twenty Engine - Ksoloti Core in the MS-20ic'); c.setAuthor('Peter Kohlmetz Moller')
+
+# Smaller file: every image is resampled to the size it is drawn at (DPI) and stored as JPEG.
+import io, os
+from PIL import Image as _PILImage
+DPI = int(os.environ.get('GUIDE_DPI', '220'))
+_draw = c.drawImage
+def _small(img, x, y, width=None, height=None, **k):
+    if isinstance(img, ImageReader):
+        im = img._image if getattr(img, '_image', None) is not None else _PILImage.open(img.fileName)
+    else:
+        im = _PILImage.open(img)
+    im = im.convert('RGB')
+    tw, th = max(1, int(width / 72 * DPI)), max(1, int(height / 72 * DPI))
+    if im.width > tw * 1.05: im = im.resize((tw, th), _PILImage.LANCZOS)
+    b = io.BytesIO(); im.save(b, 'JPEG', quality=85, optimize=True); b.seek(0)
+    return _draw(ImageReader(b), x, y, width, height, **k)
+c.drawImage = _small
 page = [0]
 guide = 'Ksoloti Core'
 
