@@ -146,6 +146,7 @@ recipe('Teensy 4.1 in the MS-20ic', 'Nine steps. The pin picture on the next pag
      'audio': [('Audio shield LINE OUT → jacks', [('Left', 'L → left tip'), ('Right', 'R → right tip'), ('Ground', 'G → both')])]})
 pins_page('/mnt/user-data/outputs/Teensy_TwentyEngine_pins.png')
 pictures([
+    [('t_wires.jpg', 'Cut and stripped: red, white, green, black'), ('t_host.jpg', 'Main board cable on the USB host pads'), ('t_shield.jpg', 'Audio shield stacked on the Teensy')],
     [('ph_teensy_host.jpg', 'USB host pads on the Teensy 4.1, with wires'), ('ph_shield.jpg', 'LINE OUT L, G, R on the audio shield')],
     [('holes.jpg', 'Two holes above the USB-B jack'), ('jacks.jpg', 'Jacks installed')],
 ])
