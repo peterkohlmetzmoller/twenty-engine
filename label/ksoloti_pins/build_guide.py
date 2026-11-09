@@ -149,4 +149,32 @@ pictures([
     [('ph_teensy_host.jpg', 'USB host pads on the Teensy 4.1, with wires'), ('ph_shield.jpg', 'LINE OUT L, G, R on the audio shield')],
     [('holes.jpg', 'Two holes above the USB-B jack'), ('jacks.jpg', 'Jacks installed')],
 ])
+
+# ================= optional ready-made cables =================
+guide = 'Cables'
+header()
+c.setFillColor(INK); c.setFont('Cond', 22); c.drawString(18 * mm, H - 30 * mm, 'Optional: ready-made USB cables')
+c.setFont('Cond', 10.5); c.setFillColor(GREY)
+c.drawString(18 * mm, H - 37 * mm, 'Plug-in cables with a PH2.0 4-pin connector make the USB connections easier.')
+c.drawString(18 * mm, H - 42.5 * mm, 'Available on AliExpress and similar shops.')
+c.drawString(18 * mm, H - 48 * mm, 'Check that the pin order matches the MS-20ic\'s own cable (5V, D−, D+, GND) before you plug it in.')
+
+def section(y, title, search, imgs):
+    c.setFillColor(INK); c.setFont('CondB', 13); c.drawString(18 * mm, y, title)
+    c.setFillColor(LIGHT); c.roundRect(18 * mm, y - 15 * mm, W - 36 * mm, 11 * mm, 2 * mm, stroke=0, fill=1)
+    c.setFillColor(GREY); c.setFont('Cond', 9); c.drawString(22 * mm, y - 8.2 * mm, 'Search for:')
+    c.setFillColor(INK); c.setFont('CondB', 10); c.drawString(40 * mm, y - 8.2 * mm, search)
+    irs = [ImageReader(f) for f in imgs]
+    asp = [ir.getSize()[0] / ir.getSize()[1] for ir in irs]
+    gap = 4 * mm; full = W - 36 * mm
+    h = min(70 * mm, (full - gap * (len(irs) - 1)) / sum(asp)); x = 18 * mm; top = y - 19 * mm
+    for ir, a_ in zip(irs, asp):
+        w = h * a_; c.drawImage(ir, x, top - h, w, h); x += w + gap
+    return top - h - 12 * mm
+
+y = H - 61 * mm
+y = section(y, 'Ksoloti Core · USB-C to PH2.0', '"USB-C to PH2.0 4P cable"  ·  "Type-C 4 pin PH2.0 cable"', ['ali_usbc.png'])
+y = section(y, 'Teensy 4.1 · micro-USB to PH2.0', '"Micro USB to PH2.0 4P cable"  ·  "Micro USB 4 pin PH2.0 cable"', ['ali_micro_angled.png', 'ali_micro_straight.png'])
+c.setFillColor(GREY); c.setFont('Cond', 7.5); c.drawString(18 * mm, 10 * mm, 'Product photos: AliExpress listings.')
+c.showPage()
 c.save()
