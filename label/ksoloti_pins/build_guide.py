@@ -178,4 +178,73 @@ y = section(y, 'Ksoloti Core · USB-C to PH2.0', '"USB-C to PH2.0 4P cable"  · 
 y = section(y, 'Teensy 4.1 · micro-USB to PH2.0', '"Micro USB to PH2.0 4P cable"  ·  "Micro USB 4 pin PH2.0 cable"', ['ali_micro_angled.png', 'ali_micro_straight.png'])
 c.setFillColor(GREY); c.setFont('Cond', 7.5); c.drawString(18 * mm, 10 * mm, 'Product photos: AliExpress listings.')
 c.showPage()
+
+# ================= FAQ =================
+guide = 'FAQ'
+header()
+c.setFillColor(INK); c.setFont('Cond', 22); c.drawString(18 * mm, H - 30 * mm, 'FAQ')
+faq = [
+    ('I hear hum or noise when I record.',
+     'That is a ground loop: the MS-20ic gets its USB power from the same computer as your audio interface. Power the MS-20ic from a phone charger (or another USB power supply) while you record. A USB isolator between the MS-20ic and the computer also works, and keeps MIDI to the computer.'),
+    ('Does the MS-20ic still work as a controller for my computer?',
+     'Yes. Everything you play is passed on to the computer over the MS-20ic\'s own USB socket. The memory keys are sent as CC 102/103, so a DAW doesn\'t play them.'),
+    ('Which software do I need?',
+     'Ksoloti: firmware 1.1.0 or newer and the Twenty Engine patch (see the manual). Teensy: Arduino IDE with Teensyduino, Tools > USB Type > Serial + MIDI, then upload the Twenty Engine sketch.'),
+    ('Where are my sounds saved?',
+     'Ksoloti: on its SD card. Teensy: in its own flash memory, no SD card needed (an SD card, if present, gets a backup copy).'),
+    ('Do I need the audio shield on the Teensy?',
+     'Yes. The Teensy 4.1 has no audio output of its own; the audio shield (Rev D) is the sound card.'),
+    ('Mono or stereo jacks?',
+     'Either. Use the tip for the signal and the sleeve for ground; on a stereo jack the ring stays free.'),
+]
+y = H - 44 * mm; tw = W - 36 * mm
+for q, a in faq:
+    c.setFillColor(INK); c.setFont('CondB', 11); c.drawString(18 * mm, y, q); y -= 5.6 * mm
+    for l in wrap(a, 'Cond', 10, tw):
+        c.setFont('Cond', 10); c.drawString(18 * mm, y, l); y -= 5 * mm
+    y -= 5 * mm
+
+y -= 2 * mm
+c.setFillColor(INK); c.setFont('CondB', 13); c.drawString(18 * mm, y, 'Links'); y -= 8 * mm
+links = [
+    ('Twenty Engine', 'https://7233849350308.gumroad.com/l/ygmrks'),
+    ('Ksoloti (official site)', 'https://ksoloti.github.io'),
+    ('Ksoloti Patcher and firmware', 'https://github.com/ksoloti/ksoloti/releases'),
+    ('Ksoloti community forum', 'https://ksoloti.discourse.group'),
+    ('Teensy 4.1', 'https://www.pjrc.com/store/teensy41.html'),
+    ('Teensy Audio Shield (Rev D)', 'https://www.pjrc.com/store/teensy3_audio.html'),
+    ('Teensyduino (for the Arduino IDE)', 'https://www.pjrc.com/teensy/td_download.html'),
+    ('Arduino IDE', 'https://www.arduino.cc/en/software'),
+]
+for name, url in links:
+    c.setFillColor(INK); c.setFont('CondB', 10); c.drawString(18 * mm, y, name)
+    c.setFillColor(HexColor('#2f6fd6')); c.setFont('Cond', 10); c.drawString(86 * mm, y, url)
+    c.linkURL(url, (86 * mm, y - 1.5 * mm, 86 * mm + pdfmetrics.stringWidth(url, 'Cond', 10), y + 3.5 * mm), relative=0)
+    y -= 6 * mm
+c.showPage()
+
+# ================= original pinouts =================
+guide = 'Original pinouts'
+def full_image(title, png, credit, extra=None):
+    header()
+    c.setFillColor(INK); c.setFont('Cond', 22); c.drawString(18 * mm, H - 30 * mm, title)
+    ir = ImageReader(png); iw, ih = ir.getSize()
+    maxw, maxh = W - 36 * mm, (H - 52 * mm) * (0.62 if extra else 1.0)
+    sc = min(maxw / iw, maxh / ih); w, h = iw * sc, ih * sc
+    c.drawImage(ir, (W - w) / 2, H - 38 * mm - h, w, h)
+    if extra:
+        yy = H - 38 * mm - h - 8 * mm
+        irs = [ImageReader(p) for p, _ in extra]; gap = 8 * mm
+        ew = (W - 36 * mm - gap * (len(irs) - 1)) / len(irs)
+        for k, ((p, cap), e) in enumerate(zip(extra, irs)):
+            eiw, eih = e.getSize(); eh = min(ew * eih / eiw, yy - 25 * mm); eww = eh * eiw / eih
+            x = 18 * mm + k * (ew + gap) + (ew - eww) / 2
+            c.drawImage(e, x, yy - eh, eww, eh)
+            c.setFillColor(GREY); c.setFont('Cond', 8); c.drawCentredString(x + eww / 2, yy - eh - 4 * mm, cap)
+    c.setFillColor(GREY); c.setFont('Cond', 7.5); c.drawString(18 * mm, 10 * mm, credit)
+    c.showPage()
+full_image('Original pinout · Ksoloti Core v0.6', 'ks_sheet-1.png', 'Ksoloti Core pin functions (v0.6 and earlier) · Ksoloti project · ksoloti.github.io')
+full_image('Original pinout · Teensy 4.1 + Audio Shield', 'teensy_card.png', 'Teensy 4.1 pinout and Audio Shield Rev D · PJRC · pjrc.com',
+           [('/mnt/user-data/attachments/b094cc12-2f67-56e1-b8d8-0b5edcc8c279/dbfed8a9-image.jpg', 'Audio Shield Rev D · top'),
+            ('/mnt/user-data/attachments/b094cc12-2f67-56e1-b8d8-0b5edcc8c279/145699f9-image.jpg', 'Audio Shield Rev D · underside')])
 c.save()
