@@ -131,14 +131,18 @@ pictures(KROWS)
 
 # ================= Teensy 4.1 + audio shield =================
 guide = 'Teensy 4.1'
-recipe('Teensy 4.1 in the MS-20ic', 'Eight steps. The pin picture on the next page shows every connection.',
-    COMMON + [
-    ('Connect both halves', 'Solder the MS-20ic main board half to the Teensy\'s USB host pads. Splice the USB-B half to a micro-USB cable and plug it into the Teensy.', 'usb'),
+recipe('Teensy 4.1 in the MS-20ic', 'Nine steps. The pin picture on the next page shows every connection.',
+    [('Open the MS-20ic', 'Remove the 8 screws on the back and lift the back panel off.', None),
+    ('Disconnect the USB cable', 'Find the 4-wire cable that runs from the USB-B daughterboard to the main board, and disconnect it from the USB-B board.', None),
+    ('Cut the cable to length', 'Cut the cable so that it reaches from the main board to the spot where the Teensy will sit, with a little slack.', None),
+    ('Strip the wires', 'Strip the outer jacket, then the four coloured wires inside: red, white, green and black.', None),
+    ('Main board cable → USB host pads', 'Solder the four wires to the Teensy\'s USB host pads, or fit connectors of your choice (DuPont, JST etc.).', None),
+    ('USB-B board → micro-USB', 'Find a micro-USB to USB-A cable. Cut off the USB-A end and strip the wires. Desolder the PH2.0 connector on the USB-B board and solder the four wires to its pads, colour to colour. Plug the micro-USB end into the Teensy. Alternatively, buy a PH2.0 to micro-USB cable.', 'usb'),
     ('Mount the Teensy', 'Stack the audio shield on the Teensy. Put nano tape on the back and fit it on the back of the main board.', None),
     ('Install the jacks', 'Drill two holes above the USB-B jack and mount the two output jacks.', None),
     ('Wire the audio', 'Solder the audio shield\'s LINE OUT to the jacks. Ground is shared by both jacks.', 'audio')],
-    {'usb': [('USB-B half → micro-USB (USB device)', [('Red', 'red (5V)'), ('White', 'white (D−)'), ('Green', 'green (D+)'), ('Black', 'black (GND)')]),
-             ('Main board half → USB host pads', [('Red', '5V'), ('White', 'D−'), ('Green', 'D+'), ('Black', 'GND')])],
+    {'usb': [('Main board cable → USB host pads (step 5)', [('Red', '5V'), ('White', 'D−'), ('Green', 'D+'), ('Black', 'GND')]),
+             ('Micro-USB cable → USB-B board (step 6)', [('Red', '5V'), ('White', 'D−'), ('Green', 'D+'), ('Black', 'GND')])],
      'audio': [('Audio shield LINE OUT → jacks', [('Left', 'L → left tip'), ('Right', 'R → right tip'), ('Ground', 'G → both')])]})
 pins_page('/mnt/user-data/outputs/Teensy_TwentyEngine_pins.png')
 pictures([

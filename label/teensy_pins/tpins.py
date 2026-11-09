@@ -47,7 +47,7 @@ for i, c in enumerate([RED, WHITE, GREEN, BLACK]):
     wire([(xx, uy), (xx, 190 + i * 18), (1760, 190 + i * 18)], c)
 a, b = PT(165, 5), PT(405, 190)
 d.rounded_rectangle((a[0], a[1], b[0], b[1]), radius=22, outline=ORANGE, width=7)
-label(1760, 140, 'USB DEVICE · micro-USB', 'Connect the incoming USB-B half here',
+label(1760, 140, 'USB DEVICE · micro-USB', 'Micro-USB cable from the USB-B board',
       [('5V', RED), ('D−', WHITE), ('D+', GREEN), ('GND', BLACK)], BLUE)
 
 # USB HOST: 5 pads beside pins 2-6 (from the top: 5V, D-, D+, GND, GND)
