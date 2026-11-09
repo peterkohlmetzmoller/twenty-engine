@@ -1,5 +1,5 @@
 # Twenty Engine - build guide: Ksoloti Core in the MS-20ic
-import sys
+import sys, os
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
 from reportlab.lib.pagesizes import A4
@@ -92,10 +92,29 @@ pw = W - 36 * mm; ph = pw * ih / iw
 c.drawImage(ir, 18 * mm, H - 40 * mm - ph, pw, ph)
 c.showPage()
 
-# ---------------- page 3: pictures (to come)
+# ---------------- page 3: pictures
 header()
 c.setFillColor(INK); c.setFont('Cond', 22); c.drawString(18 * mm, H - 30 * mm, 'Pictures')
-c.setFillColor(GREY); c.setFont('Cond', 10.5); c.drawString(18 * mm, H - 37 * mm, 'Photos of the finished build.')
+rows = [
+    [('connectors.jpg', 'Inside: the PH2.0 connector from the USB-B board, and the USB host pins'), ('cable.jpg', 'The internal USB cable and its PH2.0 plug')],
+    [('strip.jpg', 'Cut and stripped: red, white, green, black'), ('mount.jpg', 'Nano tape on the back of the Ksoloti'), ('h3.jpg', 'USB host wires on H3')],
+    [('holes.jpg', 'Two holes above the USB-B jack'), ('jacks.jpg', 'Jacks installed')],
+]
+gap = 3 * mm; capH = 6 * mm; x0 = 18 * mm; full = W - 36 * mm
+y = H - 38 * mm
+for row in rows:
+    irs = [ImageReader(f if os.path.exists(f) else 'photos/' + f) for f, _ in row]
+    asp = [ir.getSize()[0] / ir.getSize()[1] for ir in irs]
+    h = (full - gap * (len(row) - 1)) / sum(asp)
+    x = x0
+    for (f, cap), ir, a_ in zip(row, irs, asp):
+        w = h * a_
+        c.drawImage(ir, x, y - h, w, h)
+        c.setFillColor(GREY); c.setFont('Cond', 7.6)
+        for k, l in enumerate(wrap(cap, 'Cond', 7.6, w)):
+            c.drawString(x, y - h - 3.6 * mm - k * 3.2 * mm, l)
+        x += w + gap
+    y -= h + capH + gap
 c.setFillColor(GREY); c.setFont('Cond', 7.5)
-c.drawString(18 * mm, 13 * mm, 'Twenty Engine by Peter Kohlmetz Moller · GPL v3 · Board image: Ksoloti project · MS-20ic is a product of Korg; this guide is not endorsed by Korg.')
+c.drawString(18 * mm, 10 * mm, 'Twenty Engine by Peter Kohlmetz Moller · GPL v3 · Board image: Ksoloti project · MS-20ic is a product of Korg; this guide is not endorsed by Korg.')
 c.showPage(); c.save()
