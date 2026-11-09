@@ -77,10 +77,10 @@ for i, (title, body, extra) in enumerate(steps):
         yy -= 31 * mm
     if extra == 'audio':
         yy -= 1.5 * mm
-        c.setFillColor(LIGHT); c.roundRect(tx - 2 * mm, yy - 15.5 * mm, tw * 0.62, 20.5 * mm, 2 * mm, stroke=0, fill=1)
+        c.setFillColor(LIGHT); c.roundRect(tx - 2 * mm, yy - 21.5 * mm, tw * 0.62, 26.5 * mm, 2 * mm, stroke=0, fill=1)
         c.setFillColor(INK); c.setFont('CondB', 9.5); c.drawString(tx + 1 * mm, yy, 'J1 (line out) → jacks')
         pinlist(tx + 1 * mm, yy - 6.5 * mm, [('Left', 'LINE OUT LEFT CH → left tip'), ('Right', 'LINE OUT RIGHT CH → right tip'), ('Ground', 'LINE OUT GROUND → both')])
-        yy -= 19.5 * mm
+        yy -= 25.5 * mm
     y = yy - 6 * mm
 c.showPage()
 
