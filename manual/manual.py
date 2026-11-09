@@ -18,6 +18,8 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.platypus import (BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer, Table, TableStyle,
                                 PageBreak, NextPageTemplate, Flowable, KeepTogether, CondPageBreak)
 import panel as P
+import esp_label as EL
+import mg_waves as MG
 
 PAGE = landscape(A4)
 PWID, PHGT = PAGE
@@ -195,21 +197,20 @@ def threshold_zones(c, w, h):
 
 
 def esp_map(c, w, h):
-    """the five ESP knobs with what they do in each layer"""
+    """the ESP label (as printed for the knobs) with what each knob does in each layer"""
     OR = HexColor('#d9481f')
     labw = 30 * mm; colw = (w - labw) / 5.0
-    knobs = [('SIGNAL LEVEL', 0.15), ('LOW CUT FREQ', 0.5), ('HIGH CUT FREQ', 0.5), ('CV ADJUST', 0.5), ('THRESHOLD LEVEL', 0.35)]
-    top = h - 2 * mm; kr = 6.2 * mm
-    for i, (name, v) in enumerate(knobs):
-        cx = labw + colw * (i + 0.5); cy = top - kr - 1 * mm
-        c.saveState(); c.translate(cx, cy); c.scale(kr / 3.0, kr / 3.0); P.knob(c, 0, 0, 3.0, v, None); c.restoreState()
-        c.setFillColor(INK); c.setFont('CondB', 8.3); c.drawCentredString(cx, cy - kr - 4.5 * mm, name)
-        c.setFillColor(GREY); c.setFont('Cond', 7); c.drawCentredString(cx, cy - kr - 8 * mm, f'({32 + i})')
+    s = 4 * colw / (EL.SPAN * mm); lh = EL.H * mm * s
+    lx = labw + colw / 2 - EL.knob_x(0) * mm * s; ly = h - lh
+    c.saveState(); c.translate(lx, ly); c.scale(s, s); EL.draw(c); c.restoreState()
+    c.setFillColor(GREY); c.setFont('Cond', 7.2)
+    for k, t in enumerate(['The ESP label', '(print it from the', 'sticker sheet)']):
+        c.drawString(2 * mm, ly + lh / 2 + 4 - k * 9, t)
     rows = [('ARP OFF', False, ['Delay time', 'Feedback', 'Wow / flutter', 'Delay send']),
             ('ARP OFF + switch', True, ['Delay time', 'Feedback', 'Wow / flutter', 'Delay tone']),
             ('ARP ON', False, ['Arp rate', 'Arp octaves', 'Arp order', 'Delay send']),
             ('ARP ON + switch', True, ['Delay time', 'Feedback', 'Wow / flutter', 'Delay tone'])]
-    y0 = top - 2 * kr - 13 * mm; rh = (y0 - 2 * mm) / len(rows)
+    y0 = ly - 3 * mm; rh = (y0 - 5 * mm) / len(rows)
     for r, (lab, sw, cells) in enumerate(rows):
         yt = y0 - r * rh; ym = yt - rh / 2
         if r % 2 == 0:
@@ -279,7 +280,7 @@ intro_l = [
 ]
 intro_r = [
     p('<b>Quick start</b>', 'body'),
-    p('1.  Turn the VOLUME knob out of its POWER OFF position. The LEDs play a short light show (about 3.4 seconds).'),
+    p('1.  Turn the VOLUME knob out of its POWER OFF position.'),
     p('2.  At the same moment the MS-20ic sends the position of every knob, rotary and cable. The engine takes all of them, so the sound always matches what you see.'),
     p('3.  Turn SIGNAL LEVEL (32) fully left. That is plain polyphonic mode. Play some chords.'),
     p('4.  Open the filters: LPF CUTOFF (17) up, HPF CUTOFF (13) down. Add PEAK for the MS-20 scream.'),
@@ -378,8 +379,8 @@ rows = [
 right = stack(ctable(rows, [9 * mm, 24 * mm, 10 * mm, None]),
               p('The MG goes to pitch (11), HPF (15) and LPF (19). On VCO 1\'s sawtooth it also sweeps the phaser. '
                 'The MG square is the normal clock for sample and hold (section 12).', 'small'),
-              Spacer(1, 4), Drawing(70 * mm, 16 * mm, lambda c, w, h: [P.wave(c, k, 10 * mm + i * 25 * mm, h / 2, 14 * mm, col=INK, lw=0.9) for i, k in enumerate(['tri', 'sq', 'rnd'])]),
-              p('triangle · square · smooth random', 'cap'))
+              Spacer(1, 8), p('<b>WAVEFORM (21) from left to right</b>. The shape blends smoothly between the three; the drawings are made from the engine\'s own MG.', 'small'),
+              Spacer(1, 3), Drawing(FULLW - 42 * mm, 50 * mm, MG.draw))
 pv = PanelView(30 * mm, (63.6, 0, 76.0, P.PH - 33.5), callouts=True, ledcallouts=True, maxh=150 * mm); story.append(side(pv, right, pv.w))
 story.append(PageBreak())
 
@@ -405,9 +406,7 @@ story.append(PageBreak())
 
 # ---------------- 8. Volume + ESP
 story += [H1('Volume and the ESP knobs', '8')]
-story.append(PanelView(FULLW * 0.62, (P.LW, 0, P.PW, P.RY(770) + 0.3), callouts=True, ledcallouts=True))
-story.append(Spacer(1, 4))
-story.append(p(f'<b>{num(31)} VOLUME (CC7)</b> sets the master level. Its POWER OFF switch darkens the panel; switching on plays the light show and re-syncs every control. '
+story.append(p(f'<b>{num(31)} VOLUME (CC7)</b> sets the master level. Its POWER OFF switch darkens the panel; switching on re-syncs every control. '
                'The five ESP knobs work in two layers. The normal layer depends on the arp mode; holding the <b>momentary switch</b> (or striking a key at velocity 125–127) '
                'selects the second layer. A knob takes effect the moment it moves.'))
 rows = [
@@ -417,7 +416,7 @@ rows = [
     [num(35), 'CV ADJUST', '90', 'Wow / flutter', 'Wow / flutter', 'Arp order', 'Wow / flutter'],
     [num(36), 'THRESHOLD LEVEL', '91', 'Delay send (dry/wet)', 'Delay tone', 'Delay send', 'Delay tone'],
 ]
-story.append(Drawing(FULLW, 64 * mm, esp_map))
+story.append(Drawing(FULLW, 112 * mm, esp_map))
 story.append(Spacer(1, 4))
 story.append(Spacer(1, 3))
 story.append(p('Arp order (CV ADJUST, four zones): up, down, up/down, random. Arp octaves (HIGH CUT, four zones): 1, 2, 3, 4.', 'small'))
@@ -585,8 +584,7 @@ rows = [
 ]
 story.append(ctable(rows, [12 * mm, 26 * mm, None], head=('LED', 'Name', 'Meaning')))
 story.append(Spacer(1, 6))
-story.append(p('<b>Light show.</b> Switching on with the VOLUME knob plays a sequence of about 3.4 seconds: the LEDs chase faster and faster, then all blink faster and faster. '
-               'Switching off darkens the panel.'))
+story.append(p('<b>Power.</b> Switching off with the VOLUME knob darkens the panel; switching on lights it again.'))
 story.append(p('<b>Blink messages.</b> All LEDs blink once = sound recalled. All LEDs blink five times = sound saved. The EG LED blinks twice = that key has no stored sound. '
                'PEAK and TRIG blink eight times = the sound could not be saved (Ksoloti: SD card missing, loose or unreadable).'))
 story.append(p('<b>Sync.</b> At power-on the MS-20ic sends the position of every rotary switch, the state of every jack and every knob in about 4 ms. '
@@ -744,7 +742,7 @@ right = stack(
     p('<b>Load Twenty Engine</b>'),
     p('1.  Open <font name="CondB">TwentyEngine_Ksoloti_v50c.axp</font> in the Patcher and press <b>Live</b>.'),
     p('2.  To make it start by itself: <b>Patch &gt; Upload to SD Card as Startup</b>, with the SD card pushed fully in.'),
-    p('3.  Switch the MS-20ic off and on. The light show plays and the synth starts without a computer.'),
+    p('3.  Switch the MS-20ic off and on. The synth starts without a computer.'),
     Spacer(1, 4),
     Note('Going back', 'To return to 1.0.12 later, do the same rescue flash from the 1.0.12 Patcher. Patches made for 1.1.0, like this one, do not run on 1.0.12.'),
     Spacer(1, 4),
