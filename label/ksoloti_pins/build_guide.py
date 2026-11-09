@@ -97,6 +97,15 @@ recipe('Ksoloti Core in the MS-20ic', 'Eight steps. The pin picture on the next 
     {'usb': [('USB-B half → H2 (USB device)', [('Red', '5V'), ('White', 'USB PROG D−'), ('Green', 'USB PROG D+'), ('Black', 'GND')]),
              ('Main board half → H3 (USB host)', [('Red', '5V'), ('White', 'USB HOST D−'), ('Green', 'USB HOST D+'), ('Black', 'GND')])],
      'audio': [('J1 (line out) → jacks', [('Left', 'LINE OUT LEFT CH → left tip'), ('Right', 'LINE OUT RIGHT CH → right tip'), ('Ground', 'LINE OUT GROUND → both')])]})
+guide = 'Ksoloti Core'
+recipe('Software · Ksoloti Core', 'What you need: a computer, a FAT32 micro-SD card in the Ksoloti, and the Twenty Engine patch (.axp file).', [
+    ('Install the Ksoloti Patcher', 'Download Ksoloti Patcher 1.1.0 or newer from github.com/ksoloti/ksoloti/releases (pick the file for your computer) and install it. Version 1.1.0 is listed as a pre-release.', None),
+    ('Connect', 'Put a micro-SD card (FAT32) in the Ksoloti. Connect the computer to the MS-20ic\'s USB socket and start the Patcher. It should say "connected".', None),
+    ('Update the firmware', 'In the Patcher: Board > Firmware > Flash. If the board is not found, hold button S1 while you connect the USB cable, then choose Board > Firmware > Flash (Rescue).', None),
+    ('Open the patch', 'File > Open, and choose the Twenty Engine .axp file. Click "Live" to try it: the MS-20ic plays.', None),
+    ('Save it as the startup patch', 'In the patch window: File > Upload to SD Card as Startup. From now on the Ksoloti starts Twenty Engine by itself, with or without a computer.', None),
+    ('Done', 'Disconnect, power the MS-20ic from any USB supply and play. Your sounds are saved on the SD card.', None)], {})
+
 pins_page('/mnt/user-data/outputs/Ksoloti_TwentyEngine_pins.png')
 # ---------------- page 3: pictures
 def pictures(rows):
@@ -146,6 +155,13 @@ recipe('Teensy 4.1 in the MS-20ic', 'Nine steps. The pin picture on the next pag
     {'usb': [('Main board cable → USB host pads (step 5)', [('Red', '5V'), ('White', 'D−'), ('Green', 'D+'), ('Black', 'GND')]),
              ('Micro-USB cable → USB-B board (step 6)', [('Red', '5V'), ('White', 'D−'), ('Green', 'D+'), ('Black', 'GND')])],
      'audio': [('Audio shield LINE OUT → jacks', [('Left', 'L → left tip'), ('Right', 'R → right tip'), ('Ground', 'G → both')])]})
+guide = 'Teensy 4.1'
+recipe('Software · Teensy 4.1', 'What you need: a computer, the free Teensy Loader app, and the Twenty Engine firmware file (TwentyEngineTeensy.hex).', [
+    ('Install the Teensy Loader', 'Download the Teensy Loader for your computer from pjrc.com/teensy/loader.html and start it.', None),
+    ('Open the firmware', 'In the Teensy Loader: File > Open HEX File, and choose TwentyEngineTeensy.hex.', None),
+    ('Connect', 'Connect the computer to the MS-20ic\'s USB socket.', None),
+    ('Press the button', 'Press the small button on the Teensy once. The Teensy Loader programs the firmware and restarts the Teensy. Do this before you close the case.', None),
+    ('Done', 'The MS-20ic plays, and the computer shows "Twenty Engine" as a MIDI device. Sounds are saved in the Teensy\'s own memory; no SD card needed.', None)], {})
 pins_page('/mnt/user-data/outputs/Teensy_TwentyEngine_pins.png')
 pictures([
     [('t_wires.jpg', 'Cut and stripped: red, white, green, black'), ('t_host.jpg', 'Main board cable on the USB host pads'), ('t_shield.jpg', 'Audio shield stacked on the Teensy')],
@@ -181,26 +197,6 @@ y = section(y, 'Teensy 4.1 · micro-USB to PH2.0', '"Micro USB to PH2.0 4P cable
 c.setFillColor(GREY); c.setFont('Cond', 7.5); c.drawString(18 * mm, 10 * mm, 'Product photos: AliExpress listings.')
 c.showPage()
 
-# ================= software install =================
-guide = 'Software · Ksoloti'
-recipe('Software · Ksoloti Core', 'What you need: a computer, a FAT32 micro-SD card in the Ksoloti, and the Twenty Engine patch (.axp file).', [
-    ('Install the Ksoloti Patcher', 'Download Ksoloti Patcher 1.1.0 or newer from github.com/ksoloti/ksoloti/releases (pick the file for your computer) and install it. Version 1.1.0 is listed as a pre-release.', None),
-    ('Connect', 'Put a micro-SD card (FAT32) in the Ksoloti. Connect the computer to the MS-20ic\'s USB socket and start the Patcher. It should say "connected".', None),
-    ('Update the firmware', 'In the Patcher: Board > Firmware > Flash. If the board is not found, hold button S1 while you connect the USB cable, then choose Board > Firmware > Flash (Rescue).', None),
-    ('Open the patch', 'File > Open, and choose the Twenty Engine .axp file. Click "Live" to try it: the MS-20ic plays.', None),
-    ('Save it as the startup patch', 'In the patch window: File > Upload to SD Card as Startup. From now on the Ksoloti starts Twenty Engine by itself, with or without a computer.', None),
-    ('Done', 'Disconnect, power the MS-20ic from any USB supply and play. Your sounds are saved on the SD card.', None)], {})
-
-guide = 'Software · Teensy'
-recipe('Software · Teensy 4.1', 'What you need: a computer, the Arduino IDE with Teensy support, and the Twenty Engine sketch (TwentyEngineTeensy folder).', [
-    ('Install the Arduino IDE', 'Download Arduino IDE 2 from arduino.cc/en/software and install it.', None),
-    ('Add Teensy support', 'Arduino IDE > Settings (Windows: File > Preferences). Under "Additional boards manager URLs", add: https://www.pjrc.com/teensy/package_teensy_index.json. Then open the Boards Manager, search for "teensy" and install it.', None),
-    ('Set the audio to low latency', 'Open AudioStream.h in a text editor and change "#define AUDIO_BLOCK_SAMPLES 128" to 16. Mac: ~/Library/Arduino15/packages/teensy/hardware/avr/<version>/cores/teensy4/. Windows: %LOCALAPPDATA%\\Arduino15\\packages\\teensy\\hardware\\avr\\<version>\\cores\\teensy4\\.', None),
-    ('Open the sketch', 'Unzip the TwentyEngineTeensy folder and open TwentyEngineTeensy.ino. Keep all the files in the folder together.', None),
-    ('Choose the settings', 'Tools > Board > Teensy 4.1. Tools > USB Type > Serial + MIDI. Tools > CPU Speed > 600 MHz.', None),
-    ('Upload', 'Connect the computer to the MS-20ic\'s USB socket and click Upload. If the Teensy Loader asks for it, press the small button on the Teensy once.', None),
-    ('Done', 'The MS-20ic plays, and the computer shows "Twenty Engine" as a MIDI device. Sounds are saved in the Teensy\'s own memory; no SD card needed.', None)], {})
-
 # ================= FAQ =================
 guide = 'FAQ'
 header()
@@ -235,8 +231,8 @@ links = [
     ('Ksoloti community forum', 'https://ksoloti.discourse.group'),
     ('Teensy 4.1', 'https://www.pjrc.com/store/teensy41.html'),
     ('Teensy Audio Shield (Rev D)', 'https://www.pjrc.com/store/teensy3_audio.html'),
-    ('Teensyduino (for the Arduino IDE)', 'https://www.pjrc.com/teensy/td_download.html'),
-    ('Arduino IDE', 'https://www.arduino.cc/en/software'),
+    ('Teensy Loader', 'https://www.pjrc.com/teensy/loader.html'),
+    ('Teensyduino (to build from source)', 'https://www.pjrc.com/teensy/td_download.html'),
 ]
 for name, url in links:
     c.setFillColor(INK); c.setFont('CondB', 10); c.drawString(18 * mm, y, name)
