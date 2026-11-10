@@ -174,8 +174,8 @@ recipe('Teensy 4.1 in the MS-20ic', 'Nine steps. The pin picture on the next pag
              ('Micro-USB cable → USB-B board (step 6)', [('Red', '5V'), ('White', 'D−'), ('Green', 'D+'), ('Black', 'GND')])],
      'audio': [('Audio shield LINE OUT → jacks', [('Left', 'L → left tip'), ('Right', 'R → right tip'), ('Ground', 'G → both')])]})
 guide = 'Teensy 4.1'
-recipe('Software · Teensy 4.1', 'What you need: a computer, the free Teensy Loader app, and the Twenty Engine firmware file (TwentyEngineTeensy.hex).', [
-    ('Install the Teensy Loader', 'Download the Teensy Loader for your computer from pjrc.com/teensy/loader.html and start it.', None),
+recipe('Software · Teensy 4.1', 'What you need: a computer and the Teensy folder from the download: it has the firmware (TwentyEngineTeensy.hex) and the Teensy Loader app.', [
+    ('Install the Teensy Loader', 'It is in the folder "Teensy Loader by PJRC": on a Mac open teensy.dmg and drag Teensy to Applications, on Windows run teensy.exe. Start it. (The newest version is always at pjrc.com/teensy/loader.html.)', None),
     ('Open the firmware', 'In the Teensy Loader: File > Open HEX File, and choose TwentyEngineTeensy.hex.', None),
     ('Connect', 'Connect the computer to the MS-20ic\'s USB socket.', None),
     ('Press the button', 'Press the small button on the Teensy once. The Teensy Loader programs the firmware and restarts the Teensy. Do this before you close the case.', None),
