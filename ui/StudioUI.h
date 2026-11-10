@@ -229,14 +229,15 @@ public:
     Arrow(g, {{RX(630), RY(710)}, {RX(670), RY(710)}}); Arrow(g, {{RX(735), RY(710)}, {RX(775), RY(710)}});
     Arrow(g, {{RX(725), RY(612)}, {RX(725), RY(692)}});
     // ESP
-    Txt(g, RX(200), RY(808), "EXTERNAL SIGNAL PROCESSOR", 2.0f, kGrey, 'l');
-    Box(g, RX(330), RY(925), RX(410), RY(875), "AMP", 1.6f);
-    Box(g, RX(555), RY(930), RX(680), RY(870), "BAND PASS\nFILTER", 1.55f);
-    Box(g, RX(790), RY(930), RX(910), RY(870), "F-V\nCONVERTER", 1.55f);
-    Box(g, RX(1060), RY(930), RX(1180), RY(870), "ENVELOPE\nFOLLOWER", 1.55f);
+    // ESP block diagram: drawn 30 grid steps higher than on the MS-20ic photo, so the knobs' arp names have room
+    Txt(g, RX(200), RY(795), "EXTERNAL SIGNAL PROCESSOR", 2.0f, kGrey, 'l');
+    Box(g, RX(330), RY(895), RX(410), RY(845), "AMP", 1.6f);
+    Box(g, RX(555), RY(900), RX(680), RY(840), "BAND PASS\nFILTER", 1.55f);
+    Box(g, RX(790), RY(900), RX(910), RY(840), "F-V\nCONVERTER", 1.55f);
+    Box(g, RX(1060), RY(900), RX(1180), RY(840), "ENVELOPE\nFOLLOWER", 1.55f);
     const float ar[6][2] = {{272, 330}, {410, 468}, {512, 555}, {680, 708}, {752, 790}, {910, 943}};
-    for (auto& a : ar) Arrow(g, {{RX(a[0]), RY(900)}, {RX(a[1]), RY(900)}});
-    Arrow(g, {{RX(1180), RY(900)}, {RX(1240), RY(900)}});
+    for (auto& a : ar) Arrow(g, {{RX(a[0]), RY(870)}, {RX(a[1]), RY(870)}});
+    Arrow(g, {{RX(1180), RY(870)}, {RX(1240), RY(870)}});
     Arrow(g, {{RX(1300), RY(185)}, {RX(1370), RY(185)}});
     // volume print
     Txt(g, RX(1210), RY(280) - 6.6f * S + 0.7f * S, "VOLUME", 2.0f);
@@ -249,8 +250,8 @@ public:
     };
     led(X(COLX[5] - 1.5f), Yd(47.0f), false, "RATE", 'a');
     led(X(COLX[6] + 3.2f), Yd(36.6f), false, nullptr, 'n');
-    led(RX(1120), RY(828), false, "PEAK", 'r');
-    led(RX(1385), RY(828), false, "TRIG", 'r');
+    led(RX(1120), RY(800), false, "PEAK", 'r');
+    led(RX(1385), RY(800), false, "TRIG", 'r');
     led(RX(1210), RY(105), true, nullptr, 'n');
   }
 };
@@ -519,8 +520,8 @@ static const Jack kJacks[35] = {
   {2, 245, 710, "S&H IN", 2, 0, PARAM_INDEX_PatchBay_shin}, {7, 490, 710, "S&H OUT", 1, 7, -1}, {12, 610, 710, "VCA IN", 0, 0, -1},
   {16, 795, 710, "VCA OUT", 0, 0, -1}, {19, 915, 710, "PINK", 1, 8, -1}, {23, 1150, 710, "WHITE", 1, 8, -1},
   {27, 1270, 710, "WHEEL", 1, 9, -1}, {33, 1390, 710, "SWITCH", 1, 10, -1},
-  {3, 250, 900, "SIGNAL IN", 4, 0, -1}, {8, 490, 900, "AMP OUT", 0, 0, -1}, {15, 730, 900, "BPF OUT", 0, 0, -1},
-  {20, 965, 900, "F-V OUT", 0, 0, -1}, {28, 1265, 900, "ENV OUT", 0, 0, -1}, {34, 1385, 900, "TRIG OUT", 0, 0, -1},
+  {3, 250, 870, "SIGNAL IN", 4, 0, -1}, {8, 490, 870, "AMP OUT", 0, 0, -1}, {15, 730, 870, "BPF OUT", 0, 0, -1},
+  {20, 965, 870, "F-V OUT", 0, 0, -1}, {28, 1265, 870, "ENV OUT", 0, 0, -1}, {34, 1385, 870, "TRIG OUT", 0, 0, -1},
 };
 
 class PatchPanel : public IControl
