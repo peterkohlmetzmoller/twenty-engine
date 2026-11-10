@@ -35,6 +35,9 @@ public:
   bool SerializeState(IByteChunk& chunk) const override;
   int UnserializeState(const IByteChunk& chunk, int startPos) override;
   int RecallTakes() const { return mRecall.takes(); }      // UI: takes stored in this project
+  // UI diagnostics: what the host reports (transport, recording) and what recall did with it
+  void RecallDiag(char* out, int n) const;
+  std::atomic<int> mDiagRun{0}, mDiagRec{0}, mDiagInfo{0}; std::atomic<double> mDiagPpq{-1.0};
   void RecallClear() { mRecall.clear(); }                    // UI: forget them
 
 private:

@@ -8,12 +8,14 @@ root = sys.argv[1] if len(sys.argv) > 1 else 'iPlug2'
 edits = [
  ('IPlug/IPlugStructs.h',
   '  bool mTransportLoopEnabled = false;\n',
-  '  bool mTransportLoopEnabled = false;\n  bool mTransportIsRecording = false;   /* Twenty Engine patch */\n'),
+  '  bool mTransportLoopEnabled = false;\n  bool mTransportIsRecording = false;   /* Twenty Engine patch */\n'
+  '  int mRecordingInfo = 0;               /* Twenty Engine patch: 0 host gives none, 1 given, -1 call failed */\n'),
  ('IPlug/IPlugProcessor.h',
   '  bool GetTransportIsRunning() const { return mTimeInfo.mTransportIsRunning; }\n',
   '  bool GetTransportIsRunning() const { return mTimeInfo.mTransportIsRunning; }\n'
   '  /** @return \\c true if the host is recording (Twenty Engine patch) */\n'
-  '  bool GetTransportIsRecording() const { return mTimeInfo.mTransportIsRecording; }\n'),
+  '  bool GetTransportIsRecording() const { return mTimeInfo.mTransportIsRecording; }\n'
+  '  int GetRecordingInfo() const { return mTimeInfo.mRecordingInfo; }\n'),
  ('IPlug/AUv2/IPlugAU.cpp',
   '    timeInfo.mTransportIsRunning = playing;\n    timeInfo.mTransportLoopEnabled = looping;\n  }\n',
   '    timeInfo.mTransportIsRunning = playing;\n    timeInfo.mTransportLoopEnabled = looping;\n  }\n'
@@ -21,12 +23,14 @@ edits = [
   '  {\n'
   '    Boolean p2 = false, r2 = false, c2 = false, cy2 = false; Float64 s2 = 0.0, cs2 = 0.0, ce2 = 0.0;\n'
   '    if (mHostCallbacks.transportStateProc2(mHostCallbacks.hostUserData, &p2, &r2, &c2, &s2, &cy2, &cs2, &ce2) == noErr)\n'
-  '      timeInfo.mTransportIsRecording = r2;\n'
+  '    { timeInfo.mTransportIsRecording = r2; timeInfo.mRecordingInfo = 1; }\n'
+  '    else timeInfo.mRecordingInfo = -1;\n'
   '  }\n'),
  ('IPlug/VST3/IPlugVST3_ProcessorBase.cpp',
   '  timeInfo.mTransportIsRunning = mProcessContext.state & ProcessContext::kPlaying;\n',
   '  timeInfo.mTransportIsRunning = mProcessContext.state & ProcessContext::kPlaying;\n'
-  '  timeInfo.mTransportIsRecording = mProcessContext.state & ProcessContext::kRecording;   /* Twenty Engine patch */\n'),
+  '  timeInfo.mTransportIsRecording = mProcessContext.state & ProcessContext::kRecording;   /* Twenty Engine patch */\n'
+  '  timeInfo.mRecordingInfo = 1;\n'),
 ]
 for f, old, new in edits:
     p = os.path.join(root, f); s = open(p, encoding='utf-8').read()

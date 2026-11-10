@@ -26,7 +26,7 @@ public:
 
   bool IsDirty() override
   {
-    if (++mFrames >= 30) { mFrames = 0; bool d = Scan(); const int t = Takes(); if (t != mTakes) { mTakes = t; d = true; } if (d) return true; }   // about twice a second
+    if (++mFrames >= 6) { mFrames = 0; bool d = true; Scan(); const int t = Takes(); if (t != mTakes) { mTakes = t; d = true; } if (d) return true; }   // about twice a second
     return IControl::IsDirty();
   }
 
@@ -59,6 +59,8 @@ public:
     if (mTakes > 0) tk.SetFormatted(96, "Recall: %d take%s  \xC2\xB7  double-click to clear", mTakes, mTakes == 1 ? "" : "s");
     else tk.Set("Recall: no takes recorded");
     g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), tk.Get(), TakesRect());
+    char dg[160] = ""; if (mPlug) mPlug->RecallDiag(dg, sizeof(dg));   // test build: what the host reports
+    g.DrawText(IText(10.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), dg, TakesRect().GetVShifted(14.f));
   }
 
 private:
@@ -186,6 +188,8 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
 void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
   const double sr = GetSampleRate(), tempo = GetTempo();
+  mDiagRun.store(GetTransportIsRunning() ? 1 : 0); mDiagRec.store(GetTransportIsRecording() ? 1 : 0);
+  mDiagInfo.store(GetRecordingInfo()); mDiagPpq.store(GetPPQPos());
   mRecall.beginBlock(mHost.get(), GetTransportIsRunning(), GetTransportIsRecording(), GetPPQPos(),
                      (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0, nFrames);
   int done = 0;
@@ -275,4 +279,17 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
   }
 #endif
   return pos;
+}
+
+void TwentyEngine::RecallDiag(char* out, int n) const
+{
+#if IPLUG_DSP
+  const int info = mDiagInfo.load();
+  snprintf(out, n, "host: %s \xC2\xB7 rec %s \xC2\xB7 beat %.2f \xC2\xB7 takes started %d, stored %d",
+           mDiagRun.load() ? "playing" : "stopped",
+           info == 1 ? (mDiagRec.load() ? "YES" : "no") : (info == 0 ? "not reported" : "call failed"),
+           mDiagPpq.load(), mRecall.diagPasses.load(), mRecall.diagMerged);
+#else
+  if (n > 0) out[0] = 0;
+#endif
 }

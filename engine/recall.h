@@ -130,6 +130,9 @@ public:
     lastPpq = x;
   }
 
+  // diagnostics (any thread): takes started by the audio thread, takes merged by the main thread
+  std::atomic<int> diagPasses{0}; int diagMerged = 0;
+
   // true while inside a recorded take that is playing back: knob/cable CCs from the track are ignored
   bool knobsLocked() const { return locked; }
   // any thread: true while the host plays (not records). Memory saves from replayed key gestures are dropped then.
@@ -205,7 +208,7 @@ private:
   void push(uint8_t type, double ppq, int idx, int32_t raw) {
     if (!q.push({ppq, raw, (int16_t)idx, type})) qFull = true;
   }
-  void startPass(double x) { passActive = true; passStart = x; qFull = false; push(START, x, 0, 0); needSnap = true; }
+  void startPass(double x) { diagPasses.fetch_add(1, std::memory_order_relaxed); passActive = true; passStart = x; qFull = false; push(START, x, 0, 0); needSnap = true; }
   void endPass(double x) {
     if (qFull) push(LOSTEVENTS, 0, 0, 0);   // events were lost: this take is not stored (better none than a wrong one)
     push(END, x, 0, 0); passActive = false; needSnap = false; touched = false;
@@ -263,7 +266,7 @@ private:
     }
     d->cov.push_back({s, e});
     std::sort(d->cov.begin(), d->cov.end());
-    publish(d);
+    publish(d); diagMerged++;
   }
   void publish(LaneData *d) {
     LaneData *old = pub.exchange(d, std::memory_order_acq_rel);
