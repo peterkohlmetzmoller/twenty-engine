@@ -90,6 +90,8 @@ public:
   int memSlot() const { return core->o_Patch_Memory.inmem; }   // -1 = panel, else the recalled slot (diagnostics)
   // audio thread only (from a BlockHook): set a value right now; reported to the host like an engine change
   void setParamNow(int idx, int32_t raw) { core->root.PExch[idx].value = raw; }
+  // audio thread, outside process(): set a value the host itself gave (not reported back as an engine change)
+  void setParamQuiet(int idx, int32_t raw) { if (idx >= 0 && idx < NPARAMS) { core->root.PExch[idx].value = raw; known[idx] = raw; } }
   void setHook(BlockHook *h) { hook = h; }
 
   // --- audio (audio thread) ---

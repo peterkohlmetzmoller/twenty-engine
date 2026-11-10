@@ -16,7 +16,7 @@ const int kNumParams = ms20::NPARAMS;   // every parameter of the Ksoloti patch
 #if IPLUG_DSP
 #include "engine/ms20_host.h"
 #include "engine/recall.h"
-#include "engine/autowrite.h"
+#include "engine/paramstream.h"
 #include "engine/panel_memory.h"
 #include <memory>
 #include <atomic>
@@ -69,22 +69,24 @@ private:
   bool mFromEngine = false;     // true while we push an engine-side change to the host
   int mRescan = 0;
   float mScratchL[512], mScratchR[512], mPlayL[512], mPlayR[512];
-  // Automation (engine/autowrite.h): written into the host's automation only while it records
-  ms20::AutoWrite<kNumParams> mAuto;
-  std::atomic<bool> mRecStartReq{false}, mRunningA{false}, mRecA{false};
-  bool mWasRunning = false, mWasRec = false, mPanelInit = false;
-  void WriteToHost(int idx, int32_t raw);   // Automation: one value as a host gesture (Latch writes it)
+  std::atomic<bool> mRunningA{false};
+  bool mWasRunning = false;
   int64_t mClock = 0;
-  // test build (Automation): marker CCs through the plugin's own port, to see what Logic records and chases
-  std::atomic<bool> mPortStartReq{false}, mPortNoteReq{false}; bool mPortNoteThisRun = false;
-  int mPortStartN = 0, mPortNoteN = 0; std::atomic<int> mRx117{-1}, mRx118{-1};
+  // Automation (engine/paramstream.h): the panel goes out through the plugin's own port and is recorded into the
+  // region; the region's stream sets the playback engine
+  ms20::ParamStream<kNumParams> mStream;
+  std::atomic<bool> mSnapReq{false};
+  bool mStreamMono = false, mStreamTap = false;
+  std::atomic<int> mStreamSent{0}, mStreamApplied{0};
+  void StreamSend(int slot, int32_t raw);    // main thread: one setting through the port
+  void StreamApply(int slot, int32_t raw);   // audio thread: one setting from the region
   // the controller's last panel (engine/panel_memory.h): replayed as a start-up dump when the controller connects
   ms20::PanelMemory mPanelMem;
   char mPanelPath[1100] = "";
   bool mWasDirect = false;
   std::atomic<int> mPanelSrc{0};
   uint32_t mPanelSeenVer = 0, mPanelSavedVer = 0, mPanelPons = 0; int mPanelQuiet = 0;
-  std::atomic<int> mDiagTouched{0}, mDiagHost{0}, mDiagSent{0}, mDiagRec{0}; std::atomic<uint64_t> mDiagHostBits{0};   // mDiagRec: bit 0 the host reports recording at all, bit 1 recording now, bit 2 recording seen since the plugin opened
+  std::atomic<int> mDiagHost{0}; std::atomic<uint64_t> mDiagHostBits{0};
   // ---- beta diagnostics: what touches the parameters around a memory recall
   struct DbgEv { int idx; int src; int32_t raw; };
   ms20::SpscQueue<DbgEv, 2048> mDbgQ;

@@ -25,7 +25,7 @@ jobs:
       - name: Get iPlug2 and the VST3 SDK (fixed versions)
         run: |
           git clone -q https://github.com/iPlug2/iPlug2.git iPlug2
-          cd iPlug2 && git checkout -q $IPLUG2_COMMIT && git apply ../tools/iplug2-recording.patch
+          cd iPlug2 && git checkout -q $IPLUG2_COMMIT
           cd Dependencies/IPlug && rm -rf VST3_SDK
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake
@@ -57,7 +57,7 @@ jobs:
           clang++ -std=c++17 -O2 -w -o host_test host_test.cpp && ./host_test
           clang++ -std=c++17 -O2 -w -o rs_test rs_test.cpp && ./rs_test
           clang++ -std=c++17 -O2 -w -o recall_test recall_test.cpp && ./recall_test
-          clang++ -std=c++17 -O2 -w -o automation_test automation_test.cpp && ./automation_test
+          clang++ -std=c++17 -O2 -w -o region_test region_test.cpp && ./region_test
           clang++ -std=c++17 -O2 -w -o panel_test panel_test.cpp && ./panel_test
           clang++ -std=c++17 -O2 -w -o mem_test mem_test.cpp && ./mem_test
 
@@ -255,7 +255,7 @@ jobs:
       - name: Get iPlug2 and the VST3 SDK (fixed versions)
         run: |
           git clone -q https://github.com/iPlug2/iPlug2.git iPlug2
-          cd iPlug2 && git checkout -q $IPLUG2_COMMIT && git apply ../tools/iplug2-recording.patch
+          cd iPlug2 && git checkout -q $IPLUG2_COMMIT
           cd Dependencies/IPlug && rm -rf VST3_SDK
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake vstgui4
