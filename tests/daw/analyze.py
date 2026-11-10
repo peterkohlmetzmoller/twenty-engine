@@ -64,14 +64,17 @@ for f in sorted(os.listdir(d)):
     if not ok: fails.append(name + ': level/clip/dc/dropout')
 
 for name in list(res):
-    for kind in ('cc74', 'auto'):
+    for kind in ('cc74', 'auto', 'stream'):
         if name.endswith('_' + kind):
             base = res.get(name[:-len(kind)] + 'notes')
             r = res[name]
             if not base: continue
             gain = base['early'] / max(r['early'], 1e-9)    # early in the sweep the filter is nearly closed: much darker
             # required: MIDI CC moves the instrument's knobs (no controller attached), automation moves Studio's
-            need = (name.startswith('inst') and kind == 'cc74') or (name.startswith('studio') and kind == 'auto')
+            # Automation's stream needs the plugin's own MIDI port (Mac; Windows has none yet)
+            windows = re.search(r'^REAPER .* OS Win', log, re.M) is not None
+            need = (name.startswith('inst') and kind == 'cc74') or (name.startswith('studio') and kind == 'auto') or \
+                   (name.startswith('studio') and kind == 'stream' and not windows)
             ok = gain > 1.5
             print('%-22s the sweep moves the filter: chord %.1fx darker than the plain render, end %.2fx  %s' % (
                 name, gain, r['late'] / max(base['late'], 1e-9), ('ok' if ok else 'FAIL') if need else '(info)'))

@@ -47,6 +47,22 @@ local function midiItem(tr, ccNum)
   return item
 end
 
+-- Automation's stream (engine/paramstream.h): the LPF cutoff (setting 29 -> controller 31) from closed to open,
+-- 14 bits: channel 15 low byte, channel 16 high byte - as the plugin's own port records it into a region
+local function streamItem(tr)
+  local item = midiItem(tr, nil)
+  local take = reaper.GetActiveTake(item)
+  for k = 0, 64 do
+    local t = 0.4 + k * (8.0 / 64)
+    local v = math.floor(k * 16383 / 64)
+    local ppq = reaper.MIDI_GetPPQPosFromProjTime(take, t)
+    reaper.MIDI_InsertCC(take, false, false, ppq, 0xB0, 14, 31, v % 128)
+    reaper.MIDI_InsertCC(take, false, false, ppq, 0xB0, 15, 31, math.floor(v / 128))
+  end
+  reaper.MIDI_Sort(take)
+  return item
+end
+
 local function findParam(tr, fx, wanted)
   for p = 0, reaper.TrackFX_GetNumParams(tr, fx) - 1 do
     local _, name = reaper.TrackFX_GetParamName(tr, fx, p, "")
@@ -131,6 +147,14 @@ local function run()
       end
     end
     render(tag .. "_auto")
+
+    -- 3b. Automation: the same sweep carried as the plugin's own stream in the region
+    if P.studio then
+      clear()
+      tr, fx = newTrack(P.name)
+      streamItem(tr)
+      render(tag .. "_stream")
+    end
 
     -- 4. state: change two knobs, copy the track (save + load of the plugin's state), compare
     if pc >= 0 then
