@@ -46,3 +46,11 @@ foreach(_t ${PROJECT_NAME}-au ${PROJECT_NAME}-vst3 ${PROJECT_NAME}-aax)
     endif()
   endif()
 endforeach()
+
+# iPlug2 compiles its Metal NanoVG file once, without the per-plugin Objective-C prefix, so every iPlug2 plugin
+# exports the same class names (MNVGbuffers, MNVGcontext, MNVGtexture). Give ours a name of their own, so they
+# cannot clash with another plugin's copy in the same host. Only nanovg_mtl.m uses these classes.
+if(APPLE AND TARGET iPlug2_IGraphics_NanoVG_Metal_obj)
+  target_compile_options(iPlug2_IGraphics_NanoVG_Metal_obj PRIVATE "SHELL:-include ${IPLUG2_DIR}/IPlug/IPlugOBJCPrefix.pch")
+  target_compile_definitions(iPlug2_IGraphics_NanoVG_Metal_obj PRIVATE OBJC_PREFIX=v${PROJECT_NAME} API=_nvg)
+endif()

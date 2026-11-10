@@ -118,10 +118,12 @@ local function run()
     L("PARAM", tag, "LPF Cutoff =", pc)
     if pc >= 0 then
       local env = reaper.GetFXEnvelope(tr, fx, pc, true)
+      local _, lo, hi = reaper.TrackFX_GetParam(tr, fx, pc)   -- envelopes use the parameter's own range (AU: -64..64)
+      L("RANGE", tag, lo, hi)
       if env then
-        reaper.InsertEnvelopePoint(env, 0.0, 0.0, 0, 0, false, true)
-        reaper.InsertEnvelopePoint(env, 0.4, 0.0, 0, 0, false, true)
-        reaper.InsertEnvelopePoint(env, 8.4, 1.0, 0, 0, false, true)
+        reaper.InsertEnvelopePoint(env, 0.0, lo, 0, 0, false, true)
+        reaper.InsertEnvelopePoint(env, 0.4, lo, 0, 0, false, true)
+        reaper.InsertEnvelopePoint(env, 8.4, hi, 0, 0, false, true)
         reaper.Envelope_SortPoints(env)
         L("ENVELOPE", tag, reaper.CountEnvelopePoints(env), "points")
       else
