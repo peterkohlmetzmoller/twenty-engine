@@ -38,6 +38,8 @@ struct ParamStream {
   static const uint8_t CH_HI = 15, CH_LO = 14;      // MIDI channels 16 and 15 (0-based)
   static const int ECHO_MS = 150;
   static const int MARK_CC = 50;                    // the snapshot number (14 bits, same two channels)
+  static const int SNAP_EVERY_MS = 1000;            // while the transport runs, the whole panel again every second,
+                                                    // so every piece of a split region carries its sound
 
   enum Kind : uint8_t { UNI, BI, INTV };
   Kind kind[NSLOT];

@@ -40,7 +40,7 @@ struct Sim {
   std::vector<Ev> controller;                         // what the MS-20ic sends this block
   // ---- plugin ----
   MS20Host live, play; PanelMemory pm; ParamStream<NPARAMS> ps;
-  bool wasRunning = false, snapReq = false, mono = false, tap = false; int blocks = 0;
+  bool wasRunning = false, snapReq = false, mono = false, tap = false; int blocks = 0; int64_t lastSnap = 0;
   int sent = 0, applied = 0;
   std::map<int64_t, std::vector<int32_t>> liveAt;     // live settings at each idle while recording (by song position)
   Sim() {
@@ -83,8 +83,9 @@ struct Sim {
   }
   void idle() {
     auto send = [&](uint8_t s, uint8_t a, uint8_t b) { portSend(s, a, b); };
-    if (snapReq) {                                                // the whole panel at transport start
-      snapReq = false;
+    const int64_t now = ParamStream<NPARAMS>::NowMs();
+    if (snapReq || (running && now - lastSnap >= ParamStream<NPARAMS>::SNAP_EVERY_MS)) {   // the whole panel at transport start, then every second
+      snapReq = false; lastSnap = now;
       ps.encodeMark(send);
       for (int i = 0; i < NPARAMS; i++) ps.encode(i, live.getParamRaw(i), send);
       ps.encode(ParamStream<NPARAMS>::SLOT_MONO, mono, send); ps.encode(ParamStream<NPARAMS>::SLOT_TAP, tap, send);
@@ -205,6 +206,15 @@ int main() {
   S.knob(0x4A, 3); S.run(0.4);
   check(S.compare(S.liveAtSong(2.4), "knob during playback") == 0, "turning a knob while listening never changes what the take plays");
   S.stop();
+
+  // ---- split take 1 at 4.5 s (inside the held note, after the sweep) and move the second half to 30 s:
+  //      after at most a second it plays with take 1's sound at that point, though take 2 (sound B) comes before it
+  { std::vector<Ev> moved;
+    for (auto &e : S.region) if (e.t >= (int64_t)(4.5 * SR) && e.t < (int64_t)(7.0 * SR)) { Ev m = e; m.t += (int64_t)(25.5 * SR); moved.push_back(m); }
+    S.region.insert(S.region.end(), moved.begin(), moved.end());
+    S.startPlay(29.0, 6); S.run(2.5);
+    check(S.compare(S.liveAtSong(5.9), "split piece") == 0, "a split piece of take 1, moved after take 2, plays with take 1's sound");
+    S.stop(); }
 
   // ---- encoding round trip for every setting
   int rt = 0;

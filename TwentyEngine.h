@@ -77,6 +77,7 @@ private:
   ms20::ParamStream<kNumParams> mStream;
   std::atomic<bool> mSnapReq{false};
   bool mStreamMono = false, mStreamTap = false;
+  int64_t mLastSnapMs = 0;
   std::atomic<int> mStreamSent{0}, mStreamApplied{0};
   void StreamSend(int slot, int32_t raw);    // main thread: one setting through the port
   void StreamApply(int slot, int32_t raw);   // audio thread: one setting from the region

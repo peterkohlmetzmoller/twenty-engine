@@ -531,8 +531,11 @@ void TwentyEngine::OnIdle()
   // 1a. Automation: the transport has started: the whole panel through the port, behind a new snapshot number.
   //     A recording track records it (a take starts with its sound); otherwise it is only echoed back and ignored.
   const bool port = PanelPort::Get().Ok();
-  if (mSnapReq.exchange(false) && port)
+  const int64_t nowMs = ms20::ParamStream<kNumParams>::NowMs();
+  const bool again = mRunningA.load() && nowMs - mLastSnapMs >= ms20::ParamStream<kNumParams>::SNAP_EVERY_MS;
+  if ((mSnapReq.exchange(false) || again) && port)
   {
+    mLastSnapMs = nowMs;
     mStream.encodeMark([](uint8_t st, uint8_t d1, uint8_t d2) { const uint8_t m[3] = {st, d1, d2}; PanelPort::Get().Send(m, 3); });
     for (int i = 0; i < kNumParams; i++) StreamSend(i, mHost->getParamRaw(i));
     StreamSend(ms20::ParamStream<kNumParams>::SLOT_MONO, mStreamMono);
