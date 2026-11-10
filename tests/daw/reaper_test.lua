@@ -178,6 +178,15 @@ local function run()
     patch("Patch TOTAL", 3)        -- EG 1 -> TOTAL
     reaper.TrackFX_Show(tr, fx, 3)
     L("WINDOW", studio)
+    -- a while later: Play Mode to VCO2 ARP, for a second screenshot (the ESP knobs should show their arp jobs)
+    local pm = findParam(tr, fx, "Play Mode")
+    local t0 = reaper.time_precise()
+    local function later()
+      if reaper.time_precise() - t0 < 12 then reaper.defer(later) return end
+      if pm >= 0 then reaper.TrackFX_SetParamNormalized(tr, fx, pm, 30 / 64) end
+      L("ARPSHOT")
+    end
+    reaper.defer(later)
   end
   L("DONE")
 end

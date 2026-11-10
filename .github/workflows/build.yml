@@ -225,6 +225,8 @@ jobs:
           ( set +e; for i in $(seq 1 40); do sleep 3; [ -f daw/reaper_log.txt ] && break; osascript -e 'tell application "System Events" to tell process "SecurityAgent" to click button "Cancel" of window 1' >> daw/dialogs.txt 2>&1 || true; osascript -e 'tell application "System Events" to tell process "REAPER" to click button "No" of window 1' >> daw/dialogs.txt 2>&1 || true; done ) &
           for i in $(seq 1 150); do grep -q DONE daw/reaper_log.txt 2>/dev/null && break; sleep 4; done
           sleep 6; screencapture -x ui.png 2>/dev/null && sips -Z 1800 ui.png > /dev/null 2>&1 && { echo "UISHOT-BEGIN"; base64 -i ui.png | tr -d '\n'; echo; echo "UISHOT-END"; }
+          for i in $(seq 1 15); do grep -q ARPSHOT daw/reaper_log.txt 2>/dev/null && break; sleep 2; done
+          sleep 3; screencapture -x ui2.png 2>/dev/null && sips -Z 1800 ui2.png > /dev/null 2>&1 && { echo "UISHOT2-BEGIN"; base64 -i ui2.png | tr -d '\n'; echo; echo "UISHOT2-END"; }
           screencapture -x shot.png 2>/dev/null && sips -Z 900 shot.png > /dev/null 2>&1 && { echo "SCREENSHOT-BEGIN"; base64 -i shot.png | tr -d '\n'; echo; echo "SCREENSHOT-END"; }
           echo "---- diagnostics"; sort daw/dialogs.txt 2>/dev/null | uniq -c | head; cat daw/stdout.txt | tail -20; ls -la "$RES" "$RES/Scripts"
           osascript -e 'tell application "System Events" to get name of every window of process "REAPER"' 2>&1 | head -3
