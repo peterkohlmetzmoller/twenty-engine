@@ -10,4 +10,4 @@ Open `TwentyEngineTeensy/TwentyEngineTeensy.ino` in the Arduino IDE with Teensyd
 `engine_gen.h`, `ksoloti_host.h` and `engine_globals.cpp` are copies of the files in `engine/`
 (the Arduino IDE only compiles files inside the sketch folder). After regenerating the engine, copy them again.
 
-SD card (FAT32) in the Teensy's own slot holds the patch memory (`MS20MEM.BIN`).
+The patch memory is saved in the Teensy's own flash (no SD card needed). An SD card (FAT32) in the Teensy's slot, if present, gets a backup copy (`MS20MEM.BIN`); with nothing in flash yet, a card's file (e.g. from a Ksoloti) is taken over.
