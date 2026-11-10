@@ -16,7 +16,7 @@ def copy(rel):
     if os.path.isdir(src): shutil.copytree(src, dst)
     else: shutil.copy2(src, dst)
 
-for f in ['TwentyEngine.cpp', 'TwentyEngine.h', 'led_port.h', 'config.h', 'CMakeLists.txt', 'engine']:
+for f in ['TwentyEngine.cpp', 'TwentyEngine.h', 'led_port.h', 'config.h', 'CMakeLists.txt', 'engine', 'ui']:
     copy(f)
 
 # resources: file names and identities
@@ -46,6 +46,9 @@ def edit(rel, pairs):
 edit('CMakeLists.txt', [('project(TwentyEngine VERSION', 'project(TwentyEngineStudio VERSION')])
 edit('config.h', [
     ('#define PLUG_NAME "Twenty Engine"', '#define TWENTY_STUDIO 1\n#define PLUG_NAME "Twenty Engine Studio"'),
+    ('#define PLUG_WIDTH 360', '#define PLUG_WIDTH 1200'),     # Studio has the full editor window (ui/StudioUI.h)
+    ('#define PLUG_HEIGHT 120', '#define PLUG_HEIGHT 690'),
+    ('#define PLUG_HOST_RESIZE 0', '#define PLUG_HOST_RESIZE 1'),
     ("#define PLUG_UNIQUE_ID 'Tw20'", "#define PLUG_UNIQUE_ID 'Tw2S'"),
     ('#define BUNDLE_NAME "TwentyEngine"', '#define BUNDLE_NAME "TwentyEngineStudio"'),
     ('#define SHARED_RESOURCES_SUBPATH "TwentyEngine"', '#define SHARED_RESOURCES_SUBPATH "TwentyEngineStudio"'),

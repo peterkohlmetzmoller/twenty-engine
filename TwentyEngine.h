@@ -9,6 +9,10 @@
 #endif
 #include "engine/engine_gen.h"
 #include "led_port.h"
+#if TWENTY_STUDIO
+#include "ui/StudioHost.h"
+#include <string>
+#endif
 
 const int kNumPresets = 1;
 const int kNumParams = ms20::NPARAMS;   // every parameter of the Ksoloti patch
@@ -28,6 +32,9 @@ using namespace igraphics;
 #endif
 
 class TwentyEngine final : public Plugin
+#if TWENTY_STUDIO
+  , public te_ui::PatchHost, public te_ui::MemoryHost
+#endif
 {
 public:
   TwentyEngine(const InstanceInfo& info);
@@ -45,6 +52,23 @@ public:
   void DrainController();                                    // audio thread: everything straight from the controller
   void StudioDiag(char* out, int n) const;                   // Studio test build: what Logic does with the knobs
   void RecallClear() { mRecall.clear(); }                    // UI: forget them
+#if TWENTY_STUDIO
+  // ---- the editor window (ui/StudioUI.h); main thread
+  int Controller() const { return mController.load(); }      // 0 none, 1 MS-20ic, 2 Ksoloti, 3 Teensy
+  bool CableFlag(int which) const override { return mCableFlag[which & 1].load(); }
+  void SetCableFlag(int which, bool on) override;
+  int NoisePick(int j) const override { return (j >= 0 && j < 35) ? mNoise[j] : 0; }
+  void SetNoisePick(int j, int pick) override { if (j >= 0 && j < 35) mNoise[j] = (uint8_t)pick; }
+  void MemRecall(int n) override { mHost->memRecall(n); }
+  void MemSave(int n) override { mHost->memSave(n); }
+  bool MemValid(int n) const override { return mHost->memValid(n); }
+  int MemSlot() const override { return mHost->memSlot(); }
+  const char* MemName(int n) const override { return (n >= 0 && n < 36) ? mNames[n].c_str() : ""; }
+  void SetMemName(int n, const char* name) override;
+  bool MemImport(const char* path) override;
+  bool MemExport(const char* path) override;
+  void SwitchDown(bool down) override { UiMidi(0xD0, down ? 127 : 0, 0); }
+#endif
 
 private:
   static int32_t ToRaw(int idx, double value);     // plugin parameter value -> engine (Ksoloti) units
@@ -57,6 +81,22 @@ private:
   bool mFromEngine = false;     // true while we push an engine-side change to the host
   int mRescan = 0;
   float mScratchL[512], mScratchR[512], mPlayL[512], mPlayR[512];
+#if TWENTY_STUDIO
+  // ---- editor window: MIDI the window sends to the engine (cable messages, the switch), cable states, memory names
+  ms20::SpscQueue<uint32_t, 512> mUiMidi;
+  void UiMidi(uint8_t s, uint8_t d1, uint8_t d2) { mUiMidi.push(((uint32_t)s << 16) | ((uint32_t)d1 << 8) | d2); }
+  void UiCable(int type, int a, int b) { UiMidi(0xB0, 99, (uint8_t)type); UiMidi(0xB0, 98, (uint8_t)a); UiMidi(0xB0, 6, (uint8_t)b); }
+  void WatchCable(uint8_t s, uint8_t d1, uint8_t d2);   // audio thread: cables patched on the MS-20ic (mono, tap)
+  int mCw99 = -1, mCw98 = -1; bool mCwH99 = false, mCwH98 = false;
+  std::atomic<bool> mCableFlag[2];
+  uint8_t mNoise[35] = {};
+  std::atomic<int> mController{0};
+  int mCtlScan = 0;
+  std::string mNames[36];
+  char mMemDir[1024] = "";
+  void LoadNames();
+  void SaveNames();
+#endif
   // Studio: the start of a new take is written as automation (every parameter touched once)
   std::atomic<bool> mTouchReq{false}, mRunningA{false};
   bool mTouchedThisRun = false, mWasRunning = false;

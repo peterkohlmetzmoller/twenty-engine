@@ -218,12 +218,13 @@ jobs:
           RES="$HOME/Library/Application Support/REAPER"
           mkdir -p "$RES/Scripts" daw
           cp tests/daw/reaper_test.lua "$RES/Scripts/__startup.lua"
-          export TE_OUT="$PWD/daw"
+          export TE_OUT="$PWD/daw" TE_UISHOT=1
           /Applications/REAPER.app/Contents/MacOS/REAPER -nosplash -new > daw/stdout.txt 2>&1 &
           RP=$!
           # a fresh REAPER asks about the audio device first: answer "No" until the test script has started
           ( set +e; for i in $(seq 1 40); do sleep 3; [ -f daw/reaper_log.txt ] && break; osascript -e 'tell application "System Events" to tell process "SecurityAgent" to click button "Cancel" of window 1' >> daw/dialogs.txt 2>&1 || true; osascript -e 'tell application "System Events" to tell process "REAPER" to click button "No" of window 1' >> daw/dialogs.txt 2>&1 || true; done ) &
           for i in $(seq 1 150); do grep -q DONE daw/reaper_log.txt 2>/dev/null && break; sleep 4; done
+          sleep 6; screencapture -x ui.png 2>/dev/null && sips -Z 1800 ui.png > /dev/null 2>&1 && { echo "UISHOT-BEGIN"; base64 -i ui.png | tr -d '\n'; echo; echo "UISHOT-END"; }
           screencapture -x shot.png 2>/dev/null && sips -Z 900 shot.png > /dev/null 2>&1 && { echo "SCREENSHOT-BEGIN"; base64 -i shot.png | tr -d '\n'; echo; echo "SCREENSHOT-END"; }
           echo "---- diagnostics"; sort daw/dialogs.txt 2>/dev/null | uniq -c | head; cat daw/stdout.txt | tail -20; ls -la "$RES" "$RES/Scripts"
           osascript -e 'tell application "System Events" to get name of every window of process "REAPER"' 2>&1 | head -3
@@ -418,11 +419,13 @@ jobs:
           ls /c/REAPER | head
           RES="$APPDATA/REAPER"; mkdir -p "$RES/Scripts" daw
           cp tests/daw/reaper_test.lua "$RES/Scripts/__startup.lua"
-          export TE_OUT="$(cygpath -w "$PWD/daw")"
+          export TE_OUT="$(cygpath -w "$PWD/daw")" TE_UISHOT=1
           /c/REAPER/reaper.exe -nosplash -new > daw/stdout.txt 2>&1 &
           # a fresh REAPER asks "You have not yet selected an audio device": answer "No" until the test script has started
           ( for i in $(seq 1 40); do sleep 3; [ -f daw/reaper_log.txt ] && break; powershell -Command "\$w=New-Object -ComObject wscript.shell; if (\$w.AppActivate('REAPER')) { \$w.SendKeys('n') }" > /dev/null 2>&1; done ) &
           for i in $(seq 1 150); do grep -q DONE daw/reaper_log.txt 2>/dev/null && break; sleep 4; done
+          sleep 6
+          powershell -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \$m=New-Object System.Drawing.Bitmap \$b.Width,\$b.Height; \$g=[System.Drawing.Graphics]::FromImage(\$m); \$g.CopyFromScreen(\$b.Location,[System.Drawing.Point]::Empty,\$b.Size); \$m.Save('ui.png')" && { echo "UISHOT-BEGIN"; base64 -w0 ui.png; echo; echo "UISHOT-END"; }
           powershell -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \$m=New-Object System.Drawing.Bitmap \$b.Width,\$b.Height; \$g=[System.Drawing.Graphics]::FromImage(\$m); \$g.CopyFromScreen(\$b.Location,[System.Drawing.Point]::Empty,\$b.Size); \$s=New-Object System.Drawing.Bitmap \$m,([int](\$b.Width/2)),([int](\$b.Height/2)); \$s.Save('shot.png')" && { echo "SCREENSHOT-BEGIN"; base64 -w0 shot.png; echo; echo "SCREENSHOT-END"; }
           taskkill //F //IM reaper.exe > /dev/null 2>&1 || true
           echo "---- reaper.ini (Windows)"; grep -v -i -E "^(lastproject|recent)" "$RES/reaper.ini" | head -80

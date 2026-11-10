@@ -96,6 +96,11 @@ public:
   void process(float *outL, float *outR, int n) {
     ParamSet ps;
     while (toEngine.pop(ps)) { core->root.PExch[ps.idx].value = ps.raw; known[ps.idx] = ps.raw; }
+    int mc;
+    while (memCmd.pop(mc)) {
+      O_Patch_Memory &pm = core->o_Patch_Memory;
+      if (mc < 1000) pm.recall(mc); else if (mc < 2000) pm.save(mc - 1000); else pm.loadFile();
+    }
     g_sysexSender = &MS20Host::onSysex; g_sysexUser = this;
     int ei = 0;
     for (int k = 0; k < n; k++) {
@@ -158,6 +163,13 @@ public:
   }
   // main thread: forget a save request (a take playing back replays the save gesture: never overwrite the memory then)
   void dropMemorySave() { core->o_Patch_Memory.savereq = 0; }
+  // --- patch memory from an editor window (main thread; carried out on the audio thread, between engine blocks) ---
+  static const int MEMSLOTS = O_Patch_Memory::NS;   // 36; slot MEMSLOTS = the panel (top C)
+  void memRecall(int n) { if (n >= 0 && n <= MEMSLOTS) memCmd.push(n); }
+  void memSave(int n) { if (n >= 0 && n < MEMSLOTS) memCmd.push(1000 + n); }   // the file is written by pollMemorySave()
+  void memReload() { memCmd.push(2000); }                                     // after MS20MEM.BIN was replaced (import)
+  bool memValid(int n) const { return n >= 0 && n < MEMSLOTS && core->o_Patch_Memory.valid[n]; }
+  bool memWriteFile() { return core->o_Patch_Memory.saveFile(); }            // main thread: write MS20MEM.BIN now (export)
 
 private:
   static const int HW = 40;           // resampler half width in engine samples (80 taps, about 0.8 ms)
@@ -171,6 +183,7 @@ private:
   int32_t known[NPARAMS];
   SpscQueue<ParamSet, 1024> toEngine, fromEngine;
   SpscQueue<LedMsg, 256> leds;
+  SpscQueue<int, 64> memCmd;
   MidiEv ev[MAXEV]; int nev = 0;
 
   double rate = 48000, step = 1, pos = 0, evlat = 32; bool bypass = true;

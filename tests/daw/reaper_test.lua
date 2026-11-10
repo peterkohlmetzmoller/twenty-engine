@@ -163,6 +163,15 @@ local function run()
     render("both_vst3")
   end
   clear()
+  -- Studio's editor window, left open for a screenshot (with two cables patched)
+  if os.getenv("TE_UISHOT") and studio then
+    local tr, fx = newTrack(studio)
+    local function patch(name, v) local p = findParam(tr, fx, name) if p >= 0 then reaper.TrackFX_SetParamNormalized(tr, fx, p, v / 13) end end
+    patch("Patch LPF Cutoff", 1)   -- MG TRI -> LPF
+    patch("Patch TOTAL", 3)        -- EG 1 -> TOTAL
+    reaper.TrackFX_Show(tr, fx, 3)
+    L("WINDOW", studio)
+  end
   L("DONE")
 end
 

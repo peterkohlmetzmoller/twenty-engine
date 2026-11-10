@@ -3,6 +3,9 @@
 #if IPLUG_EDITOR
 #include "IControls.h"
 #include "resources/font_data.h"
+#if TWENTY_STUDIO
+#include "ui/StudioUI.h"
+#endif
 #endif
 #include <string.h>
 #include <stdlib.h>
@@ -156,6 +159,9 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       snprintf(dir, sizeof(dir), "%s/Twenty Engine/", base);
       MakeDir(dir);
       mHost->loadMemories(dir);
+#if TWENTY_STUDIO
+      snprintf(mMemDir, sizeof(mMemDir), "%s", dir);
+#endif
       /* beta diagnostics log (off): char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug.txt", dir); mDbg = fopen(lp, "w"); */
     }
 #else
@@ -165,10 +171,18 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       char parent[1024]; snprintf(parent, sizeof(parent), "%s/Library/Application Support", home);
       MakeDir(parent); MakeDir(dir);
       mHost->loadMemories(dir);
+#if TWENTY_STUDIO
+      snprintf(mMemDir, sizeof(mMemDir), "%s", dir);
+#endif
       /* beta diagnostics log (off): char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug.txt", dir); mDbg = fopen(lp, "w"); */
     }
 #endif
   }
+#endif
+#if TWENTY_STUDIO && IPLUG_DSP
+  mCableFlag[0].store(false); mCableFlag[1].store(false);
+  LoadNames();
+  mController.store(LedPort::FindController());
 #endif
   // Same ranges as the Ksoloti editor shows them: knobs 0..64 (bipolar -64..64), selectors as integers.
   // Not automatable: the sound is played on the controller and stored by performance recall, not edited in the DAW.
@@ -201,10 +215,18 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
   mMakeGraphicsFunc = [&]() {
     return MakeGraphics(*this, PLUG_WIDTH, PLUG_HEIGHT, PLUG_FPS, GetScaleForScreen(PLUG_WIDTH, PLUG_HEIGHT));
   };
+#if TWENTY_STUDIO
+  // Studio: the full editor (ui/StudioUI.h)
+  mLayoutFunc = [&](IGraphics* pGraphics) {
+    pGraphics->LoadFont("Roboto-Regular", (void*)kRobotoTTF, (int)sizeof(kRobotoTTF));
+    te_ui::Layout(pGraphics, this, this, [this]() { return Controller(); }, [this](char* out, int n) { StudioDiag(out, n); });
+  };
+#else
   mLayoutFunc = [&](IGraphics* pGraphics) {
     pGraphics->LoadFont("Roboto-Regular", (void*)kRobotoTTF, (int)sizeof(kRobotoTTF));
     pGraphics->AttachControl(new StatusControl(pGraphics->GetBounds(), this));
   };
+#endif
 #endif
 }
 
@@ -249,6 +271,12 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   if (msg.mStatus < 0xF0 && (msg.mStatus & 0xF0) != 0xB0) mDbgMidiQ.push({msg.mStatus, msg.mData1, msg.mData2, msg.mOffset});   // beta diagnostics: notes, pressure (not the many knob CCs)
   // performance recall (engine/recall.h): the track plays the notes, the switch and the mod wheel; knob and
   // cable CCs on the track are ignored when the knobs reach the plugin straight from the controller
+#if TWENTY_STUDIO
+  // Studio plays from any keyboard: channel pressure is the MS-20ic's momentary switch only when one is connected
+  // (a keyboard's aftertouch would otherwise hold the switch: silent keys, memory mode)
+  if ((msg.mStatus & 0xF0) == 0xD0 && mController.load() == 0) return;
+  if (!mLed.KnobsDirect()) WatchCable(msg.mStatus, msg.mData1, msg.mData2);
+#endif
   if (!mLed.KnobsDirect()) { mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2); return; }   // Windows: the track plays the live engine
   DrainController();                                                  // what the controller sent first: tells live from region
   const int type = msg.mStatus & 0xF0;
@@ -280,6 +308,9 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   const bool twoEngines = direct;
 #endif
   if (direct) DrainController();
+#if TWENTY_STUDIO
+  { uint32_t m; while (mUiMidi.pop(m)) mHost->midi(0, (uint8_t)(m >> 16), (uint8_t)(m >> 8), (uint8_t)m); }
+#endif
   mClock += nFrames;
   mRecall.beginBlock(GetTransportIsRunning(), GetPPQPos(), (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0, nFrames);
   int done = 0;
@@ -332,6 +363,7 @@ void TwentyEngine::OnIdle()
     BeginInformHostOfParamChangeFromUI(p.idx);   // Studio: a knob move is a gesture Logic can write (Latch)
     SetParameterValue(p.idx, GetParam(p.idx)->ToNormalized(v));
     EndInformHostOfParamChangeFromUI(p.idx);
+    SendParameterValueFromDelegate(p.idx, GetParam(p.idx)->GetNormalized(), true);   // the window's knob follows
 #else
     GetParam(p.idx)->Set(v);   // keep the plugin's copy in step (saved with the project); no automation gestures to the host
 #endif
@@ -352,6 +384,9 @@ void TwentyEngine::OnIdle()
     mFromEngine = false;
     mDiagTouched.store(kNumParams);
   }
+#endif
+#if TWENTY_STUDIO
+  if (--mCtlScan <= 0) { mCtlScan = 50; mController.store(LedPort::FindController()); }   // about once a second
 #endif
   // 2. patch memory: write the file after a save on the keys (never on the audio thread).
   //    While stored settings play back, replayed save gestures never overwrite the memory.
@@ -376,6 +411,11 @@ bool TwentyEngine::SerializeState(IByteChunk& chunk) const
   chunk.Put(&n);
   if (n > 0) chunk.PutBytes(b.data(), n);
 #endif
+#if TWENTY_STUDIO && IPLUG_DSP
+  // the editor's cable states (mono, tap tempo) and which noise jack each noise cable comes from
+  const int32_t magic = 0x54455531, mono = mCableFlag[0].load(), tap = mCableFlag[1].load();   // 'TEU1'
+  chunk.Put(&magic); chunk.Put(&mono); chunk.Put(&tap); chunk.PutBytes(mNoise, 35);
+#endif
   return true;
 }
 
@@ -392,6 +432,18 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
     {
       std::vector<uint8_t> b((size_t)n);
       if (chunk.GetBytes(b.data(), n, p2) > 0 && mRecall.unserialize(b.data(), (size_t)n)) pos = p2 + n;
+    }
+  }
+#endif
+#if TWENTY_STUDIO && IPLUG_DSP
+  if (pos >= 0 && pos + 12 + 35 <= chunk.Size())
+  {
+    int32_t magic = 0, mono = 0, tap = 0; int q = chunk.Get(&magic, pos);
+    if (q > 0 && magic == 0x54455531)
+    {
+      q = chunk.Get(&mono, q); q = chunk.Get(&tap, q);
+      if (q > 0) q = chunk.GetBytes(mNoise, 35, q);
+      if (q > 0) { SetCableFlag(0, mono != 0); SetCableFlag(1, tap != 0); pos = q; }
     }
   }
 #endif
@@ -418,10 +470,122 @@ void TwentyEngine::DrainController()
 #else
     if (late) mPlay->midi(0, (uint8_t)(0x80 | (s & 0x0F)), d1, 0);   // silence the host's copy on the playback engine
 #endif
+#if TWENTY_STUDIO
+    WatchCable(s, d1, d2);
+#endif
     mHost->midi(0, s, d1, d2);
   }
 #endif
 }
+
+#if TWENTY_STUDIO
+// ---- the editor window (ui/StudioUI.h) ----
+// the two cables that are not parameters: KBD CV -> VCO 1+2 CV IN (mono) and SWITCH -> ESP SIGNAL IN (tap tempo).
+// The engine gets the MS-20ic's own messages: connect (4, a, b), or disconnect (5, a, b) plus both plugs out.
+void TwentyEngine::SetCableFlag(int which, bool on)
+{
+  const int a = which ? 33 : 31, b = which ? 3 : 25;
+  mCableFlag[which & 1].store(on);
+  if (on) UiCable(4, a, b);
+  else { UiCable(5, a, b); UiCable(5, b, b); UiCable(5, a, a); }
+}
+
+// audio thread: follow the MS-20ic's cable messages (CC 99 type, CC 98 / CC 6 the jacks) for the window
+void TwentyEngine::WatchCable(uint8_t s, uint8_t d1, uint8_t d2)
+{
+  if ((s & 0xF0) != 0xB0) return;
+  if (d1 == 99) { mCw99 = d2; mCwH99 = true; mCwH98 = false; return; }
+  if (d1 == 98) { mCw98 = d2; mCwH98 = true; return; }
+  if (d1 != 6 || !mCwH99 || !mCwH98) return;
+  mCwH99 = mCwH98 = false;
+  const int t = mCw99, a = mCw98, b = d2;
+  for (int w = 0; w < 2; w++)
+  {
+    const int o = w ? 33 : 31, i = w ? 3 : 25;
+    if ((a == o && b == i) || (a == i && b == o)) { if (t == 4) mCableFlag[w].store(true); else if (t == 5) mCableFlag[w].store(false); }
+    if (t == 5 && a == b && (a == o || a == i)) mCableFlag[w].store(false);
+  }
+}
+
+static const char* kFactoryNames[36] = {
+  "Punch Saw Bass", "Acid Reso", "Sub Pulse", "Wide Pulse Bass", "Octave Bass", "Fifth Bass", "Ring Bass", "Sine Thump", "Round Bass", "Wobble", "Glide Bass", "Phaser Bass",
+  "Poly Strings", "Brass", "Organ", "Soft Keys", "Bell", "Glass Pad", "Sweep Pad", "Phaser Pad", "Clav", "Harpsi", "Vowel Pad", "Poly Synth",
+  "Fourth Lead", "Square Lead", "Screamer", "Soft Flute", "Reed", "Theremin", "Rising Zap", "Laser", "Random Bleeps", "Wind", "Ring Metal", "Slow Swell" };
+
+// sound names: MS20NAMES.TXT next to MS20MEM.BIN, one per line (the hardware has no names)
+void TwentyEngine::LoadNames()
+{
+  for (int i = 0; i < 36; i++) mNames[i] = kFactoryNames[i];
+  char path[1200]; snprintf(path, sizeof(path), "%sMS20NAMES.TXT", mMemDir);
+  FILE* f = mMemDir[0] ? fopen(path, "r") : nullptr;
+  if (!f) return;
+  char line[128];
+  for (int i = 0; i < 36 && fgets(line, sizeof(line), f); i++)
+  {
+    size_t n = strlen(line); while (n && (line[n - 1] == '\n' || line[n - 1] == '\r')) line[--n] = 0;
+    if (n) mNames[i] = line;
+  }
+  fclose(f);
+}
+
+void TwentyEngine::SaveNames()
+{
+  if (!mMemDir[0]) return;
+  char path[1200]; snprintf(path, sizeof(path), "%sMS20NAMES.TXT", mMemDir);
+  if (FILE* f = fopen(path, "w")) { for (int i = 0; i < 36; i++) fprintf(f, "%s\n", mNames[i].c_str()); fclose(f); }
+}
+
+void TwentyEngine::SetMemName(int n, const char* name)
+{
+  if (n < 0 || n >= 36 || !name) return;
+  std::string s(name); for (char& c : s) if (c == '\n' || c == '\r') c = ' ';
+  if (s.size() > 40) s.resize(40);
+  mNames[n] = s; SaveNames();
+}
+
+static bool TECopyFile(const char* from, const char* to)
+{
+  FILE* a = fopen(from, "rb"); if (!a) return false;
+  FILE* b = fopen(to, "wb"); if (!b) { fclose(a); return false; }
+  char buf[4096]; size_t n; bool ok = true;
+  while ((n = fread(buf, 1, sizeof(buf), a)) > 0) if (fwrite(buf, 1, n, b) != n) { ok = false; break; }
+  fclose(a); if (fclose(b) != 0) ok = false;
+  return ok;
+}
+
+static std::string NamesPathFor(const char* bin)   // MyBank.BIN -> MyBank.txt
+{
+  std::string p(bin); const size_t dot = p.find_last_of('.'), sl = p.find_last_of("/\\");
+  if (dot != std::string::npos && (sl == std::string::npos || dot > sl)) p.resize(dot);
+  return p + ".txt";
+}
+
+// a bank from the Ksoloti SD card, a Teensy backup or another computer: the same MS20MEM.BIN format
+bool TwentyEngine::MemImport(const char* path)
+{
+  FILE* f = fopen(path, "rb"); if (!f) return false;
+  int32_t hdr[3] = {0, 0, 0}; const size_t got = fread(hdr, 4, 3, f); fclose(f);
+  if (got != 3 || hdr[0] != 0x4D533230 || hdr[1] != 36) return false;   // 'MS20', 36 slots
+  char dst[1200]; snprintf(dst, sizeof(dst), "%sMS20MEM.BIN", mMemDir);
+  if (!mMemDir[0] || !TECopyFile(path, dst)) return false;
+  const std::string np = NamesPathFor(path);
+  char nd[1200]; snprintf(nd, sizeof(nd), "%sMS20NAMES.TXT", mMemDir);
+  if (FILE* t = fopen(np.c_str(), "r")) { fclose(t); TECopyFile(np.c_str(), nd); }
+  mHost->memReload();
+  LoadNames();
+  return true;
+}
+
+bool TwentyEngine::MemExport(const char* path)
+{
+  char src[1200]; snprintf(src, sizeof(src), "%sMS20MEM.BIN", mMemDir);
+  if (FILE* f = fopen(src, "rb")) fclose(f); else if (!mHost->memWriteFile()) return false;   // only factory sounds so far: write them first
+  if (!TECopyFile(src, path)) return false;
+  const std::string np = NamesPathFor(path);
+  if (FILE* t = fopen(np.c_str(), "w")) { for (int i = 0; i < 36; i++) fprintf(t, "%s\n", mNames[i].c_str()); fclose(t); }
+  return true;
+}
+#endif
 
 void TwentyEngine::StudioDiag(char* out, int n) const
 {
