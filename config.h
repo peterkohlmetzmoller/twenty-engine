@@ -1,6 +1,6 @@
-// Product identity: "Twenty Engine" by Peter Kohlmetz Moller (keep "Korg"/"MS-20" out of the product name).
+// Product identity: "Twenty Engine Instrument" (with "Twenty Engine Automation", tools/make_variant.py) by Peter Kohlmetz Moller (keep "Korg"/"MS-20" out of the product name).
 // The AU manufacturer and unique IDs must also match resources/TwentyEngine-AU-Info.plist.
-#define PLUG_NAME "Twenty Engine"
+#define PLUG_NAME "Twenty Engine Instrument"
 #define PLUG_MFR "Peter Kohlmetz Moller"
 #define PLUG_VERSION_HEX 0x00010000
 #define PLUG_VERSION_STR "1.0.0"

@@ -71,12 +71,12 @@ jobs:
           grep -E -A6 "Undefined symbols|duplicate symbol" build.log | head -30 | sed 's/^/::error::/'
           exit $st
 
-      - name: Build Twenty Engine Studio (AU + VST3, the same source as its own plugin)
+      - name: Build Twenty Engine Automation (AU + VST3, the same source as its own plugin)
         run: |
           python3 tools/make_variant.py studio
           cmake -S studio -B build-studio -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DIPLUG_DEPLOY_PLUGINS=OFF -DIPLUG2_DIR="$PWD/iPlug2" > studio-cfg.log 2>&1 || { tail -40 studio-cfg.log; exit 1; }
           set +e
-          cmake --build build-studio --config Release --target TwentyEngineStudio-au --target TwentyEngineStudio-vst3 -- -quiet > studio.log 2>&1
+          cmake --build build-studio --config Release --target TwentyEngineAutomation-au --target TwentyEngineAutomation-vst3 -- -quiet > studio.log 2>&1
           st=$?
           grep -E "error:|error G|fatal" studio.log | sort -u | head -25 | sed 's/^/::error::/'
           grep -E -A6 "Undefined symbols|duplicate symbol" studio.log | head -30 | sed 's/^/::error::/'
@@ -102,10 +102,10 @@ jobs:
           # below 10.14 the minimum sits in LC_VERSION_MIN_MACOSX ("version"), from 10.14 in LC_BUILD_VERSION ("minos")
           MINOS=$(vtool -arch x86_64 -show-build "$COMP/Contents/MacOS/"* | awk '/^ *(minos|version) /{print $2; exit}')
           [ "$MINOS" = "10.13" ] || { echo "::error::Intel AU minimum macOS is $MINOS, expected 10.13"; exit 1; }
-          # Twenty Engine Studio, validated next to the instrument (both installed at once)
-          SCOMP=$(find build-studio -name "TwentyEngineStudio.component" -type d | head -1)
-          SVST3=$(find build-studio -name "TwentyEngineStudio.vst3" -type d | head -1)
-          echo "Studio AU: $SCOMP  VST3: $SVST3"
+          # Twenty Engine Automation, validated next to the instrument (both installed at once)
+          SCOMP=$(find build-studio -name "TwentyEngineAutomation.component" -type d | head -1)
+          SVST3=$(find build-studio -name "TwentyEngineAutomation.vst3" -type d | head -1)
+          echo "Automation AU: $SCOMP  VST3: $SVST3"
           codesign --force --deep -s - "$SCOMP"
           codesign --force --deep -s - "$SVST3"
           cp -R "$SCOMP" ~/Library/Audio/Plug-Ins/Components/
@@ -119,7 +119,7 @@ jobs:
         run: |
           cd out
           ditto -c -k --keepParent TwentyEngine.component ../TwentyEngine-AU.zip && ditto -c -k --keepParent TwentyEngine.vst3 ../TwentyEngine-VST3-Mac.zip
-          ditto -c -k --keepParent TwentyEngineStudio.component ../TwentyEngineStudio-AU.zip && ditto -c -k --keepParent TwentyEngineStudio.vst3 ../TwentyEngineStudio-VST3-Mac.zip
+          ditto -c -k --keepParent TwentyEngineAutomation.component ../TwentyEngineAutomation-AU.zip && ditto -c -k --keepParent TwentyEngineAutomation.vst3 ../TwentyEngineAutomation-VST3-Mac.zip
 
       - name: Build AAX (unsigned, only with the AAX SDK)
         if: env.HAVE_AAX == '1'
@@ -132,8 +132,8 @@ jobs:
         run: |
           VER=$(grep -E '#define PLUG_VERSION_STR' config.h | sed -E 's/.*"(.*)".*/\1/')
           mkdir -p pkgroot/au pkgroot/vst3
-          cp -R out/TwentyEngine.component out/TwentyEngineStudio.component pkgroot/au/
-          cp -R out/TwentyEngine.vst3 out/TwentyEngineStudio.vst3 pkgroot/vst3/
+          cp -R out/TwentyEngine.component out/TwentyEngineAutomation.component pkgroot/au/
+          cp -R out/TwentyEngine.vst3 out/TwentyEngineAutomation.vst3 pkgroot/vst3/
           pkgbuild --root pkgroot/au --identifier com.peterkohlmetzmoller.twentyengine.au --version "$VER" \
             --install-location /Library/Audio/Plug-Ins/Components --scripts installer/scripts au.pkg
           pkgbuild --root pkgroot/vst3 --identifier com.peterkohlmetzmoller.twentyengine.vst3 --version "$VER" \
@@ -143,10 +143,10 @@ jobs:
 
       - name: Test the installer (install, then validate the installed AU)
         run: |
-          rm -rf ~/Library/Audio/Plug-Ins/Components/TwentyEngine.component ~/Library/Audio/Plug-Ins/Components/TwentyEngineStudio.component
+          rm -rf ~/Library/Audio/Plug-Ins/Components/TwentyEngine.component ~/Library/Audio/Plug-Ins/Components/TwentyEngineAutomation.component
           sudo installer -pkg TwentyEngine-Installer.pkg -target /
           ls -d /Library/Audio/Plug-Ins/Components/TwentyEngine.component /Library/Audio/Plug-Ins/VST3/TwentyEngine.vst3
-          ls -d /Library/Audio/Plug-Ins/Components/TwentyEngineStudio.component /Library/Audio/Plug-Ins/VST3/TwentyEngineStudio.vst3
+          ls -d /Library/Audio/Plug-Ins/Components/TwentyEngineAutomation.component /Library/Audio/Plug-Ins/VST3/TwentyEngineAutomation.vst3
           killall -9 AudioComponentRegistrar || true
           sleep 2
           auval -v aumu Tw20 Pkmo
@@ -159,8 +159,8 @@ jobs:
             TwentyEngine-Installer.pkg
             TwentyEngine-AU.zip
             TwentyEngine-VST3-Mac.zip
-            TwentyEngineStudio-AU.zip
-            TwentyEngineStudio-VST3-Mac.zip
+            TwentyEngineAutomation-AU.zip
+            TwentyEngineAutomation-VST3-Mac.zip
             TwentyEngine-AAX-Mac-unsigned.zip
 
   # ---------------- Apple Silicon: validate the arm64 half of the same AU ----------------
@@ -184,8 +184,8 @@ jobs:
       - name: Install both plugins (AU + VST3)
         run: |
           mkdir -p ~/Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/VST3
-          for z in TwentyEngine-AU TwentyEngineStudio-AU; do ditto -x -k art/$z.zip ~/Library/Audio/Plug-Ins/Components/; done
-          for z in TwentyEngine-VST3-Mac TwentyEngineStudio-VST3-Mac; do ditto -x -k art/$z.zip ~/Library/Audio/Plug-Ins/VST3/; done
+          for z in TwentyEngine-AU TwentyEngineAutomation-AU; do ditto -x -k art/$z.zip ~/Library/Audio/Plug-Ins/Components/; done
+          for z in TwentyEngine-VST3-Mac TwentyEngineAutomation-VST3-Mac; do ditto -x -k art/$z.zip ~/Library/Audio/Plug-Ins/VST3/; done
           killall -9 AudioComponentRegistrar || true
           ls ~/Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/VST3
       - name: pluginval (plugin stress test)
@@ -196,7 +196,7 @@ jobs:
           ditto -x -k pv.zip pv
           PV=$(find pv -path "*MacOS/pluginval" -type f | head -1)
           st=0
-          for p in VST3/TwentyEngine.vst3 VST3/TwentyEngineStudio.vst3 Components/TwentyEngine.component Components/TwentyEngineStudio.component; do
+          for p in VST3/TwentyEngine.vst3 VST3/TwentyEngineAutomation.vst3 Components/TwentyEngine.component Components/TwentyEngineAutomation.component; do
             P="$HOME/Library/Audio/Plug-Ins/$p"
             "$PV" --strictness-level 5 --skip-gui-tests --timeout-ms 900000 --validate "$P" > pv.log 2>&1; r=$?
             echo "::group::pluginval $p (exit $r)"; cat pv.log | tail -120; echo "::endgroup::"
@@ -290,12 +290,12 @@ jobs:
           grep -E "error|fatal" build.log | grep -v " 0 error" | sort -u | head -25 | sed 's/^/::error::/'
           exit $st
 
-      - name: Build Twenty Engine Studio (VST3, the same source as its own plugin)
+      - name: Build Twenty Engine Automation (VST3, the same source as its own plugin)
         run: |
           python tools/make_variant.py studio
           cmake -S studio -B build-studio -G "Visual Studio 17 2022" -A x64 -T ClangCL -DIPLUG_DEPLOY_PLUGINS=OFF -DIPLUG2_DIR="$(cygpath -m "$PWD/iPlug2")" > studio-cfg.log 2>&1 || { tail -40 studio-cfg.log; exit 1; }
           set +e
-          cmake --build build-studio --config Release --target TwentyEngineStudio-vst3 > studio.log 2>&1
+          cmake --build build-studio --config Release --target TwentyEngineAutomation-vst3 > studio.log 2>&1
           st=$?
           grep -E "error|fatal" studio.log | grep -v " 0 error" | sort -u | head -25 | sed 's/^/::error::/'
           exit $st
@@ -315,8 +315,8 @@ jobs:
           tail -25 val.txt; grep -iE "failed|error" val.txt | head -10 | sed 's/^/::warning::/'
           mkdir -p out && cp -R "$VST3" out/
           [ $st -eq 0 ] || exit $st
-          SVST3=$(find build-studio -name "TwentyEngineStudio.vst3" -type d | head -1)
-          echo "Studio VST3: $SVST3"
+          SVST3=$(find build-studio -name "TwentyEngineAutomation.vst3" -type d | head -1)
+          echo "Automation VST3: $SVST3"
           "$VAL" "$SVST3" > sval.txt 2>&1; st=$?
           tail -5 sval.txt
           cp -R "$SVST3" out/
@@ -326,7 +326,7 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive -Path out/TwentyEngine.vst3 -DestinationPath TwentyEngine-VST3-Windows.zip
-          Compress-Archive -Path out/TwentyEngineStudio.vst3 -DestinationPath TwentyEngineStudio-VST3-Windows.zip
+          Compress-Archive -Path out/TwentyEngineAutomation.vst3 -DestinationPath TwentyEngineAutomation-VST3-Windows.zip
 
       - name: Build AAX (unsigned, only with the AAX SDK)
         if: env.HAVE_AAX == '1'
@@ -346,12 +346,12 @@ jobs:
         shell: pwsh
         run: |
           Remove-Item -Recurse -Force "C:\Program Files\Common Files\VST3\TwentyEngine.vst3" -ErrorAction SilentlyContinue
-          Remove-Item -Recurse -Force "C:\Program Files\Common Files\VST3\TwentyEngineStudio.vst3" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "C:\Program Files\Common Files\VST3\TwentyEngineAutomation.vst3" -ErrorAction SilentlyContinue
           Start-Process -Wait -FilePath .\TwentyEngine-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
           $inst = "C:\Program Files\Common Files\VST3\TwentyEngine.vst3"
           if (!(Test-Path $inst)) { throw "not installed" }
-          $sinst = "C:\Program Files\Common Files\VST3\TwentyEngineStudio.vst3"
-          if (!(Test-Path $sinst)) { throw "Studio not installed" }
+          $sinst = "C:\Program Files\Common Files\VST3\TwentyEngineAutomation.vst3"
+          if (!(Test-Path $sinst)) { throw "Automation not installed" }
           $val = Get-ChildItem -Recurse -Filter validator.exe iPlug2\Dependencies\IPlug\VST3_SDK\vbuild | Select-Object -First 1
           & $val.FullName $inst | Select-Object -Last 3
           if ($LASTEXITCODE -ne 0) { throw "validator failed on the installed plugin" }
@@ -367,7 +367,7 @@ jobs:
           path: |
             TwentyEngine-Setup.exe
             TwentyEngine-VST3-Windows.zip
-            TwentyEngineStudio-VST3-Windows.zip
+            TwentyEngineAutomation-VST3-Windows.zip
             TwentyEngine-AAX-Windows-unsigned.zip
 
   # ---------------- the plugins in other hosts: pluginval and REAPER (Windows) ----------------
@@ -391,7 +391,7 @@ jobs:
         run: |
           D="/c/Program Files/Common Files/VST3"; mkdir -p "$D"
           7z x -y art/TwentyEngine-VST3-Windows.zip -o"$D" > /dev/null
-          7z x -y art/TwentyEngineStudio-VST3-Windows.zip -o"$D" > /dev/null
+          7z x -y art/TwentyEngineAutomation-VST3-Windows.zip -o"$D" > /dev/null
           ls "$D"
       - name: pluginval (plugin stress test)
         id: pv
@@ -401,7 +401,7 @@ jobs:
           7z x -y pv.zip -opv > /dev/null
           PV=$(find pv -iname pluginval.exe | head -1)
           st=0
-          for p in TwentyEngine.vst3 TwentyEngineStudio.vst3; do
+          for p in TwentyEngine.vst3 TwentyEngineAutomation.vst3; do
             "$PV" --strictness-level 5 --skip-gui-tests --timeout-ms 900000 --validate "C:\\Program Files\\Common Files\\VST3\\$p" > pv.log 2>&1; r=$?
             echo "::group::pluginval $p (exit $r)"; tail -120 pv.log; echo "::endgroup::"
             if [ $r -eq 0 ]; then echo "PLUGINVAL PASS $p"; else echo "::error::pluginval failed: $p"; grep -E "FAILED|!!!|\*\*\*" pv.log | head -20; st=1; fi

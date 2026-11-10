@@ -1,11 +1,11 @@
 Twenty Engine - an 8-voice polysynth engine for the Korg MS-20ic.
 
 This installs two 64-bit VST3 plugins into the standard VST3 folder (C:\Program Files\Common Files\VST3):
-- Twenty Engine: the instrument. Plays like the hardware.
-- Twenty Engine Studio: the same sound, with every knob as editable automation in your DAW.
+- Twenty Engine Instrument: plays like the hardware.
+- Twenty Engine Automation: the same sound, with every knob as editable automation in your DAW.
 
 They work in Ableton Live, Bitwig, Reaper, Cubase and other VST3 hosts. Your 36 memory sounds are kept in %APPDATA%\Twenty Engine and are not removed when you uninstall.
 
-Performance recall in Twenty Engine needs the plugin to open the MS-20ic next to your DAW: Windows 11 with Windows MIDI Services allows that. On older Windows the plugin plays from the track as a normal instrument.
+Performance recall in Twenty Engine Instrument needs the plugin to open the MS-20ic next to your DAW: Windows 11 with Windows MIDI Services allows that. On older Windows the plugin plays from the track as a normal instrument.
 
 MS-20 is a trademark of KORG Inc.; this is an independent project, not affiliated with KORG.

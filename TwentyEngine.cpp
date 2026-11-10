@@ -83,9 +83,9 @@ public:
     g.DrawRect(ink, mRECT.GetPadded(-6.f), nullptr, 1.5f);
     const IRECT in = mRECT.GetPadded(-22.f);
 #if TWENTY_STUDIO
-    g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE STUDIO", in);
+    g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE AUTOMATION", in);
 #else
-    g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE", in);
+    g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE INSTRUMENT", in);
 #endif
 
     static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy" };
@@ -470,7 +470,7 @@ void TwentyEngine::StudioDiag(char* out, int n) const
 {
 #if IPLUG_DSP
   int k = 0; uint64_t b = mDiagHostBits.load(); while (b) { k += (int)(b & 1); b >>= 1; }
-  snprintf(out, n, "Studio test \xC2\xB7 start written: %d params \xC2\xB7 from Logic since play: %d values, %d params",
+  snprintf(out, n, "Automation test \xC2\xB7 start written: %d params \xC2\xB7 from Logic since play: %d values, %d params",
            mDiagTouched.load(), mDiagHost.load(), k);
 #else
   if (n > 0) out[0] = 0;
