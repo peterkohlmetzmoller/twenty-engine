@@ -226,15 +226,21 @@ public:
     MMRESULT r;
     if (bytes[0] == 0xF0)
     {
-      memcpy(mBuf, bytes, len);
-      MIDIHDR h = {};
-      h.lpData = (LPSTR)mBuf; h.dwBufferLength = (DWORD)len; h.dwBytesRecorded = (DWORD)len;
+      // SysEx: Windows sends it in the background and keeps using the header and the bytes until it marks
+      // them done. Each message gets its own slot, reused only once Windows is finished with it; nothing waits.
+      // All slots still busy (a burst, e.g. the start-up light show): this LED message is skipped.
+      Reclaim();
+      int k = 0; while (k < kSlots && mBusy[k]) k++;
+      if (k == kSlots) return;
+      memcpy(mBufs[k], bytes, len);
+      MIDIHDR &h = mHdr[k]; h = MIDIHDR{};
+      h.lpData = (LPSTR)mBufs[k]; h.dwBufferLength = (DWORD)len; h.dwBytesRecorded = (DWORD)len;
       r = midiOutPrepareHeader(mOut, &h, sizeof(h));
       if (r == MMSYSERR_NOERROR)
       {
+        mBusy[k] = true;
         r = midiOutLongMsg(mOut, &h, sizeof(h));
-        for (int k = 0; k < 50 && !(h.dwFlags & MHDR_DONE); k++) Sleep(1);   // a 9-byte LED message takes ~3 ms
-        midiOutUnprepareHeader(mOut, &h, sizeof(h));
+        if (r != MMSYSERR_NOERROR) { midiOutUnprepareHeader(mOut, &h, sizeof(h)); mBusy[k] = false; }
       }
     }
     else
@@ -274,7 +280,17 @@ private:
     low[i] = 0;
     return strstr(low, lowerNeedle) != nullptr;
   }
-  void Close() { if (mOut) { midiOutReset(mOut); midiOutClose(mOut); mOut = nullptr; } }
+  void Close()
+  {
+    if (!mOut) return;
+    midiOutReset(mOut);                                   // marks every queued SysEx done
+    for (int k = 0; k < kSlots; k++)
+      if (mBusy[k]) { for (int t = 0; t < 200 && !(mHdr[k].dwFlags & MHDR_DONE); t++) Sleep(1); midiOutUnprepareHeader(mOut, &mHdr[k], sizeof(MIDIHDR)); mBusy[k] = false; }
+    midiOutClose(mOut); mOut = nullptr;
+  }
+  void Reclaim() { for (int k = 0; k < kSlots; k++) if (mBusy[k] && (mHdr[k].dwFlags & MHDR_DONE)) { midiOutUnprepareHeader(mOut, &mHdr[k], sizeof(MIDIHDR)); mBusy[k] = false; } }
+  static const int kSlots = 16;
+  MIDIHDR mHdr[kSlots] = {}; char mBufs[kSlots][64] = {}; bool mBusy[kSlots] = {};
   HMIDIOUT mOut = nullptr;
   // ---- controller input (straight to the plugin) ----
   HMIDIIN mIn = nullptr; int mInDev = -1; KnobQueue mKnobs; std::atomic<bool> mInOk{false};
@@ -311,7 +327,6 @@ private:
     const bool one = (s & 0xF0) == 0xC0 || (s & 0xF0) == 0xD0;
     self->mKnobs.push(((uint32_t)s << 16) | ((uint32_t)d1 << 8) | (one ? 0 : d2));
   }
-  char mBuf[64];
 };
 
 #else
