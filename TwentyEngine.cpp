@@ -56,8 +56,13 @@ public:
     g.DrawText(IText(14.f, on ? ink : dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), txt.Get(), row.GetHShifted(20.f));
 
     WDL_String tk;
-    if (mTakes > 0) tk.SetFormatted(96, "Sound stored for %d part%s of the song  \xC2\xB7  double-click to clear", mTakes, mTakes == 1 ? "" : "s");
-    else tk.Set("No sound stored in this song yet");
+#ifdef _WIN32
+    if (true) tk.Set("Performance recall: Mac only for now");
+#else
+    if (mPlug && !mPlug->RecallOn()) tk.Set("Performance recall: connect the MS-20ic to this computer");
+#endif
+    else if (mTakes > 0) tk.SetFormatted(96, "Recorded performances: %d  \xC2\xB7  double-click to forget them", mTakes);
+    else tk.Set("Recorded performances: none yet");
     g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), tk.Get(), TakesRect());
   }
 
@@ -82,7 +87,8 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 {
 #if IPLUG_DSP
   mHost = std::make_unique<MS20Host>();
-  mHost->setHook(&mRecall);
+  mPlay = std::make_unique<MS20Host>();
+  mRecall.setEngines(mHost.get(), mPlay.get());
   // Patch memory (36 sounds on the iC's keys) lives in one file, shared by every instance and project,
   // like the SD card in the hardware version. No file yet = factory sounds.
   //   Mac:     ~/Library/Application Support/Twenty Engine/MS20MEM.BIN
@@ -170,6 +176,7 @@ void TwentyEngine::OnReset()
 {
   mDbgResets++;
   mHost->reset(GetSampleRate());
+  mPlay->reset(GetSampleRate());
   mRecall.resetAudio();
   // the reset keeps the engine's settings; make sure the plugin's current values are applied
   for (int i = 0; i < kNumParams; i++) mHost->setParamRaw(i, ToRaw(i, GetParam(i)->Value()));
@@ -181,23 +188,33 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   if (msg.mStatus < 0xF0 && (msg.mStatus & 0xF0) != 0xB0) mDbgMidiQ.push({msg.mStatus, msg.mData1, msg.mData2, msg.mOffset});   // beta diagnostics: notes, pressure (not the many knob CCs)
   // performance recall (engine/recall.h): the track plays the notes, the switch and the mod wheel; knob and
   // cable CCs on the track are ignored when the knobs reach the plugin straight from the controller
-  if (!mRecall.midiIn(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2, mLed.KnobsDirect())) return;
-  mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);
+  if (!mLed.KnobsDirect()) { mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2); return; }   // Windows: the track plays the live engine
+  DrainController();                                                  // what the controller sent first: tells live from region
+  const int type = msg.mStatus & 0xF0;
+  if (type == 0xB0 && msg.mData1 != 1) return;                        // knob/cable data on the track: never used
+  if (mRecall.trackIsLive(msg.mStatus, msg.mData1, msg.mData2)) return;   // the host's copy of live playing: the live engine has it
+  if (type == 0x90 && msg.mData2 > 0) mRecall.trackNoteOn(msg.mOffset, msg.mData1);
+  mPlay->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);      // a region: the playback engine
 }
 
 void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
   const double sr = GetSampleRate(), tempo = GetTempo();
-  mRecall.beginBlock(mHost.get(), GetTransportIsRunning(), GetPPQPos(), (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0, nFrames);
-  // knobs and cables straight from the controller (Mac): always live, and while the host plays they
-  // replace the stored settings from that moment (performance recall)
-  { uint8_t s, d1, d2; while (mLed.PopKnob(s, d1, d2)) { mRecall.directIn(s, d1, d2); mHost->midi(0, s, d1, d2); } }
+  const bool direct = mLed.KnobsDirect();
+  mRecall.setEnabled(direct);
+  if (direct) DrainController();
+  mRecall.beginBlock(GetTransportIsRunning(), GetPPQPos(), (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0, nFrames);
   int done = 0;
   while (done < nFrames)
   {
     const int n = (nFrames - done > 512) ? 512 : nFrames - done;
     mRecall.setChunkOffset(done);
     mHost->process(mScratchL, mScratchR, n);
+    if (direct)
+    {
+      mPlay->process(mPlayL, mPlayR, n);
+      for (int i = 0; i < n; i++) { mScratchL[i] += mPlayL[i]; mScratchR[i] += mPlayR[i]; }
+    }
     for (int i = 0; i < n; i++)
     {
       outputs[0][done + i] = (sample)mScratchL[i];
@@ -237,7 +254,8 @@ void TwentyEngine::OnIdle()
   }
   // 2. patch memory: write the file after a save on the keys (never on the audio thread).
   //    While stored settings play back, replayed save gestures never overwrite the memory.
-  if (mRecall.takePlaying()) mHost->dropMemorySave(); else mHost->pollMemorySave();
+  mHost->pollMemorySave();
+  { ParamSet q; while (mPlay->popEngineChange(q)) {} LedMsg l; while (mPlay->popLed(l)) {} mPlay->dropMemorySave(); }   // the playback engine: no LEDs, no saves
   // 2b. performance recall: store finished takes
   mRecall.idle();
   // 3. LEDs on the iC
@@ -279,3 +297,19 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
   return pos;
 }
 
+
+// Everything the controller sends, straight from it (Mac): it plays the live engine, like the hardware,
+// and tells recall what is played live. The Ksoloti and Teensy editions send the memory keys to the
+// computer as CC 102 (down) / 103 (up) with the key as value: here they are keys again.
+void TwentyEngine::DrainController()
+{
+#if IPLUG_DSP
+  uint8_t s, d1, d2;
+  while (mLed.PopKnob(s, d1, d2))
+  {
+    if ((s & 0xF0) == 0xB0 && (d1 == 102 || d1 == 103)) { s = (uint8_t)((d1 == 102 ? 0x90 : 0x80) | (s & 0x0F)); d1 = d2; d2 = (s & 0xF0) == 0x90 ? 100 : 0; }
+    if (mRecall.directMsg(s, d1, d2)) mPlay->midi(0, (uint8_t)(0x80 | (s & 0x0F)), d1, 0);   // the host's copy came first: silence it there
+    mHost->midi(0, s, d1, d2);
+  }
+#endif
+}

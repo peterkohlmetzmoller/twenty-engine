@@ -1,10 +1,9 @@
-// recall_test.cpp - performance recall, tested with a simulated DAW transport.
+// recall_test.cpp - two-engine performance recall, tested against a simulated Logic.
 // Build: clang++ -std=c++17 -O2 -w -o recall_test recall_test.cpp && ./recall_test
 //
-// Model (engine/recall.h): the host only says "playing". Knobs and cables come straight from the controller
-// (directIn); the track carries notes, the switch (pressure) and the mod wheel, and its knob CCs are ignored.
-// Where nothing is stored, settings are stored while the transport runs; stored settings play back exactly
-// until a knob is moved while playing (touch to overwrite).
+// The live engine is played straight from the controller; Logic also sends the live playing through the
+// track (a moment later) and records it into a region. The playback engine plays the track: it follows the
+// take a region's notes belong to, or mirrors the panel. Logic reports the beat of a live track in steps.
 #define MS20HOST_TESTING
 #include "../engine/recall.h"
 #include <stdio.h>
@@ -17,136 +16,155 @@ static int fails = 0;
 static void check(bool ok, const char *what) { printf("%s  %s\n", ok ? "ok  " : "FAIL", what); if (!ok) fails++; }
 
 static const int SR = 48000, BLK = 256;
-static const double TEMPO = 120.0, PPS = TEMPO / 60.0 / SR;   // beats per sample
+static const double TEMPO = 120.0, PPS = TEMPO / 60.0 / SR;
 typedef std::vector<std::vector<int32_t>> Trace;
+struct M { uint8_t s, d1, d2; };
 
-struct Daw {
-  MS20Host h; Recall r; float L[BLK], R[BLK];
-  bool direct = true;                          // the plugin found the controller's port
-  bool logic = false;                          // report the beat like Logic does to a live track: same value for 4 blocks, then catch up
-  struct M { uint8_t s, d1, d2; }; std::vector<M> dq;   // direct-port queue (CoreMIDI thread -> audio)
-  Daw() { h.setHook(&r); h.reset(SR); }
-  // from the track (region replay or live): notes, pressure, wheel; knob CCs only matter without the direct port
-  void track(uint8_t s, uint8_t d1, uint8_t d2) { if (r.midiIn(0, s, d1, d2, direct)) h.midi(0, s, d1, d2); }
-  // a knob on the controller: goes to the direct port and (as Logic records it) to the track as well
-  void knob(int c, int v) { if (direct) dq.push_back({0xB0, (uint8_t)c, (uint8_t)v}); track(0xB0, c, v); }
-  Trace run(bool running, double ppqStart, int nblk, std::function<void(int)> ev) {
-    Trace tr;
-    for (int b = 0; b < nblk; b++) {
-      if (ev) ev(b);
-      const int rb = logic ? b - (b % 4) : b;
-      r.beginBlock(&h, running, ppqStart + rb * BLK * PPS, PPS, BLK);
-      for (auto &m : dq) { r.directIn(m.s, m.d1, m.d2); h.midi(0, m.s, m.d1, m.d2); }
-      dq.clear();
-      h.process(L, R, BLK);
-      std::vector<int32_t> v(NPARAMS); for (int i = 0; i < NPARAMS; i++) v[i] = h.getParamRaw(i);
-      tr.push_back(v);
-      if (b % 8 == 0) r.idle();
+struct Plug {   // the plugin, as wired in TwentyEngine.cpp
+  MS20Host liveE, playE; Recall r; float L[BLK], R[BLK];
+  Plug() { liveE.reset(SR); playE.reset(SR); r.setEngines(&liveE, &playE); }
+  std::vector<M> direct, track;   // this block's MIDI: straight from the controller, and from Logic's track
+  void block(bool running, double hostPpq) {
+    for (auto &m : direct) { if (r.directMsg(m.s, m.d1, m.d2)) playE.midi(0, 0x80, m.d1, 0); liveE.midi(0, m.s, m.d1, m.d2); }
+    for (auto &m : track) {
+      if ((m.s & 0xF0) == 0xB0 && m.d1 != 1) continue;            // knob data on the track: ignored
+      if (r.trackIsLive(m.s, m.d1, m.d2)) continue;                // Logic's copy of live playing
+      if ((m.s & 0xF0) == 0x90 && m.d2 > 0) r.trackNoteOn(0, m.d1);
+      playE.midi(0, m.s, m.d1, m.d2);
     }
-    r.idle();
-    return tr;
+    direct.clear(); track.clear();
+    r.beginBlock(running, hostPpq, PPS, BLK);
+    r.setChunkOffset(0);
+    liveE.process(L, R, BLK); playE.process(L, R, BLK);
   }
 };
 
-static int diffBlocks(const Trace &a, int a0, const Trace &b, int b0, int n, int *firstBad = nullptr) {
-  int bad = 0; for (int i = 0; i < n; i++) if (a[a0 + i] != b[b0 + i]) { if (!bad && firstBad) *firstBad = i; bad++; }
+struct Logic {   // the host: transport, a region, live input routed to the track one block late
+  Plug p; bool steppedBeat = true; std::vector<M> lateLive;
+  std::vector<std::vector<M>> region;   // what the region holds, per block (recorded from the live input)
+  // run nblk blocks from block b0; live(b) plays the controller; recordRegion: Logic records the live input
+  struct Out { Trace live, play; };
+  Out run(bool running, int b0, int nblk, std::function<void(int, std::vector<M> &)> live, bool playRegion, bool recordRegion) {
+    Out o;
+    for (int i = 0; i < nblk; i++) {
+      const int b = b0 + i;
+      std::vector<M> now; if (live) live(b, now);
+      for (auto &m : now) p.direct.push_back(m);
+      for (auto &m : lateLive) p.track.push_back(m);                   // Logic delivers the live input a block later
+      if (recordRegion && running) { if ((int)region.size() <= b) region.resize(b + 1); for (auto &m : lateLive) region[b].push_back(m); }
+      lateLive = now;
+      if (playRegion && running && b < (int)region.size()) for (auto &m : region[b]) p.track.push_back(m);
+      const int rb = steppedBeat ? b - (b % 4) : b;
+      p.block(running, rb * BLK * PPS);
+      std::vector<int32_t> lv(NPARAMS), pv(NPARAMS);
+      for (int k = 0; k < NPARAMS; k++) { lv[k] = p.liveE.getParamRaw(k); pv[k] = p.playE.getParamRaw(k); }
+      o.live.push_back(lv); o.play.push_back(pv);
+      if (i % 8 == 0) p.r.idle();
+    }
+    p.r.idle();
+    return o;
+  }
+  void stopped(std::function<void(std::vector<M> &)> f, int n = 10) { run(false, 0, n, [&](int b, std::vector<M> &v) { if (b == 0 && f) f(v); }, false, false); }
+};
+
+static int diff(const Trace &a, int a0, const Trace &b, int b0, int n, int *first = nullptr) {
+  int bad = 0; for (int i = 0; i < n; i++) if (a[a0 + i] != b[b0 + i]) { if (!bad && first) *first = i; bad++; }
   return bad;
 }
-
-static void suite(bool direct, bool logic) {
-  printf("\n--- %s%s ---\n", direct ? "knobs straight from the controller (Mac)" : "knobs through the track (fallback)", logic ? ", beat reported like Logic" : "");
-  Daw d; d.direct = direct; d.logic = logic; int fb = -1;
-  const int NB = 375;   // 8 beats at 120 bpm in blocks of 256
-  // starting sound A, set while stopped
-  d.run(false, 0, 20, [&](int b) { if (b == 0) { d.knob(74, 30); d.knob(71, 80); d.knob(28, 10); d.knob(77, 5); d.knob(20, 127); d.knob(21, 64); d.knob(91, 40); d.knob(88, 50); } });
-
-  // the performance. knob() = hands on the controller (Logic records the CCs too)
-  auto perform = [&](int b, bool live) {
-    auto k = [&](int c, int v) { if (live) d.knob(c, v); else d.track(0xB0, c, v); };   // replay: CCs from the region only
-    if (b >= 20 && b < 120 && b % 4 == 0) k(74, 30 + (b - 20) / 2);          // filter sweep
-    if (b == 60) d.track(0x90, 48, 100);
-    if (b == 90) d.track(0x80, 48, 0);
-    if (b == 130) { k(99, 4); k(98, 31); k(6, 25); }                          // a patch cable
-    if (b == 170) d.track(0xD0, 100, 0);                                      // memory recall: switch + key
-    if (b == 172) d.track(0x90, 50, 100);
-    if (b == 180) { d.track(0x80, 50, 0); d.track(0xD0, 0, 0); }
-    if (b >= 220 && b < 300 && b % 5 == 0) k(89, 20 + (b - 220));            // feedback (catch-up after the recall)
-    if (b == 320) k(11, 100);                                                // play mode to latch
-  };
-  auto rec = d.run(true, 0.0, NB, [&](int b) { perform(b, true); });
-  d.run(false, 0, 10, nullptr);
-  check(d.r.takes() == 1, "the take is stored (one part, not one per block)");
-  check(d.r.laneForTest().ev.size() < 2000, "a sensible number of stored changes");
-  bool moved = false; for (int i = 0; i < NPARAMS; i++) if (rec.front()[i] != rec.back()[i]) moved = true;
-  check(moved, "settings changed during the take");
-
-  // afterwards, stopped: the player turns knobs to something else
-  d.run(false, 0, 20, [&](int b) { if (b == 0) { d.knob(74, 120); d.knob(71, 0); d.knob(28, 90); d.knob(91, 0); d.knob(88, 10); d.knob(89, 5); d.knob(11, 0); } });
-  const size_t ev0 = d.r.laneForTest().ev.size();
-
-  // 1. play back from the start: the region replays notes, switch and its recorded CCs
-  auto replay = [&](int b) { perform(b, false); };
-  auto pb = d.run(true, 0.0, NB, replay);
-  int bad = diffBlocks(rec, 0, pb, 0, NB, &fb);
-  printf("      playback from the start: %d of %d blocks differ (first %d)\n", bad, NB, fb);
-  check(bad == 0, "playback = the take, every block, whatever the knobs are now");
-  check(d.r.takes() == 1 && d.r.laneForTest().ev.size() == ev0, "listening changes nothing that is stored");
-
-  // 2. from the middle
-  d.run(false, 0, 10, [&](int b) { if (b == 0) d.knob(74, 5); });
-  const int S = 188;
-  auto pm = d.run(true, S * BLK * PPS, NB - S, [&](int b) { replay(b + S); });
-  bad = diffBlocks(rec, S, pm, 0, NB - S, &fb);
-  printf("      playback from beat 4: %d of %d blocks differ (first %d)\n", bad, NB - S, fb);
-  check(bad == 0, "playback from the middle = the take");
-
-  // 3. save and load into a new instance
-  auto blob = d.r.serialize();
-  Daw e; e.direct = direct; e.logic = logic; e.r.unserialize(blob.data(), blob.size());
-  e.run(false, 0, 10, [&](int b) { if (b == 0) { e.knob(74, 3); e.knob(91, 120); } });
-  auto pe = e.run(true, 0.0, NB, [&](int b) { /* the same region, replayed into the new instance */
-    auto k = [&](int c, int v) { e.track(0xB0, c, v); };
-    if (b >= 20 && b < 120 && b % 4 == 0) k(74, 30 + (b - 20) / 2);
-    if (b == 60) e.track(0x90, 48, 100); if (b == 90) e.track(0x80, 48, 0);
-    if (b == 130) { k(99, 4); k(98, 31); k(6, 25); }
-    if (b == 170) e.track(0xD0, 100, 0); if (b == 172) e.track(0x90, 50, 100);
-    if (b == 180) { e.track(0x80, 50, 0); e.track(0xD0, 0, 0); }
-    if (b >= 220 && b < 300 && b % 5 == 0) k(89, 20 + (b - 220));
-    if (b == 320) k(11, 100); });
-  bad = diffBlocks(rec, 0, pe, 0, NB, &fb);
-  printf("      after save/load, new instance: %d of %d blocks differ (first %d)\n", bad, NB, fb);
-  check(bad == 0, "saved take plays back the same in a new instance");
-
-  // 4. touch to overwrite: playing back, a knob moves at block T
-  const int T = 250;
-  auto touch = [&](int b) { if (b < T) replay(b); if (b == T) d.knob(71, 7); if (b > T && b % 10 == 0) d.knob(74, (b * 3) % 128); };
-  auto tw = d.run(true, 0.0, NB, touch);
-  d.run(false, 0, 10, [&](int b) { if (b == 0) d.knob(74, 1); });
-  auto region2 = [&](int b) { if (b < T) replay(b); if (b == T) d.track(0xB0, 71, 7); if (b > T && b % 10 == 0) d.track(0xB0, 74, (b * 3) % 128); };
-  auto pt = d.run(true, 0.0, NB, region2);
-  int before = diffBlocks(rec, 0, pt, 0, T), after = diffBlocks(tw, T + 1, pt, T + 1, NB - T - 1, &fb);
-  printf("      touch at block %d: before %d differ (old), after %d differ (new, first %d)\n", T, before, after, fb);
-  check(before == 0 && after == 0, "a knob moved during playback replaces the settings from that point");
-  check(tw[T + 5] != rec[T + 5], "the new settings really are different");
-
-  // 5. after the stored part: new ground is stored too (and plays back)
-  const double P2 = NB * BLK * PPS + 2.0;
-  d.run(false, 0, 10, [&](int b) { if (b == 0) d.knob(28, 33); });
-  auto fresh = d.run(true, P2, 100, [&](int b) { if (b == 40) d.knob(74, 90); });
-  d.run(false, 0, 10, [&](int b) { if (b == 0) { d.knob(28, 99); d.knob(74, 2); } });
-  auto pf = d.run(true, P2, 100, nullptr);
-  check(diffBlocks(fresh, 0, pf, 0, 100) == 0, "a new part is stored from where it starts and plays back");
-
-  // 6. clear
-  d.r.clear(); d.r.idle();
-  check(d.r.takes() == 0, "clear removes all stored settings");
-}
+static void cc(std::vector<M> &v, int c, int x) { v.push_back({0xB0, (uint8_t)c, (uint8_t)x}); }
 
 int main() {
-  suite(true, false);
-  suite(false, false);
-  suite(true, true);
-  suite(false, true);
+  Logic L; int fb = -1;
+  const int NB = 375, FIRST = 12;   // 8 beats; the first note at block 12
+  L.stopped([](std::vector<M> &v) { cc(v, 74, 30); cc(v, 71, 80); cc(v, 28, 10); cc(v, 77, 5); cc(v, 20, 127); cc(v, 21, 64); cc(v, 91, 40); cc(v, 88, 50); });
+
+  // the performance on the controller
+  auto perform = [&](int b, std::vector<M> &v) {
+    if (b == FIRST) v.push_back({0x90, 48, 100});
+    if (b >= 20 && b < 120 && b % 4 == 0) cc(v, 74, 30 + (b - 20) / 2);
+    if (b == 60) v.push_back({0x80, 48, 0});
+    if (b == 64) v.push_back({0x90, 52, 90});
+    if (b == 100) v.push_back({0x80, 52, 0});
+    if (b == 130) { cc(v, 99, 4); cc(v, 98, 31); cc(v, 6, 25); }
+    if (b == 170) v.push_back({0xD0, 100, 0});                       // memory recall: switch + key
+    if (b == 172) v.push_back({0x90, 50, 100});
+    if (b == 180) { v.push_back({0x80, 50, 0}); v.push_back({0xD0, 0, 0}); }
+    if (b == 200) v.push_back({0x90, 55, 100});
+    if (b >= 220 && b < 300 && b % 5 == 0) cc(v, 89, 20 + (b - 220));
+    if (b == 300) v.push_back({0x80, 55, 0});
+    if (b == 310) v.push_back({0x90, 60, 70});
+    if (b == 320) cc(v, 11, 100);
+    if (b == 360) v.push_back({0x80, 60, 0});
+  };
+  auto rec = L.run(true, 0, NB, perform, false, true);
+  L.stopped(nullptr);
+  check(L.p.r.takes() == 1, "the performance is stored as one take");
+  bool moved = false; for (int k = 0; k < NPARAMS; k++) if (rec.live[FIRST + 2][k] != rec.live[NB - 1][k]) moved = true;
+  check(moved, "the settings moved during the take");
+  check(diff(rec.live, 0, rec.play, 0, NB) == 0, "while recording, the playback engine mirrors the panel");
+
+  // afterwards, stopped: the panel goes somewhere else
+  std::vector<M> panelB; cc(panelB, 74, 120); cc(panelB, 71, 0); cc(panelB, 28, 90); cc(panelB, 91, 0); cc(panelB, 88, 10); cc(panelB, 89, 5); cc(panelB, 11, 0);
+  L.stopped([&](std::vector<M> &v) { v = panelB; });
+  const std::vector<int32_t> panel = [&] { std::vector<int32_t> v(NPARAMS); for (int k = 0; k < NPARAMS; k++) v[k] = L.p.liveE.getParamRaw(k); return v; }();
+
+  // 1. play the region from the start
+  auto pb = L.run(true, 0, NB, nullptr, true, false);
+  int bad = diff(rec.live, FIRST + 2, pb.play, FIRST + 2, NB - FIRST - 2, &fb);
+  printf("      playback engine vs the performance (from the first note): %d of %d blocks differ (first %d)\n", bad, NB - FIRST - 2, fb);
+  check(bad == 0, "the take plays back exactly as performed");
+  bool liveKept = true; for (auto &v : pb.live) if (v != panel) liveKept = false;
+  check(liveKept, "the live engine (the panel) is untouched during playback");
+  check(L.p.r.takes() == 1, "listening stores nothing");
+
+  // 2. from the middle (beat 4)
+  const int S = 188;
+  auto pm = L.run(true, S, NB - S, nullptr, true, false);
+  const int NEXT = 200 - S + 2;   // the take is picked up at the next note of the region (block 200)
+  bad = diff(rec.live, S + NEXT, pm.play, NEXT, NB - S - NEXT, &fb);
+  printf("      from beat 4, after the next note: %d of %d blocks differ (first %d)\n", bad, NB - S - NEXT, fb);
+  check(bad == 0, "from the middle, exact from the next note on");
+
+  // 3. a deleted region: the playback engine just mirrors the panel
+  auto saved = L.region; L.region.clear();
+  auto pd = L.run(true, 0, NB, nullptr, true, false);
+  bool mirror = true; for (int i = 0; i < NB; i++) if (pd.play[i] != pd.live[i]) mirror = false;
+  check(mirror && !L.p.r.followingForTest(), "deleted region: nothing is recalled, the panel plays");
+  // 4. a different region (other notes): also the panel
+  L.region.assign(NB, {}); L.region[30].push_back({0x90, 70, 100}); L.region[90].push_back({0x80, 70, 0});
+  auto po = L.run(true, 0, NB, nullptr, true, false);
+  mirror = true; for (int i = 0; i < NB; i++) if (po.play[i] != po.live[i]) mirror = false;
+  check(mirror, "a different region plays with the panel settings");
+  L.region = saved;
+
+  // 5. jamming live over the playing take: the take is untouched, the jam becomes its own take
+  auto jam = [&](int b, std::vector<M> &v) { if (b == 40) v.push_back({0x90, 67, 100}); if (b >= 41 && b < 90 && b % 3 == 0) cc(v, 28, b); if (b == 90) v.push_back({0x80, 67, 0}); };
+  auto pj = L.run(true, 0, NB, jam, true, false);
+  bad = diff(rec.live, FIRST + 2, pj.play, FIRST + 2, NB - FIRST - 2, &fb);
+  L.stopped(nullptr);
+  printf("      take while jamming over it: %d blocks differ (first %d); takes now %d\n", bad, fb, L.p.r.takes());
+  check(bad == 0 && L.p.r.takes() == 2, "a jam over a playing take does not change it (it is stored as its own take)");
+  auto pa = L.run(true, 0, NB, nullptr, true, false);
+  check(diff(rec.live, FIRST + 2, pa.play, FIRST + 2, NB - FIRST - 2) == 0, "afterwards the region still plays its own take");
+
+  // 6. save and load into a new plugin
+  auto blob = L.p.r.serialize();
+  Logic L2; L2.region = L.region; L2.p.r.unserialize(blob.data(), blob.size());
+  L2.stopped([&](std::vector<M> &v) { cc(v, 74, 3); cc(v, 91, 120); });
+  auto p2 = L2.run(true, 0, NB, nullptr, true, false);
+  bad = diff(rec.live, FIRST + 2, p2.play, FIRST + 2, NB - FIRST - 2, &fb);
+  printf("      after save/load: %d blocks differ (first %d)\n", bad, fb);
+  check(bad == 0, "saved with the project, it plays back the same");
+
+  // 7. live notes are not played twice (Logic's copy of live playing is recognised)
+  Logic L3;
+  L3.run(true, 0, 40, [](int b, std::vector<M> &v) { if (b == 5) v.push_back({0x90, 60, 100}); if (b == 30) v.push_back({0x80, 60, 0}); }, false, true);
+  check(!L3.p.r.followingForTest(), "live playing goes only to the live engine");
+
+  // 8. clear
+  L.p.r.clear(); L.p.r.idle();
+  check(L.p.r.takes() == 0, "clear removes all takes");
+
   printf(fails ? "\n%d RECALL CHECKS FAILED\n" : "\nALL RECALL CHECKS PASSED\n", fails);
   return fails ? 1 : 0;
 }
