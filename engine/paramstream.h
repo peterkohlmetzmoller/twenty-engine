@@ -44,17 +44,20 @@ struct ParamStream {
 
   // controller numbers: 1-5, 7-31, 70-95, 102-119 (no bank select, data entry, pedals, NRPN/RPN or mode messages)
   static int CcOf(int slot) {
-    static int table[NSLOT > 0 ? NSLOT : 1]; static bool made = false;
-    if (!made) {
-      int n = 0;
-      for (int c = 1; c <= 31 && n < NSLOT; c++) if (c != 6) table[n++] = c;
-      for (int c = 70; c <= 95 && n < NSLOT; c++) table[n++] = c;
-      for (int c = 102; c <= 119 && n < NSLOT; c++) table[n++] = c;
-      made = true;
-    }
-    return (slot >= 0 && slot < NSLOT) ? table[slot] : -1;
+    if (slot < 0 || slot >= NSLOT) return -1;
+    if (slot < 30) return slot < 5 ? slot + 1 : slot + 2;   // 1-5, 7-31
+    if (slot < 56) return 70 + (slot - 30);                  // 70-95
+    return slot - 56 < 18 ? 102 + (slot - 56) : -1;          // 102-119
   }
-  static int SlotOf(int cc) { for (int s = 0; s < NSLOT; s++) if (CcOf(s) == cc) return s; return -1; }
+  static int SlotOf(int cc) {
+    int s = -1;
+    if (cc >= 1 && cc <= 5) s = cc - 1;
+    else if (cc >= 7 && cc <= 31) s = cc - 2;
+    else if (cc >= 70 && cc <= 95) s = 30 + (cc - 70);
+    else if (cc >= 102 && cc <= 119) s = 56 + (cc - 102);
+    return (s >= 0 && s < NSLOT) ? s : -1;
+  }
+  static_assert(NSLOT <= 74, "more settings than controller numbers");
 
   // raw engine units <-> 14 bits
   static const int32_t FULL = 64 << 21;             // 64 knob units
