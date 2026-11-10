@@ -523,9 +523,9 @@ story.append(side(
           p('The knob data is not editable, on purpose: a take is a recording, like audio. Use Studio when you want to shape the sound afterwards.', 'small')),
     stack(p('<b>Twenty Engine Studio: edit every knob</b>', 'h2'),
           gtable([['1', 'Put Twenty Engine Studio on an instrument track with the MS-20ic as its input.'],
-                  ['2', 'Set the track\'s automation mode to <b>Latch</b> and record. Your knob moves are written as automation lanes.'],
+                  ['2', 'Set the track\'s automation mode to <b>Latch</b> (Ableton Live: switch on Automation Arm) and record. Your knob moves are written as automation lanes.'],
                   ['3', 'At the start of each take every setting is written once, so the part always starts from the sound you played it with.'],
-                  ['4', 'Set the track back to <b>Read</b>. Now draw and edit filter sweeps, envelope changes and anything else with the mouse.']],
+                  ['4', 'Set the track back to <b>Read</b> (Ableton Live: Automation Arm off). Now draw and edit filter sweeps, envelope changes and anything else with the mouse.']],
                  [7 * mm, None], ('', 'How')),
           Spacer(1, 3),
           p('While a track plays its automation, the automation wins over the knobs. To redo a sweep, record it again in Latch or redraw the line. '
