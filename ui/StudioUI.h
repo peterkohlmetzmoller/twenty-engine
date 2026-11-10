@@ -1,15 +1,15 @@
 // StudioUI.h - the editor window of Twenty Engine Studio.
 // The MS-20 panel layout (the same coordinates as manual/panel.py, traced from the MS-20ic), drawn in the look of
 // the Twenty Engine pictures: white panel, black line art, orange outputs, blue inputs, green cable gestures, grey for
-// what the engine does not use. Below it the keyboard (the 36 memory keys + top C = panel), then a status bar.
+// what the engine does not use. Below it a status bar with the memory, as in the window mock-up.
 //  - Knobs and switches are the plugin's parameters: the DAW records and automates them; an MS-20ic moves them.
 //  - The ESP knobs carry three layers (DELAY / TONE / ARP); a switch in the ESP section picks the layer, and each
 //    knob's current job is printed above it in orange (as on the ESP sticker). The MS-20 name stays below.
 //  - Patch cables: drag between jacks; grab a plug at an input to move or pull out the cable. Inputs are the PatchBay
 //    parameters (saved, automated, mirrored from the MS-20ic). VCO 1+2 CV IN (mono) and ESP SIGNAL IN (tap tempo) are
 //    cable states, sent to the engine as the MS-20ic's own cable messages.
-//  - Memory: click a key = recall, SAVE then a key = store (then name it), double-click = rename, IMPORT / EXPORT a
-//    bank (MS20MEM.BIN, the file the Ksoloti SD card and the Teensy use).
+//  - Memory, in the status bar: the name opens the 36 sounds (+ panel, rename, import / export of MS20MEM.BIN, the file
+//    the Ksoloti SD card and the Teensy use), < > step through them, SAVE picks the key to store on.
 #pragma once
 #include "IControls.h"
 #include "StudioHost.h"
@@ -32,8 +32,8 @@ static const char *kF = "Cond", *kFB = "CondB", *kFI = "CondI";
 
 // panel geometry: units of manual/panel.py (1 unit = 1 mm on the drawing), scaled to pixels
 static const float PW = 200.f, PH = 86.f, LW = 100.f, S = 6.f, OX = 12.f, OY = 12.f;
-static const float KEYH = 110.f, BARH = 40.f;
-static const int kW = (int)(OX * 2 + PW * S), kH = (int)(OY + PH * S + KEYH + 8.f + BARH + 6.f);
+static const float BARH = 42.f;
+static const int kW = (int)(OX * 2 + PW * S), kH = (int)(OY + PH * S + 10.f + BARH);
 static float X(float u) { return OX + u * S; }                 // panel x
 static float Yd(float yd) { return OY + yd * S; }              // measured down from the top
 static float Yu(float y) { return OY + (PH - y) * S; }         // measured up from the bottom
@@ -489,178 +489,147 @@ private:
   float mDragX = 0.f, mDragY = 0.f;
 };
 
-// ---------------------------------------------------------------- keyboard: the memory keys, wheel and switch
-class Keyboard : public IControl
-{
-public:
-  Keyboard(const IRECT& r, MemoryHost* host, std::function<void(uint8_t)> wheel) : IControl(r), mHost(host), mWheel(wheel) {}
-  static const int kBlock = 130;
-  IRECT KeysR() const { return IRECT(mRECT.L + kBlock, mRECT.T, mRECT.R, mRECT.B); }
-  IRECT WheelR() const { return IRECT(mRECT.L + 22.f, mRECT.T + 20.f, mRECT.L + 46.f, mRECT.B - 14.f); }
-  IRECT SwitchR() const { return IRECT(mRECT.L + 66.f, mRECT.T + 40.f, mRECT.L + 112.f, mRECT.T + 70.f); }
-  static bool IsBlack(int n) { const int k = n % 12; return k == 1 || k == 3 || k == 6 || k == 8 || k == 10; }
-  IRECT KeyRect(int n) const
-  {
-    const IRECT k = KeysR(); const float ww = k.W() / 22.f;
-    int whites = 0; for (int i = 0; i < n; i++) if (!IsBlack(i)) whites++;
-    if (!IsBlack(n)) return IRECT(k.L + whites * ww, k.T, k.L + (whites + 1) * ww, k.B);
-    const float x = k.L + whites * ww; return IRECT(x - ww * 0.3f, k.T, x + ww * 0.3f, k.T + k.H() * 0.6f);
-  }
-  int HitKey(float x, float y) const
-  {
-    for (int n = 0; n <= 36; n++) if (IsBlack(n) && KeyRect(n).Contains(x, y)) return n;
-    for (int n = 0; n <= 36; n++) if (!IsBlack(n) && KeyRect(n).Contains(x, y)) return n;
-    return -1;
-  }
-  bool SaveArmed() const { return mSaveArmed; }
-  void ArmSave(bool on) { mSaveArmed = on; SetDirty(false); }
-  int Hover() const { return mHover; }
-
-  void Draw(IGraphics& g) override
-  {
-    g.FillRect(kBlackKey, mRECT);
-    // mod wheel
-    const IRECT w = WheelR();
-    g.FillRoundRect(IColor(255, 50, 50, 52), w, 3.f);
-    const float wy = w.B - (w.H() - 10.f) * (mWheelVal / 127.f) - 5.f;
-    g.FillRect(IColor(255, 200, 200, 196), IRECT(w.L + 2.f, wy - 3.f, w.R - 2.f, wy + 3.f));
-    g.DrawText(IText(9.f, kDimC, kF, EAlign::Center, EVAlign::Middle), "WHEEL", IRECT(w.L - 10.f, w.B + 2.f, w.R + 10.f, w.B + 12.f));
-    // momentary switch
-    const IRECT s = SwitchR();
-    g.FillRoundRect(mSwitch ? kAccent : IColor(255, 200, 200, 196), s, 4.f);
-    g.DrawText(IText(9.f, kDimC, kF, EAlign::Center, EVAlign::Middle), "SWITCH", IRECT(s.L - 10.f, s.B + 4.f, s.R + 10.f, s.B + 14.f));
-    // keys
-    const int slot = mHost->MemSlot();
-    for (int pass = 0; pass < 2; pass++)
-      for (int n = 0; n <= 36; n++)
-      {
-        if (IsBlack(n) != (pass == 1)) continue;
-        const IRECT k = KeyRect(n);
-        IColor c = IsBlack(n) ? kBlackKey : kWhiteKey;
-        if (n == mHover) c = IsBlack(n) ? IColor(255, 70, 70, 72) : IColor(255, 255, 255, 255);
-        if (mSaveArmed && n < 36 && n == mHover) c = IColor(255, 250, 200, 184);
-        g.FillRect(c, IsBlack(n) ? k : k.GetPadded(-0.5f));
-        if (!IsBlack(n)) g.DrawRect(IColor(255, 85, 85, 85), k, nullptr, 1.f);
-        const bool cur = (n == slot) || (n == 36 && slot < 0);
-        if (cur) g.FillRect(kAccent, IRECT(k.L + 3.f, k.B - 7.f, k.R - 3.f, k.B - 3.f));
-        if (n < 36 && mHost->MemValid(n)) g.FillCircle(IsBlack(n) ? IColor(255, 120, 120, 120) : IColor(255, 160, 158, 152), k.MW(), k.B - 16.f, 2.f);
-      }
-  }
-  void OnMouseDown(float x, float y, const IMouseMod&) override
-  {
-    if (SwitchR().Contains(x, y)) { mSwitch = true; mHost->SwitchDown(true); SetDirty(false); return; }
-    if (WheelR().Contains(x, y)) { mWheelDrag = true; SetWheel(y); return; }
-    const int n = HitKey(x, y);
-    if (n < 0) return;
-    if (mSaveArmed && n < 36) { mHost->MemSave(n); mSaveArmed = false; Rename(n); }
-    else { mHost->MemRecall(n); mSaveArmed = false; }
-    SetDirty(false);
-  }
-  void OnMouseDrag(float, float y, float, float, const IMouseMod&) override { if (mWheelDrag) SetWheel(y); }
-  void OnMouseUp(float, float, const IMouseMod&) override
-  {
-    if (mSwitch) { mSwitch = false; mHost->SwitchDown(false); SetDirty(false); }
-    mWheelDrag = false;
-  }
-  void OnMouseDblClick(float x, float y, const IMouseMod&) override { const int n = HitKey(x, y); if (n >= 0 && n < 36) Rename(n); }
-  void OnTextEntryCompletion(const char* str, int) override { if (mRename >= 0 && str && *str) mHost->SetMemName(mRename, str); mRename = -1; SetDirty(false); }
-  void OnMouseOver(float x, float y, const IMouseMod&) override
-  {
-    const int h = HitKey(x, y); if (h != mHover) { mHover = h; SetDirty(false); }
-    if (SwitchR().Contains(x, y)) SetInfo("SWITCH  \xC2\xB7  the MS-20's momentary switch: hold it and tap a key to recall a sound");
-    else if (WheelR().Contains(x, y)) SetInfo("WHEEL  \xC2\xB7  modulation wheel (WHEEL OUT on the patch panel)");
-  }
-  void OnMouseOut() override { mHover = -1; SetDirty(false); }
-  bool IsDirty() override { if (++mTick >= 10) { mTick = 0; const int s = mHost->MemSlot(); if (s != mLastSlot) { mLastSlot = s; return true; } } return IControl::IsDirty(); }
-private:
-  void Rename(int n)
-  {
-    mRename = n;
-    const IRECT k = KeyRect(n);
-    GetUI()->CreateTextEntry(*this, IText(14.f, kInk, kF, EAlign::Center, EVAlign::Middle), IRECT(k.MW() - 90.f, mRECT.T - 26.f, k.MW() + 90.f, mRECT.T - 4.f), mHost->MemName(n), 0);
-  }
-  void SetWheel(float y)
-  {
-    const IRECT w = WheelR();
-    const int v = std::max(0, std::min(127, (int)std::lround((w.B - 5.f - y) / (w.H() - 10.f) * 127.f)));
-    if (v != mWheelVal) { mWheelVal = v; if (mWheel) mWheel((uint8_t)v); SetDirty(false); }
-  }
-  MemoryHost* mHost; std::function<void(uint8_t)> mWheel;
-  int mHover = -1, mRename = -1, mTick = 0, mLastSlot = -3, mWheelVal = 0;
-  bool mSaveArmed = false, mSwitch = false, mWheelDrag = false;
-};
-
-// ---------------------------------------------------------------- status bar (as in the window mock-up)
+// ---------------------------------------------------------------- status bar: controller, memory, switch (as in the window mock-up)
+// The memory: click the name for the 36 sounds (+ the panel, rename, import / export), < > steps through them,
+// SAVE picks the key to store on. SWITCH is the MS-20's momentary switch (memory gesture, tap tempo, ESP layer).
 class StatusBar : public IControl
 {
 public:
-  StatusBar(const IRECT& r, MemoryHost* mh, PatchHost* ph, Keyboard* kb, std::function<int()> controller, std::function<void(char*, int)> diag)
-  : IControl(r), mMem(mh), mPatch(ph), mKb(kb), mCtl(controller), mDiag(diag) {}
-  IRECT Btn(int i) const { const float w = 66.f; const float x = mRECT.R - 250.f - (3 - i) * (w + 6.f); return IRECT(x, mRECT.T + 8.f, x + w, mRECT.B - 8.f); }
+  StatusBar(const IRECT& r, MemoryHost* mh, PatchHost* ph, std::function<int()> controller, std::function<void(char*, int)> diag)
+  : IControl(r), mMem(mh), mPatch(ph), mCtl(controller), mDiag(diag) {}
+  IRECT Prev() const { return IRECT(mRECT.L + 228.f, mRECT.T + 9.f, mRECT.L + 250.f, mRECT.B - 9.f); }
+  IRECT Name() const { return IRECT(mRECT.L + 254.f, mRECT.T + 4.f, mRECT.L + 584.f, mRECT.B - 4.f); }
+  IRECT Next() const { return IRECT(mRECT.L + 588.f, mRECT.T + 9.f, mRECT.L + 610.f, mRECT.B - 9.f); }
+  IRECT SaveB() const { return IRECT(mRECT.L + 790.f, mRECT.T + 8.f, mRECT.L + 856.f, mRECT.B - 8.f); }
+  IRECT SwitchB() const { return IRECT(mRECT.L + 864.f, mRECT.T + 8.f, mRECT.L + 952.f, mRECT.B - 8.f); }
+
   void Draw(IGraphics& g) override
   {
     g.FillRect(kBar, mRECT);
     g.DrawLine(IColor(255, 210, 210, 206), mRECT.L, mRECT.T, mRECT.R, mRECT.T, nullptr, 1.f);
     const float cy = mRECT.MH();
-    // controller
     static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy" };
     const int c = mCtl ? mCtl() : 0;
-    if (c > 0) { g.FillCircle(kInk, mRECT.L + 22.f, cy, 6.f); g.DrawText(IText(15.f, kInk, kF, EAlign::Near, EVAlign::Middle), (std::string("Connected  \xC2\xB7  ") + kNames[c]).c_str(), IRECT(mRECT.L + 36.f, mRECT.T, mRECT.L + 260.f, mRECT.B)); }
-    else { g.DrawCircle(kGrey, mRECT.L + 22.f, cy, 6.f, nullptr, 1.5f); g.DrawText(IText(15.f, kGrey, kF, EAlign::Near, EVAlign::Middle), "Any MIDI keyboard", IRECT(mRECT.L + 36.f, mRECT.T, mRECT.L + 260.f, mRECT.B)); }
-    // memory, or what the mouse is over
-    const IRECT mid(mRECT.L + 250.f, mRECT.T, Btn(0).L - 12.f, mRECT.B);
+    if (c > 0) { g.FillCircle(kInk, mRECT.L + 22.f, cy, 6.f); g.DrawText(IText(15.f, kInk, kF, EAlign::Near, EVAlign::Middle), (std::string("Connected  \xC2\xB7  ") + kNames[c]).c_str(), IRECT(mRECT.L + 36.f, mRECT.T, mRECT.L + 224.f, mRECT.B)); }
+    else { g.DrawCircle(kGrey, mRECT.L + 22.f, cy, 6.f, nullptr, 1.5f); g.DrawText(IText(15.f, kGrey, kF, EAlign::Near, EVAlign::Middle), "Any MIDI keyboard", IRECT(mRECT.L + 36.f, mRECT.T, mRECT.L + 224.f, mRECT.B)); }
+    // < name >  (or, for a moment, what the mouse is over)
+    auto tri = [&](const IRECT& r, bool left) {
+      const float x0 = r.MW() + (left ? 4.f : -4.f), x1 = r.MW() + (left ? -4.f : 4.f);
+      g.PathMoveTo(x0, r.MH() - 6.f); g.PathLineTo(x1, r.MH()); g.PathLineTo(x0, r.MH() + 6.f); g.PathClose(); g.PathFill(IPattern(kInk));
+    };
+    tri(Prev(), true); tri(Next(), false);
     Info& in = HoverInfo();
-    if (!in.text.empty() && in.age < 90) g.DrawText(IText(14.f, kInk, kF, EAlign::Near, EVAlign::Middle), in.text.c_str(), mid);
+    if (!in.text.empty() && in.age < 90) g.DrawText(IText(14.f, kInk, kF, EAlign::Center, EVAlign::Middle), in.text.c_str(), Name());
     else
     {
-      const int hv = mKb ? mKb->Hover() : -1, slot = mMem->MemSlot();
-      const int show = hv >= 0 ? hv : (slot >= 0 ? slot : 36);
-      std::string s;
-      if (mKb && mKb->SaveArmed()) s = "SAVE  \xC2\xB7  click a key to store this sound";
-      else if (show == 36) s = "PANEL  \xC2\xB7  the knobs as they are";
-      else s = "MEMORY " + std::to_string(show + 1) + "  \xC2\xB7  " + (mMem->MemValid(show) ? std::string(mMem->MemName(show)) : std::string("empty"));
+      const int slot = mMem->MemSlot();
+      std::string s = mSaving ? "SAVE  \xC2\xB7  pick the key in the menu" :
+                      slot < 0 ? "PANEL  \xC2\xB7  THE KNOBS AS THEY ARE" : "MEMORY " + std::to_string(slot + 1) + "  \xC2\xB7  " + mMem->MemName(slot);
       for (char& ch : s) ch = (char)toupper((unsigned char)ch);
-      g.DrawText(IText(15.f, mKb && mKb->SaveArmed() ? kAccent : kInk, kFB, EAlign::Near, EVAlign::Middle), s.c_str(), mid);
-      // modes
-      const double mo = GetDelegate() ? GetDelegate()->GetParam(PARAM_INDEX_MS20__Voices_arpmode)->Value() : 0.0;
-      std::string m = mPatch->CableFlag(0) ? "mono" : "poly";
-      m += mo < 18.0 ? "  \xC2\xB7  arp off" : (mo < 42.0 ? "  \xC2\xB7  arp" : "  \xC2\xB7  latch");
-      if (mPatch->CableFlag(1)) m += "  \xC2\xB7  tap tempo";
-      g.DrawText(IText(13.f, kGrey, kF, EAlign::Far, EVAlign::Middle), m.c_str(), IRECT(mid.L, mRECT.T, mid.R, mRECT.B));
+      g.DrawText(IText(15.f, mSaving ? kAccent : kInk, kFB, EAlign::Center, EVAlign::Middle), s.c_str(), Name());
     }
-    // memory buttons
-    static const char* kBtn[3] = { "SAVE", "IMPORT", "EXPORT" };
-    for (int i = 0; i < 3; i++)
-    {
-      const bool on = i == 0 && mKb && mKb->SaveArmed();
-      if (on) g.FillRect(kAccent, Btn(i));
-      g.DrawRect(on ? kAccent : kInk, Btn(i), nullptr, 1.5f);
-      g.DrawText(IText(12.f, on ? kPaper : kInk, kF, EAlign::Center, EVAlign::Middle), kBtn[i], Btn(i));
-    }
-    g.DrawText(IText(17.f, kInk, kFB, EAlign::Far, EVAlign::Middle), "TWENTY ENGINE STUDIO", IRECT(mRECT.R - 240.f, mRECT.T, mRECT.R - 16.f, mRECT.B));
+    if (mOverName) g.DrawLine(kGrey, Name().L + 20.f, Name().B - 3.f, Name().R - 20.f, Name().B - 3.f, nullptr, 1.f);
+    // modes
+    const double mo = GetDelegate() ? GetDelegate()->GetParam(PARAM_INDEX_MS20__Voices_arpmode)->Value() : 0.0;
+    std::string m = mPatch->CableFlag(0) ? "mono" : "poly";
+    m += mo < 18.0 ? "  \xC2\xB7  arp off" : (mo < 42.0 ? "  \xC2\xB7  arp" : "  \xC2\xB7  latch");
+    if (mPatch->CableFlag(1)) m += "  \xC2\xB7  tap tempo";
+    g.DrawText(IText(13.f, kGrey, kF, EAlign::Near, EVAlign::Middle), m.c_str(), IRECT(mRECT.L + 626.f, mRECT.T, mRECT.L + 786.f, mRECT.B));
+    // SAVE, SWITCH
+    g.DrawRect(kInk, SaveB(), nullptr, 1.5f);
+    g.DrawText(IText(12.f, kInk, kF, EAlign::Center, EVAlign::Middle), "SAVE", SaveB());
+    if (mSwitch) g.FillRect(kAccent, SwitchB());
+    g.DrawRect(mSwitch ? kAccent : kInk, SwitchB(), nullptr, 1.5f);
+    g.DrawText(IText(12.f, mSwitch ? kPaper : kInk, kF, EAlign::Center, EVAlign::Middle), "SWITCH", SwitchB());
+    g.DrawText(IText(17.f, kInk, kFB, EAlign::Far, EVAlign::Middle), "TWENTY ENGINE STUDIO", IRECT(mRECT.R - 260.f, mRECT.T, mRECT.R - 16.f, mRECT.B));
     char d[200] = ""; if (mDiag) mDiag(d, sizeof(d));
     if (*d) g.DrawText(IText(9.f, kGrey, kF, EAlign::Far, EVAlign::Top), d, IRECT(mRECT.R - 600.f, mRECT.T + 1.f, mRECT.R - 16.f, mRECT.T + 11.f));
   }
+
   void OnMouseDown(float x, float y, const IMouseMod&) override
   {
-    if (Btn(0).Contains(x, y)) { if (mKb) mKb->ArmSave(!mKb->SaveArmed()); SetDirty(false); return; }
-    WDL_String file, path;
-    if (Btn(1).Contains(x, y))
-      GetUI()->PromptForFile(file, path, EFileAction::Open, "bin", [this](const WDL_String& f, const WDL_String&) { if (f.GetLength()) mMem->MemImport(f.Get()); SetDirty(false); });
-    else if (Btn(2).Contains(x, y))
+    const int slot = mMem->MemSlot();
+    if (SwitchB().Contains(x, y)) { mSwitch = true; mMem->SwitchDown(true); SetDirty(false); return; }
+    if (Prev().Contains(x, y) || Next().Contains(x, y))   // step through the stored sounds (the panel sits after the last)
     {
-      file.Set("MS20MEM.BIN");
-      GetUI()->PromptForFile(file, path, EFileAction::Save, "bin", [this](const WDL_String& f, const WDL_String&) { if (f.GetLength()) mMem->MemExport(f.Get()); });
+      const int dir = Prev().Contains(x, y) ? -1 : 1;
+      int n = slot < 0 ? 36 : slot;
+      for (int k = 0; k < 37; k++) { n = (n + dir + 37) % 37; if (n == 36 || mMem->MemValid(n)) break; }
+      mMem->MemRecall(n); SetDirty(false); return;
+    }
+    if (Name().Contains(x, y))
+    {
+      mMenu.Clear(); mWhich = 0;
+      for (int n = 0; n < 36; n++)
+      {
+        char b[80]; snprintf(b, sizeof(b), "%d  \xC2\xB7  %s", n + 1, mMem->MemValid(n) ? mMem->MemName(n) : "(empty)");
+        auto* it = mMenu.AddItem(b);
+        if (!mMem->MemValid(n)) it->SetEnabled(false);
+        if (n == slot) it->SetChecked(true);
+      }
+      auto* pnl = mMenu.AddItem("Panel  \xC2\xB7  the knobs as they are"); if (slot < 0) pnl->SetChecked(true);
+      mMenu.AddSeparator();
+      char rn[96]; snprintf(rn, sizeof(rn), "Rename %s...", slot >= 0 ? mMem->MemName(slot) : "");
+      auto* r = mMenu.AddItem(rn); if (slot < 0) r->SetEnabled(false);
+      mMenu.AddItem("Import a bank (MS20MEM.BIN)...");
+      mMenu.AddItem("Export the bank...");
+      GetUI()->CreatePopupMenu(*this, mMenu, Name());
+      return;
+    }
+    if (SaveB().Contains(x, y))
+    {
+      mMenu.Clear(); mWhich = 1; mSaving = true;
+      for (int n = 0; n < 36; n++)
+      {
+        char b[80]; snprintf(b, sizeof(b), "Save on %d  \xC2\xB7  %s", n + 1, mMem->MemValid(n) ? mMem->MemName(n) : "(empty)");
+        auto* it = mMenu.AddItem(b); if (n == slot) it->SetChecked(true);
+      }
+      GetUI()->CreatePopupMenu(*this, mMenu, SaveB());
     }
   }
+  void OnPopupMenuSelection(IPopupMenu* pMenu, int) override
+  {
+    const bool saving = mSaving; mSaving = false;
+    if (!pMenu) { SetDirty(false); return; }
+    const int i = pMenu->GetChosenItemIdx();
+    if (i < 0) { SetDirty(false); return; }
+    if (mWhich == 1 || saving) { if (i < 36) { mMem->MemSave(i); Rename(i); } SetDirty(false); return; }
+    if (i <= 36) mMem->MemRecall(i);                              // 0..35 a sound, 36 the panel
+    else if (i == 38) { const int s = mMem->MemSlot(); if (s >= 0) Rename(s); }   // 37 is the separator
+    else if (i == 39)
+    {
+      WDL_String file, path;
+      GetUI()->PromptForFile(file, path, EFileAction::Open, "bin", [this](const WDL_String& f, const WDL_String&) { if (f.GetLength()) mMem->MemImport(f.Get()); SetDirty(false); });
+    }
+    else if (i == 40)
+    {
+      WDL_String file("MS20MEM.BIN"), path;
+      GetUI()->PromptForFile(file, path, EFileAction::Save, "bin", [this](const WDL_String& f, const WDL_String&) { if (f.GetLength()) mMem->MemExport(f.Get()); });
+    }
+    SetDirty(false);
+  }
+  void OnTextEntryCompletion(const char* str, int) override { if (mRename >= 0 && str && *str) mMem->SetMemName(mRename, str); mRename = -1; SetDirty(false); }
+  void OnMouseUp(float, float, const IMouseMod&) override { if (mSwitch) { mSwitch = false; mMem->SwitchDown(false); SetDirty(false); } }
+  void OnMouseOver(float x, float y, const IMouseMod&) override
+  {
+    const bool on = Name().Contains(x, y); if (on != mOverName) { mOverName = on; SetDirty(false); }
+    if (SwitchB().Contains(x, y)) SetInfo("SWITCH  \xC2\xB7  hold: memory keys on your keyboard  \xC2\xB7  tap: tempo (SWITCH -> ESP SIGNAL IN)");
+  }
+  void OnMouseOut() override { mOverName = false; SetDirty(false); }
   bool IsDirty() override { HoverInfo().age++; if (++mTick >= 6) { mTick = 0; return true; } return IControl::IsDirty(); }
 private:
-  MemoryHost* mMem; PatchHost* mPatch; Keyboard* mKb; std::function<int()> mCtl; std::function<void(char*, int)> mDiag; int mTick = 0;
+  void Rename(int n)
+  {
+    mRename = n;
+    GetUI()->CreateTextEntry(*this, IText(15.f, kInk, kFB, EAlign::Center, EVAlign::Middle), Name(), mMem->MemName(n), 0);
+  }
+  MemoryHost* mMem; PatchHost* mPatch; std::function<int()> mCtl; std::function<void(char*, int)> mDiag;
+  IPopupMenu mMenu; int mWhich = 0, mTick = 0, mRename = -1;
+  bool mSaving = false, mSwitch = false, mOverName = false;
 };
 
 // ---------------------------------------------------------------- the whole window
-inline void Layout(IGraphics* g, PatchHost* ph, MemoryHost* mh, std::function<int()> controller, std::function<void(char*, int)> diag,
-                   std::function<void(uint8_t)> wheel)
+inline void Layout(IGraphics* g, PatchHost* ph, MemoryHost* mh, std::function<int()> controller, std::function<void(char*, int)> diag)
 {
   g->AttachControl(new PanelArt());
   static const float COLX[8] = {7.5f, 20.0f, 32.6f, 45.0f, 57.4f, 69.8f, 82.2f, 94.0f};
@@ -726,10 +695,8 @@ inline void Layout(IGraphics* g, PatchHost* ph, MemoryHost* mh, std::function<in
     }
   };
   g->AttachControl(new EspSwitch(IRECT(RX(1150), RY(1010) - 16.f, RX(1450), RY(1010) + 6.f), relayer));
-  // keyboard and status bar
-  Keyboard* kb = new Keyboard(IRECT(X(0), Yd(PH), X(PW), Yd(PH) + KEYH), mh, wheel);
-  g->AttachControl(kb);
-  g->AttachControl(new StatusBar(IRECT(0, Yd(PH) + KEYH + 8.f, (float)kW, Yd(PH) + KEYH + 8.f + BARH), mh, ph, kb, controller, diag));
+  // status bar
+  g->AttachControl(new StatusBar(IRECT(0, Yd(PH) + 10.f, (float)kW, Yd(PH) + 10.f + BARH), mh, ph, controller, diag));
   g->AttachCornerResizer(EUIResizerMode::Scale, false);
 }
 

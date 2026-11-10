@@ -47,7 +47,7 @@ edit('CMakeLists.txt', [('project(TwentyEngine VERSION', 'project(TwentyEngineSt
 edit('config.h', [
     ('#define PLUG_NAME "Twenty Engine"', '#define TWENTY_STUDIO 1\n#define PLUG_NAME "Twenty Engine Studio"'),
     ('#define PLUG_WIDTH 360', '#define PLUG_WIDTH 1224'),     # Studio has the full editor window (ui/StudioUI.h)
-    ('#define PLUG_HEIGHT 120', '#define PLUG_HEIGHT 692'),
+    ('#define PLUG_HEIGHT 120', '#define PLUG_HEIGHT 580'),
     ('#define PLUG_HOST_RESIZE 0', '#define PLUG_HOST_RESIZE 1'),
     ("#define PLUG_UNIQUE_ID 'Tw20'", "#define PLUG_UNIQUE_ID 'Tw2S'"),
     ('#define BUNDLE_NAME "TwentyEngine"', '#define BUNDLE_NAME "TwentyEngineStudio"'),
