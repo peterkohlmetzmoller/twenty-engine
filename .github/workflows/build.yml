@@ -436,9 +436,17 @@ jobs:
           echo "---- editor windows in pluginval (GUI tests, with the software OpenGL driver next to pluginval)"
           PVX=$(find pv -iname pluginval.exe | head -1); cp mesa/x64/*.dll "$(dirname "$PVX")/" 2>/dev/null || true
           set +e
+          CDB=$(ls "/c/Program Files (x86)/Windows Kits/10/Debuggers/x64/cdb.exe" 2>/dev/null)
+          echo "debugger: ${CDB:-none}"
           for p in TwentyEngine.vst3 TwentyEngineStudio.vst3; do
             "$PVX" --strictness-level 2 --validate "C:\\Program Files\\Common Files\\VST3\\$p" > pvgui.log 2>&1; echo "pluginval with editor, $p: exit $?"
-            tail -25 pvgui.log
+            tail -6 pvgui.log
+            if [ -n "$CDB" ]; then
+              echo "---- $p: the crash in the debugger"
+              timeout 300 "$CDB" -o -c "g;.lastevent;.ecxr;kb 40;lm o;q" "$PVX" --validate-in-process --strictness-level 2 --validate "C:\\Program Files\\Common Files\\VST3\\$p" > cdb.log 2>&1
+              grep -E -A45 "Last event|ExceptionAddress|^ChildEBP|^ # |Child-SP|RetAddr" cdb.log | head -70
+              grep -i -E "opengl|gallium|glapi|TwentyEngine|nvogl|ig[0-9]" cdb.log | grep -i "start\|^[0-9a-f]" | head -12
+            fi
           done
           set -e
           echo "---- reaper.ini (Windows)"; grep -v -i -E "^(lastproject|recent)" "$RES/reaper.ini" | head -80
