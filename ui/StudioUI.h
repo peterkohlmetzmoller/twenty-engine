@@ -381,6 +381,8 @@ public:
 
   bool IsDirty() override
   {
+    if (mJob[0].param == PARAM_INDEX_MS20__Voices_arpmode)   // the label follows the knob's own zone
+    { const int z = ArpZone(GetDelegate()); if (z != mZoneShown) { mZoneShown = z; SetDirty(false); } }
     int j = 0;
     if (SwitchHeld()) j = mJob[2].param >= 0 ? 2 : 0;
     else if (ArpZone(GetDelegate()) > 0 && mJob[1].param >= 0) j = 1;
@@ -407,7 +409,10 @@ public:
     g.PathMoveTo(mCX + mR * 0.1f * std::cos(a), mCY - mR * 0.1f * std::sin(a));
     g.PathLineTo(mCX + mR * 0.86f * std::cos(a), mCY - mR * 0.86f * std::sin(a));
     g.PathStroke(IPattern(kInk), mR * 0.13f, o);
-    Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, mJob[mActive].name, 1.72f);
+    // the name under the knob: what it does now (play mode: the mode itself). The same baseline for all five.
+    static const char* kModes[3] = { "POLY", "VCO2 ARP", "LATCH" };
+    const bool isMode = mJob[0].param == PARAM_INDEX_MS20__Voices_arpmode;
+    Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, isMode ? kModes[ArpZone(GetDelegate())] : mJob[mActive].name, 1.72f);
     // play mode: a thin arc in three parts (poly, VCO2 arp, latch), the current one solid, the others dotted
     if (mJob[0].param == PARAM_INDEX_MS20__Voices_arpmode)
     {
@@ -433,11 +438,13 @@ private:
   void Report()
   {
     const IParam* p = GetParam(); if (!p) return;
-    char b[128]; snprintf(b, sizeof(b), "%s  \xC2\xB7  %s  %.1f", mHw, mJob[mActive].name, p->Value());
+    static const char* kModes[3] = { "POLY", "VCO2 ARP", "LATCH" };
+    const char* nm = mJob[0].param == PARAM_INDEX_MS20__Voices_arpmode ? kModes[ArpZone(GetDelegate())] : mJob[mActive].name;
+    char b[128]; snprintf(b, sizeof(b), "%s  \xC2\xB7  %s  %.1f", mHw, nm, p->Value());
     SetInfo(b);
   }
   float mCX, mCY, mR; const char* mHw;
-  Job mJob[3]; int mActive = 0;
+  Job mJob[3]; int mActive = 0, mZoneShown = -1;
 };
 
 // ---------------------------------------------------------------- patch panel (jacks at the photo-grid positions)
@@ -798,7 +805,7 @@ inline void Layout(IGraphics* g, PatchHost* ph, MemoryHost* mh, std::function<in
   // ESP: play mode, and four knobs whose names follow it
   const float ey = RY(1010);
   const EspKnob::Job none = {-1, ""};
-  g->AttachControl(new EspKnob(RX(270), ey, "SIGNAL LEVEL", {PARAM_INDEX_MS20__Voices_arpmode, "PLAY MODE"}, none, none));
+  g->AttachControl(new EspKnob(RX(270), ey, "SIGNAL LEVEL", {PARAM_INDEX_MS20__Voices_arpmode, "POLY"}, none, none));
   g->AttachControl(new EspKnob(RX(460), ey, "LOW CUT FREQ", {PARAM_INDEX_BBD__Delay_time, "TIME"}, {PARAM_INDEX_MS20__Voices_arprate, "RATE"}, none));
   g->AttachControl(new EspKnob(RX(640), ey, "HIGH CUT FREQ", {PARAM_INDEX_BBD__Delay_feedback, "FEEDBACK"}, {PARAM_INDEX_MS20__Voices_arpoct, "OCTAVES"}, none));
   g->AttachControl(new EspKnob(RX(820), ey, "CV ADJUST", {PARAM_INDEX_BBD__Delay_wowflutter, "WOW / FLUTTER"}, {PARAM_INDEX_MS20__Voices_arporder, "ORDER"}, none));
