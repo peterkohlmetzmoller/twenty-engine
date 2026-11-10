@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <vector>
 #include <functional>
+#include <deque>
 namespace ms20 { thread_local SysexSender g_sysexSender = 0; thread_local void *g_sysexUser = 0; thread_local uint32_t g_ks_rng = 0x12345678u; }
 using namespace ms20;
 
@@ -39,8 +40,10 @@ struct Plug {   // the plugin, as wired in TwentyEngine.cpp
   }
 };
 
-struct Logic {   // the host: transport, a region, live input routed to the track one block late
-  Plug p; bool steppedBeat = true; std::vector<M> lateLive;
+struct Host { bool stepped; int late; bool echo; bool recTrue; const char *name; };   // recTrue: the region gets the played time
+static Host H = {true, 1, true, false, "Logic"};
+struct Logic {   // the host: transport, a region, live input routed to the track H.late blocks later (if H.echo)
+  Plug p; bool steppedBeat = H.stepped; std::deque<std::vector<M>> pipe, dpipe;
   std::vector<std::vector<M>> region;   // what the region holds, per block (recorded from the live input)
   // run nblk blocks from block b0; live(b) plays the controller; recordRegion: Logic records the live input
   struct Out { Trace live, play; };
@@ -49,10 +52,18 @@ struct Logic {   // the host: transport, a region, live input routed to the trac
     for (int i = 0; i < nblk; i++) {
       const int b = b0 + i;
       std::vector<M> now; if (live) live(b, now);
-      for (auto &m : now) p.direct.push_back(m);
-      for (auto &m : lateLive) p.track.push_back(m);                   // Logic delivers the live input a block later
-      if (recordRegion && running) { if ((int)region.size() <= b) region.resize(b + 1); for (auto &m : lateLive) region[b].push_back(m); }
-      lateLive = now;
+      std::vector<M> arrived;
+      if (H.late >= 0) {
+        for (auto &m : now) p.direct.push_back(m);
+        pipe.push_back(now);
+        if ((int)pipe.size() > H.late) { arrived = pipe.front(); pipe.pop_front(); }
+      } else {   // the host's copy is first; the plugin's own read of the controller comes -late blocks later
+        arrived = now;
+        dpipe.push_back(now);
+        if ((int)dpipe.size() > -H.late) { for (auto &m : dpipe.front()) p.direct.push_back(m); dpipe.pop_front(); }
+      }
+      if (H.echo) for (auto &m : arrived) p.track.push_back(m);          // the host passes the live input on to the plugin
+      if (recordRegion && running) { if ((int)region.size() <= b) region.resize(b + 1); for (auto &m : (H.recTrue ? now : arrived)) region[b].push_back(m); }
       if (playRegion && running && b < (int)region.size()) for (auto &m : region[b]) p.track.push_back(m);
       const int rb = steppedBeat ? b - (b % 4) : b;
       p.block(running, rb * BLK * PPS);
@@ -73,8 +84,11 @@ static int diff(const Trace &a, int a0, const Trace &b, int b0, int n, int *firs
 }
 static void cc(std::vector<M> &v, int c, int x) { v.push_back({0xB0, (uint8_t)c, (uint8_t)x}); }
 
-int main() {
+static int suite() {
+  fails = 0;
   Logic L; int fb = -1;
+  // a region note arrives LAG blocks after it was played; before it, nothing sounds on the playback engine
+  const int LAG = H.recTrue ? 1 : (H.late > 1 ? H.late : 1);
   const int NB = 375, FIRST = 12;   // 8 beats; the first note at block 12
   L.stopped([](std::vector<M> &v) { cc(v, 74, 30); cc(v, 71, 80); cc(v, 28, 10); cc(v, 77, 5); cc(v, 20, 127); cc(v, 21, 64); cc(v, 91, 40); cc(v, 88, 50); });
 
@@ -99,7 +113,7 @@ int main() {
   auto rec = L.run(true, 0, NB, perform, false, true);
   L.stopped(nullptr);
   check(L.p.r.takes() == 1, "the performance is stored as one take");
-  bool moved = false; for (int k = 0; k < NPARAMS; k++) if (rec.live[FIRST + 2][k] != rec.live[NB - 1][k]) moved = true;
+  bool moved = false; for (int k = 0; k < NPARAMS; k++) if (rec.live[FIRST + 1 + LAG][k] != rec.live[NB - 1][k]) moved = true;
   check(moved, "the settings moved during the take");
   check(diff(rec.live, 0, rec.play, 0, NB) == 0, "while recording, the playback engine mirrors the panel");
 
@@ -110,8 +124,8 @@ int main() {
 
   // 1. play the region from the start
   auto pb = L.run(true, 0, NB, nullptr, true, false);
-  int bad = diff(rec.live, FIRST + 2, pb.play, FIRST + 2, NB - FIRST - 2, &fb);
-  printf("      playback engine vs the performance (from the first note): %d of %d blocks differ (first %d)\n", bad, NB - FIRST - 2, fb);
+  int bad = diff(rec.live, FIRST + 1 + LAG, pb.play, FIRST + 1 + LAG, NB - FIRST - 1 - LAG, &fb);
+  printf("      playback engine vs the performance (from the first note): %d of %d blocks differ (first %d)\n", bad, NB - FIRST - 1 - LAG, fb);
   check(bad == 0, "the take plays back exactly as performed");
   bool liveKept = true; for (auto &v : pb.live) if (v != panel) liveKept = false;
   check(liveKept, "the live engine (the panel) is untouched during playback");
@@ -120,7 +134,7 @@ int main() {
   // 2. from the middle (beat 4)
   const int S = 188;
   auto pm = L.run(true, S, NB - S, nullptr, true, false);
-  const int NEXT = 200 - S + 2;   // the take is picked up at the next note of the region (block 200)
+  const int NEXT = 200 - S + 1 + LAG;   // the take is picked up at the next note of the region (block 200)
   bad = diff(rec.live, S + NEXT, pm.play, NEXT, NB - S - NEXT, &fb);
   printf("      from beat 4, after the next note: %d of %d blocks differ (first %d)\n", bad, NB - S - NEXT, fb);
   check(bad == 0, "from the middle, exact from the next note on");
@@ -140,19 +154,19 @@ int main() {
   // 5. jamming live over the playing take: the take is untouched, the jam becomes its own take
   auto jam = [&](int b, std::vector<M> &v) { if (b == 40) v.push_back({0x90, 67, 100}); if (b >= 41 && b < 90 && b % 3 == 0) cc(v, 28, b); if (b == 90) v.push_back({0x80, 67, 0}); };
   auto pj = L.run(true, 0, NB, jam, true, false);
-  bad = diff(rec.live, FIRST + 2, pj.play, FIRST + 2, NB - FIRST - 2, &fb);
+  bad = diff(rec.live, FIRST + 1 + LAG, pj.play, FIRST + 1 + LAG, NB - FIRST - 1 - LAG, &fb);
   L.stopped(nullptr);
   printf("      take while jamming over it: %d blocks differ (first %d); takes now %d\n", bad, fb, L.p.r.takes());
   check(bad == 0 && L.p.r.takes() == 2, "a jam over a playing take does not change it (it is stored as its own take)");
   auto pa = L.run(true, 0, NB, nullptr, true, false);
-  check(diff(rec.live, FIRST + 2, pa.play, FIRST + 2, NB - FIRST - 2) == 0, "afterwards the region still plays its own take");
+  check(diff(rec.live, FIRST + 1 + LAG, pa.play, FIRST + 1 + LAG, NB - FIRST - 1 - LAG) == 0, "afterwards the region still plays its own take");
 
   // 6. save and load into a new plugin
   auto blob = L.p.r.serialize();
   Logic L2; L2.region = L.region; L2.p.r.unserialize(blob.data(), blob.size());
   L2.stopped([&](std::vector<M> &v) { cc(v, 74, 3); cc(v, 91, 120); });
   auto p2 = L2.run(true, 0, NB, nullptr, true, false);
-  bad = diff(rec.live, FIRST + 2, p2.play, FIRST + 2, NB - FIRST - 2, &fb);
+  bad = diff(rec.live, FIRST + 1 + LAG, p2.play, FIRST + 1 + LAG, NB - FIRST - 1 - LAG, &fb);
   printf("      after save/load: %d blocks differ (first %d)\n", bad, fb);
   check(bad == 0, "saved with the project, it plays back the same");
 
@@ -165,6 +179,23 @@ int main() {
   L.p.r.clear(); L.p.r.idle();
   check(L.p.r.takes() == 0, "clear removes all takes");
 
-  printf(fails ? "\n%d RECALL CHECKS FAILED\n" : "\nALL RECALL CHECKS PASSED\n", fails);
-  return fails ? 1 : 0;
+  return fails;
+}
+
+int main() {
+  // Logic reports the beat in steps and passes live input on a block later; REAPER, Ableton, Bitwig and Cubase
+  // report it smoothly, with the live input in the same block, a few blocks later, or not at all (not monitoring).
+  const Host hosts[] = {{true, 1, true, false, "Logic"}, {false, 0, true, true, "smooth beat, same block"},
+                        {false, 3, true, true, "smooth beat, monitoring 3 blocks late"}, {false, 1, false, true, "track not monitoring"},
+                        {true, 4, true, true, "stepped beat, monitoring 4 blocks late"},
+                        {false, 3, true, false, "smooth beat, notes recorded 3 blocks late"},
+                        {false, -1, true, true, "host copy a block before the plugin's own read"}};
+  int total = 0;
+  for (const Host &h : hosts) {
+    H = h; printf("\n==== host: %s\n", h.name);
+    const int f = suite(); total += f;
+    printf("==== %s: %s\n", h.name, f ? "FAILED" : "passed");
+  }
+  printf(total ? "\n%d RECALL CHECKS FAILED\n" : "\nALL RECALL CHECKS PASSED\n", total);
+  return total ? 1 : 0;
 }
