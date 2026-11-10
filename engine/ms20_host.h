@@ -37,6 +37,14 @@ struct ParamSet { int idx; int32_t raw; };
 struct LedMsg { uint8_t b[16]; int len; };
 struct MidiEv { double te; uint8_t s, d1, d2; };   // te: engine sample time
 
+// Called around every 16-sample engine block (audio thread). k = host sample index inside the current
+// process() call that the block is produced for. Used by performance recall (recall.h).
+struct BlockHook {
+  virtual void before(int k) = 0;   // after the block's MIDI is applied, before the engine runs
+  virtual void after(int k) = 0;    // after the engine has run
+  virtual ~BlockHook() {}
+};
+
 class MS20Host {
 public:
   static const int ENGINE_SR = 48000;
@@ -80,6 +88,9 @@ public:
   // read the current value (any thread; a plain aligned 32-bit read)
   int32_t getParamRaw(int idx) const { return core->root.PExch[idx].value; }
   int memSlot() const { return core->o_Patch_Memory.inmem; }   // -1 = panel, else the recalled slot (diagnostics)
+  // audio thread only (from a BlockHook): set a value right now; reported to the host like an engine change
+  void setParamNow(int idx, int32_t raw) { core->root.PExch[idx].value = raw; }
+  void setHook(BlockHook *h) { hook = h; }
 
   // --- audio (audio thread) ---
   void process(float *outL, float *outR, int n) {
@@ -94,7 +105,9 @@ public:
         while (ei < nev && ev[ei].te < (double)(produced + BUFSIZE)) {
           core->midi(ev[ei].s, ev[ei].d1, ev[ei].d2); ei++;
         }
+        if (hook) hook->before(k);
         core->process();
+        if (hook) hook->after(k);
         for (int i = 0; i < BUFSIZE; i++) {
           int w = (int)((produced + i) & (RB - 1));
           ebL[w] = core->audioOutL[i] * (1.f / 134217728.f);
@@ -143,6 +156,8 @@ public:
     if (core->o_Patch_Memory.savereq) { core->o_Patch_Memory.savereq = 0;
       if (core->o_Patch_Memory.saveFile()) core->o_Patch_Memory.flash(31, 5); else core->o_Patch_Memory.flash(12, 8); }   // saved: 5 x all LEDs, failed: 8 x PEAK+TRIG
   }
+  // main thread: forget a save request (a take playing back replays the save gesture: never overwrite the memory then)
+  void dropMemorySave() { core->o_Patch_Memory.savereq = 0; }
 
 private:
   static const int HW = 40;           // resampler half width in engine samples (80 taps, about 0.8 ms)
@@ -151,6 +166,7 @@ private:
   static const int MAXEV = 1024;
 
   EngineCore *core = nullptr;
+  BlockHook *hook = nullptr;
   bool inited = false;
   int32_t known[NPARAMS];
   SpscQueue<ParamSet, 1024> toEngine, fromEngine;

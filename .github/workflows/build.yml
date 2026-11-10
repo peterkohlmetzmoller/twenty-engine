@@ -20,6 +20,7 @@ jobs:
         run: |
           git clone -q https://github.com/iPlug2/iPlug2.git iPlug2
           cd iPlug2 && git checkout -q $IPLUG2_COMMIT
+          python3 ../tools/patch_iplug2.py . || python ../tools/patch_iplug2.py .   # host recording state (performance recall)
           cd Dependencies/IPlug && rm -rf VST3_SDK
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake
@@ -50,6 +51,7 @@ jobs:
           cd tests
           clang++ -std=c++17 -O2 -w -o host_test host_test.cpp && ./host_test
           clang++ -std=c++17 -O2 -w -o rs_test rs_test.cpp && ./rs_test
+          clang++ -std=c++17 -O2 -w -o recall_test recall_test.cpp && ./recall_test
           clang++ -std=c++17 -O2 -w -o mem_test mem_test.cpp && ./mem_test
 
       - name: Configure
@@ -156,6 +158,7 @@ jobs:
         run: |
           git clone -q https://github.com/iPlug2/iPlug2.git iPlug2
           cd iPlug2 && git checkout -q $IPLUG2_COMMIT
+          python3 ../tools/patch_iplug2.py . || python ../tools/patch_iplug2.py .   # host recording state (performance recall)
           cd Dependencies/IPlug && rm -rf VST3_SDK
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake vstgui4
