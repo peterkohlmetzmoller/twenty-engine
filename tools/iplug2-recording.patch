@@ -1,0 +1,48 @@
+diff --git a/IPlug/AUv2/IPlugAU.cpp b/IPlug/AUv2/IPlugAU.cpp
+index 812876ba7..b40cfab19 100644
+--- a/IPlug/AUv2/IPlugAU.cpp
++++ b/IPlug/AUv2/IPlugAU.cpp
+@@ -1962,6 +1962,17 @@ void IPlugAU::PreProcess()
+     timeInfo.mTransportLoopEnabled = looping;
+   }
+ 
++  if (mHostCallbacks.transportStateProc2)   // Twenty Engine: is the host recording?
++  {
++    Boolean playing2 = false, recording = false, changed2 = false, looping2 = false;
++    Float64 samplePos2 = 0.0, loopStart2 = 0.0, loopEnd2 = 0.0;
++    if (mHostCallbacks.transportStateProc2(mHostCallbacks.hostUserData, &playing2, &recording, &changed2, &samplePos2, &looping2, &loopStart2, &loopEnd2) == noErr)
++    {
++      timeInfo.mTransportIsRecording = recording;
++      timeInfo.mRecordingKnown = true;
++    }
++  }
++
+   UInt32 sampleOffsetToNextBeat = 0, tsDenom = 0;
+   float tsNum = 0.0f;
+   double currentMeasureDownBeat = 0.0;
+diff --git a/IPlug/IPlugStructs.h b/IPlug/IPlugStructs.h
+index d2b49cbc6..240865ffd 100644
+--- a/IPlug/IPlugStructs.h
++++ b/IPlug/IPlugStructs.h
+@@ -594,6 +594,8 @@ struct ITimeInfo
+ 
+   bool mTransportIsRunning = false;
+   bool mTransportLoopEnabled = false;
++  bool mTransportIsRecording = false;   // Twenty Engine: the host is recording (AU transportStateProc2, VST3 kRecording)
++  bool mRecordingKnown = false;         // Twenty Engine: the host reports recording at all
+ };
+ 
+ /** A struct used for specifying baked-in factory presets */
+diff --git a/IPlug/VST3/IPlugVST3_ProcessorBase.cpp b/IPlug/VST3/IPlugVST3_ProcessorBase.cpp
+index b02539a87..bf827cac5 100644
+--- a/IPlug/VST3/IPlugVST3_ProcessorBase.cpp
++++ b/IPlug/VST3/IPlugVST3_ProcessorBase.cpp
+@@ -266,6 +266,8 @@ void IPlugVST3ProcessorBase::PrepareProcessContext(ProcessData& data, ProcessSet
+   timeInfo.mDenominator = mProcessContext.timeSigDenominator;
+   timeInfo.mTransportIsRunning = mProcessContext.state & ProcessContext::kPlaying;
+   timeInfo.mTransportLoopEnabled = mProcessContext.state & ProcessContext::kCycleActive;
++  timeInfo.mTransportIsRecording = mProcessContext.state & ProcessContext::kRecording;   // Twenty Engine
++  timeInfo.mRecordingKnown = data.processContext != nullptr;
+   const bool offline = setup.processMode == Steinberg::Vst::kOffline;
+   SetTimeInfo(timeInfo);
+   SetRenderingOffline(offline);

@@ -25,7 +25,7 @@ jobs:
       - name: Get iPlug2 and the VST3 SDK (fixed versions)
         run: |
           git clone -q https://github.com/iPlug2/iPlug2.git iPlug2
-          cd iPlug2 && git checkout -q $IPLUG2_COMMIT
+          cd iPlug2 && git checkout -q $IPLUG2_COMMIT && git apply ../tools/iplug2-recording.patch
           cd Dependencies/IPlug && rm -rf VST3_SDK
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake
@@ -253,7 +253,7 @@ jobs:
       - name: Get iPlug2 and the VST3 SDK (fixed versions)
         run: |
           git clone -q https://github.com/iPlug2/iPlug2.git iPlug2
-          cd iPlug2 && git checkout -q $IPLUG2_COMMIT
+          cd iPlug2 && git checkout -q $IPLUG2_COMMIT && git apply ../tools/iplug2-recording.patch
           cd Dependencies/IPlug && rm -rf VST3_SDK
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake vstgui4

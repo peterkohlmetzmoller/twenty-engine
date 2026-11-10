@@ -101,7 +101,7 @@ public:
 
     WDL_String tk;
 #if TWENTY_STUDIO
-    tk.Set("Record in Latch  \xC2\xB7  listen in Read");   // the automation workflow (manual p. 10); StudioDiag() has the test counters
+    { char d[160]; d[0] = 0; if (mPlug) mPlug->StudioDiag(d, sizeof(d)); tk.Set(d); }   // test build: does the host report recording?
 #else
     if (mPlug && !mPlug->RecallOn())
 #ifdef _WIN32
@@ -314,6 +314,9 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   if (running && !mWasRunning) { mDiagHost.store(0); mDiagHostBits.store(0); mDiagSent.store(0); }   // test counters: per playback
   if (!running) mTouchedThisRun = false;
   mWasRunning = running; mRunningA.store(running);
+  { const int was = mDiagRec.load();   // test line: does the host tell us it is recording?
+    const int r = (mTimeInfo.mRecordingKnown ? 1 : 0) | (mTimeInfo.mTransportIsRecording ? 2 : 0) | (mTimeInfo.mTransportIsRecording || (was & 4) ? 4 : 0);
+    if (r != was) mDiagRec.store(r); }
 #if TWENTY_STUDIO
   mRecall.setEnabled(false);                    // Studio keeps the performance in Logic's automation
   const bool twoEngines = false;
@@ -470,8 +473,10 @@ void TwentyEngine::StudioDiag(char* out, int n) const
 {
 #if IPLUG_DSP
   int k = 0; uint64_t b = mDiagHostBits.load(); while (b) { k += (int)(b & 1); b >>= 1; }
-  snprintf(out, n, "Test \xC2\xB7 start written: %d \xC2\xB7 knob moves sent: %d \xC2\xB7 from Logic since play: %d values, %d params",
-           mDiagTouched.load(), mDiagSent.load(), mDiagHost.load(), k);
+  const int rec = mDiagRec.load();
+  const char* now = !(rec & 1) ? "no transport info" : (rec & 2) ? "RECORDING" : mRunningA.load() ? "playing" : "stopped";
+  snprintf(out, n, "Host now: %s  \xC2\xB7  recording seen: %s", now, (rec & 4) ? "YES" : "no");
+  (void)k;
 #else
   if (n > 0) out[0] = 0;
 #endif
