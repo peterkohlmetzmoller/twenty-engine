@@ -158,23 +158,68 @@ jobs:
             TwentyEngine-AAX-Mac-unsigned.zip
 
   # ---------------- Apple Silicon: validate the arm64 half of the same AU ----------------
-  test-apple-silicon:
+  # Apple Silicon runners are rarely available on GitHub (jobs sat in the queue and were cancelled), so the
+  # DAW test below runs on Intel; the universal binaries are the same.
+
+  # ---------------- the plugins in other hosts: pluginval and REAPER (Mac) ----------------
+  daw-test-mac:
     needs: build-mac
-    runs-on: macos-15
+    runs-on: macos-15-intel
+    timeout-minutes: 45
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: TwentyEngine-Mac
-      - name: Install and validate (arm64)
+          path: art
+      - name: Install both plugins (AU + VST3)
         run: |
-          uname -m
-          mkdir -p ~/Library/Audio/Plug-Ins/Components
-          ditto -x -k TwentyEngine-AU.zip ~/Library/Audio/Plug-Ins/Components/
-          ditto -x -k TwentyEngineStudio-AU.zip ~/Library/Audio/Plug-Ins/Components/
+          mkdir -p ~/Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/VST3
+          for z in TwentyEngine-AU TwentyEngineStudio-AU; do ditto -x -k art/$z.zip ~/Library/Audio/Plug-Ins/Components/; done
+          for z in TwentyEngine-VST3-Mac TwentyEngineStudio-VST3-Mac; do ditto -x -k art/$z.zip ~/Library/Audio/Plug-Ins/VST3/; done
           killall -9 AudioComponentRegistrar || true
-          sleep 2
-          auval -v aumu Tw20 Pkmo
-          auval -v aumu Tw2S Pkmo
+          ls ~/Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/VST3
+      - name: pluginval (plugin stress test)
+        id: pv
+        continue-on-error: true
+        run: |
+          curl -sL -o pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          ditto -x -k pv.zip pv
+          PV=$(find pv -path "*MacOS/pluginval" -type f | head -1)
+          st=0
+          for p in VST3/TwentyEngine.vst3 VST3/TwentyEngineStudio.vst3 Components/TwentyEngine.component Components/TwentyEngineStudio.component; do
+            P="$HOME/Library/Audio/Plug-Ins/$p"
+            "$PV" --strictness-level 5 --skip-gui-tests --timeout-ms 900000 --validate "$P" > pv.log 2>&1; r=$?
+            echo "::group::pluginval $p (exit $r)"; cat pv.log | tail -120; echo "::endgroup::"
+            if [ $r -eq 0 ]; then echo "PLUGINVAL PASS $p"; else echo "::error::pluginval failed: $p"; grep -E "FAILED|!!!|\*\*\*" pv.log | head -20; st=1; fi
+          done
+          exit $st
+      - name: REAPER (render with both plugins)
+        id: reaper
+        continue-on-error: true
+        run: |
+          F=$(curl -sL https://www.reaper.fm/download.php | grep -oE 'files/[0-9]+\.x/reaper[0-9]+_universal\.dmg' | head -1)
+          echo "REAPER download: $F"
+          curl -sL -o reaper.dmg "https://www.reaper.fm/$F"
+          hdiutil attach -nobrowse -quiet reaper.dmg -mountpoint /Volumes/R
+          APP=$(find /Volumes/R -maxdepth 2 -name "REAPER*.app" | head -1); echo "app: $APP"
+          cp -R "$APP" /Applications/REAPER.app
+          RES="$HOME/Library/Application Support/REAPER"
+          mkdir -p "$RES/Scripts" daw
+          cp tests/daw/reaper_test.lua "$RES/Scripts/__startup.lua"
+          export TE_OUT="$PWD/daw"
+          /Applications/REAPER.app/Contents/MacOS/REAPER -nosplash -new > daw/stdout.txt 2>&1 &
+          RP=$!
+          for i in $(seq 1 150); do grep -q DONE daw/reaper_log.txt 2>/dev/null && break; sleep 4; done
+          screencapture -x shot.png 2>/dev/null && sips -Z 900 shot.png > /dev/null 2>&1 && { echo "SCREENSHOT-BEGIN"; base64 -i shot.png | tr -d '\n'; echo; echo "SCREENSHOT-END"; }
+          kill -9 $RP 2>/dev/null || true
+          echo "---- REAPER log"; cat daw/reaper_log.txt 2>/dev/null || echo "(no log: the script did not run)"
+          echo "---- renders"; python3 tests/daw/analyze.py daw
+      - name: Result
+        if: always()
+        run: |
+          echo "pluginval: ${{ steps.pv.outcome }}   REAPER: ${{ steps.reaper.outcome }}"
+          [ "${{ steps.pv.outcome }}" = success ] && [ "${{ steps.reaper.outcome }}" = success ]
 
   # ---------------- Windows: VST3 (64-bit), checked with Steinberg's validator ----------------
   build-windows:
@@ -302,4 +347,63 @@ jobs:
           path: |
             TwentyEngine-Setup.exe
             TwentyEngine-VST3-Windows.zip
+            TwentyEngineStudio-VST3-Windows.zip
             TwentyEngine-AAX-Windows-unsigned.zip
+
+  # ---------------- the plugins in other hosts: pluginval and REAPER (Windows) ----------------
+  daw-test-windows:
+    needs: build-windows
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: TwentyEngine-Windows
+          path: art
+      - name: Install both plugins (VST3)
+        run: |
+          D="/c/Program Files/Common Files/VST3"; mkdir -p "$D"
+          7z x -y art/TwentyEngine-VST3-Windows.zip -o"$D" > /dev/null
+          7z x -y art/TwentyEngineStudio-VST3-Windows.zip -o"$D" > /dev/null
+          ls "$D"
+      - name: pluginval (plugin stress test)
+        id: pv
+        continue-on-error: true
+        run: |
+          curl -sL -o pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip
+          7z x -y pv.zip -opv > /dev/null
+          PV=$(find pv -iname pluginval.exe | head -1)
+          st=0
+          for p in TwentyEngine.vst3 TwentyEngineStudio.vst3; do
+            "$PV" --strictness-level 5 --skip-gui-tests --timeout-ms 900000 --validate "C:\\Program Files\\Common Files\\VST3\\$p" > pv.log 2>&1; r=$?
+            echo "::group::pluginval $p (exit $r)"; tail -120 pv.log; echo "::endgroup::"
+            if [ $r -eq 0 ]; then echo "PLUGINVAL PASS $p"; else echo "::error::pluginval failed: $p"; grep -E "FAILED|!!!|\*\*\*" pv.log | head -20; st=1; fi
+          done
+          exit $st
+      - name: REAPER (render with both plugins)
+        id: reaper
+        continue-on-error: true
+        run: |
+          F=$(curl -sL https://www.reaper.fm/download.php | grep -oE 'files/[0-9]+\.x/reaper[0-9]+_x64-install\.exe' | head -1)
+          echo "REAPER download: $F"
+          curl -sL -o reaper-install.exe "https://www.reaper.fm/$F"
+          powershell -Command "Start-Process -Wait -FilePath .\\reaper-install.exe -ArgumentList '/S','/D=C:\\REAPER'"
+          ls /c/REAPER | head
+          RES="$APPDATA/REAPER"; mkdir -p "$RES/Scripts" daw
+          cp tests/daw/reaper_test.lua "$RES/Scripts/__startup.lua"
+          export TE_OUT="$(cygpath -w "$PWD/daw")"
+          /c/REAPER/reaper.exe -nosplash -new > daw/stdout.txt 2>&1 &
+          for i in $(seq 1 150); do grep -q DONE daw/reaper_log.txt 2>/dev/null && break; sleep 4; done
+          powershell -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \$m=New-Object System.Drawing.Bitmap \$b.Width,\$b.Height; \$g=[System.Drawing.Graphics]::FromImage(\$m); \$g.CopyFromScreen(\$b.Location,[System.Drawing.Point]::Empty,\$b.Size); \$s=New-Object System.Drawing.Bitmap \$m,([int](\$b.Width/2)),([int](\$b.Height/2)); \$s.Save('shot.png')" && { echo "SCREENSHOT-BEGIN"; base64 -w0 shot.png; echo; echo "SCREENSHOT-END"; }
+          taskkill //F //IM reaper.exe > /dev/null 2>&1 || true
+          echo "---- REAPER log"; cat daw/reaper_log.txt 2>/dev/null || echo "(no log: the script did not run)"
+          echo "---- renders"; python tests/daw/analyze.py daw
+      - name: Result
+        if: always()
+        run: |
+          echo "pluginval: ${{ steps.pv.outcome }}   REAPER: ${{ steps.reaper.outcome }}"
+          [ "${{ steps.pv.outcome }}" = success ] && [ "${{ steps.reaper.outcome }}" = success ]

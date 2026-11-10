@@ -92,6 +92,51 @@ static bool IsFrac(int i) { return strncmp(kParamInfo[i].type, "frac32", 6) == 0
 static bool IsBipolar(int i) { return strncmp(kParamInfo[i].type, "frac32.s", 8) == 0; }
 static bool IsBool(int i) { return strncmp(kParamInfo[i].type, "bool32", 6) == 0; }
 
+// The names a DAW shows (automation menus, generic editors): MS-20 panel names instead of the patch's object names.
+// Keyed by the patch object and parameter, so a regenerated engine keeps them; anything unknown keeps its patch label.
+struct NiceName { const char *object, *name, *label, *group; };
+static const NiceName kNiceNames[] = {
+  {"MS20_Voices", "vco1wave", "VCO 1 Waveform", "VCO"},        {"MS20_Voices", "vco1oct", "VCO 1 Scale", "VCO"},
+  {"MS20_Voices", "pw", "VCO 1 Pulse Width", "VCO"},           {"MS20_Voices", "portamento", "Portamento", "VCO"},
+  {"MS20_Voices", "multitrig", "Multi Trigger", "VCO"},        {"MS20_Voices", "vco2wave", "VCO 2 Waveform", "VCO"},
+  {"MS20_Voices", "vco2oct", "VCO 2 Scale", "VCO"},            {"MS20_Voices", "vco2fine", "VCO 2 Fine Tune", "VCO"},
+  {"MS20_Voices", "vco2semi", "VCO 2 Pitch", "VCO"},           {"MS20_Voices", "arpmode", "Play Mode", "Play Mode"},
+  {"MS20_Voices", "arprate", "Arp Rate", "Play Mode"},         {"MS20_Voices", "arpoct", "Arp Octaves", "Play Mode"},
+  {"MS20_Voices", "arporder", "Arp Order", "Play Mode"},
+  {"EG1", "delay", "EG 1 Delay Time", "EG 1"},                 {"EG1", "attack", "EG 1 Attack Time", "EG 1"},
+  {"EG1", "release", "EG 1 Release Time", "EG 1"},             {"EG1", "amount", "VCO EG 1 Amount", "EG 1"},
+  {"EG2", "hold", "EG 2 Hold Time", "EG 2"},                   {"EG2", "attack", "EG 2 Attack Time", "EG 2"},
+  {"EG2", "decay", "EG 2 Decay Time", "EG 2"},                 {"EG2", "sustain", "EG 2 Sustain Level", "EG 2"},
+  {"EG2", "release", "EG 2 Release Time", "EG 2"},             {"EG2", "lpfdepth", "LPF EG 2 Amount", "Filters"},
+  {"EG2", "hpfdepth", "HPF EG 2 Amount", "Filters"},
+  {"Master_Mixer", "vco1", "VCO 1 Level", "Mixer"},            {"Master_Mixer", "vco2", "VCO 2 Level", "Mixer"},
+  {"Master_Mixer", "extlvl", "External Level", "Mixer"},
+  {"Filter_Macro", "hpfcut", "HPF Cutoff", "Filters"},         {"Filter_Macro", "hpfpeak", "HPF Peak", "Filters"},
+  {"Filter_Macro", "lpfcut", "LPF Cutoff", "Filters"},         {"Filter_Macro", "lpfpeak", "LPF Peak", "Filters"},
+  {"Filter_Macro", "clicknoise", "Key Click", "Filters"},
+  {"VCA_Macro", "bassboost", "Bass Boost", "Output"},          {"VCA_Macro", "drive", "Drive", "Output"},
+  {"VCA_Macro", "mastervol", "Volume", "Output"},
+  {"PatchBay", "total", "Patch TOTAL", "Patch Panel"},         {"PatchBay", "freq", "Patch FREQ", "Patch Panel"},
+  {"PatchBay", "vco2freq", "Patch VCO 2 CV", "Patch Panel"},   {"PatchBay", "hpf", "Patch HPF Cutoff", "Patch Panel"},
+  {"PatchBay", "lpf", "Patch LPF Cutoff", "Patch Panel"},      {"PatchBay", "vca", "Patch VCA", "Patch Panel"},
+  {"PatchBay", "eg1trig", "Patch EG 1 Trig", "Patch Panel"},   {"PatchBay", "eg2trig", "Patch EG 2 Trig", "Patch Panel"},
+  {"PatchBay", "shin", "Patch S&H In", "Patch Panel"},         {"PatchBay", "shclock", "Patch S&H Clock", "Patch Panel"},
+  {"MS20_Master_Tune", "tune", "Master Tune", "Output"},
+  {"BBD_Delay", "time", "Delay Time", "Delay"},                {"BBD_Delay", "feedback", "Delay Feedback", "Delay"},
+  {"BBD_Delay", "bbdfilter", "Delay Tone", "Delay"},           {"BBD_Delay", "wowflutter", "Delay Wow and Flutter", "Delay"},
+  {"BBD_Delay", "drywet", "Delay Amount", "Delay"},            {"BBD_Delay", "spread", "Delay Spread", "Delay"},
+  {"BBD_Delay", "width", "Delay Width", "Delay"},
+  {"MG_Morphing_LFO", "rate", "MG Frequency", "MG"},           {"MG_Morphing_LFO", "shape", "MG Waveform", "MG"},
+  {"MG_Morphing_LFO", "pitchmod", "VCO MG Amount", "MG"},      {"MG_Morphing_LFO", "lpfmod", "LPF MG Amount", "MG"},
+  {"MG_Morphing_LFO", "hpfmod", "HPF MG Amount", "MG"},
+};
+static const NiceName *Nice(int i)
+{
+  for (const NiceName &n : kNiceNames)
+    if (!strcmp(n.object, kParamInfo[i].object) && !strcmp(n.name, kParamInfo[i].name)) return &n;
+  return nullptr;
+}
+
 TwentyEngine::TwentyEngine(const InstanceInfo& info)
 : iplug::Plugin(info, MakeConfig(kNumParams, kNumPresets))
 {
@@ -135,18 +180,20 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
   for (int i = 0; i < kNumParams; i++)
   {
     const ParamInfo& p = kParamInfo[i];
+    const NiceName *nn = Nice(i);
+    const char *label = nn ? nn->label : p.label, *group = nn ? nn->group : p.object;
     if (IsFrac(i))
     {
       const double def = p.def / 2097152.0;          // 1<<21 per display unit
-      if (IsBipolar(i)) GetParam(i)->InitDouble(p.label, def, -64.0, 64.0, 0.01, "", kFlags, p.object);
-      else              GetParam(i)->InitDouble(p.label, def, 0.0, 64.0, 0.01, "", kFlags, p.object);
+      if (IsBipolar(i)) GetParam(i)->InitDouble(label, def, -64.0, 64.0, 0.01, "", kFlags, group);
+      else              GetParam(i)->InitDouble(label, def, 0.0, 64.0, 0.01, "", kFlags, group);
     }
     else if (IsBool(i))
-      GetParam(i)->InitBool(p.label, p.def != 0, "", kFlags, p.object);
+      GetParam(i)->InitBool(label, p.def != 0, "", kFlags, group);
     else
     {
       const int maxv = (p.hmax > 0) ? p.hmax - 1 : 13;  // radio buttons; patch bay selectors 0..13
-      GetParam(i)->InitInt(p.label, p.def, 0, maxv, "", kFlags, p.object);
+      GetParam(i)->InitInt(label, p.def, 0, maxv, "", kFlags, group);
     }
   }
 
