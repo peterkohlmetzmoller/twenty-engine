@@ -417,6 +417,9 @@ jobs:
           curl -sL -o reaper-install.exe "https://www.reaper.fm/$F"
           powershell -Command "Start-Process -Wait -FilePath .\\reaper-install.exe -ArgumentList '/S','/D=C:\\REAPER'"
           ls /c/REAPER | head
+          # no graphics card on the test machine: a software OpenGL driver (Mesa) next to REAPER, so plugin windows can open
+          M=$(curl -sL https://api.github.com/repos/pal1000/mesa-dist-win/releases/latest | grep -oE 'https://[^"]*release-msvc\.7z' | head -1)
+          echo "Mesa: $M"; { curl -sL -o mesa.7z "$M" && 7z x -y mesa.7z -omesa > /dev/null && cp mesa/x64/*.dll /c/REAPER/; } || echo "no software OpenGL"
           RES="$APPDATA/REAPER"; mkdir -p "$RES/Scripts" daw
           cp tests/daw/reaper_test.lua "$RES/Scripts/__startup.lua"
           export TE_OUT="$(cygpath -w "$PWD/daw")" TE_UISHOT=1

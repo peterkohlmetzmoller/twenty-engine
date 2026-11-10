@@ -38,7 +38,7 @@ public:
   void Draw(IGraphics& g) override
   {
     g.FillRoundRect(kCard, mRECT, 6.f);
-    g.DrawText(T(11.f, kOr, EAlign::Near), mTitle.Get(), mRECT.GetFromTop(20.f).GetHShifted(10.f));
+    g.DrawText(T(12.f, kOr, EAlign::Near), mTitle.Get(), mRECT.GetFromTop(20.f).GetHShifted(10.f));
   }
 private:
   WDL_String mTitle;
@@ -55,7 +55,7 @@ public:
   void Draw(IGraphics& g) override
   {
     const IRECT lab = mRECT.GetFromTop(14.f);
-    g.DrawText(T(10.5f, IsDisabled() ? kFaint : kInk), mLabel.Get(), lab);
+    g.DrawText(T(11.5f, IsDisabled() ? kFaint : kInk), mLabel.Get(), lab);
     const float cx = mRECT.MW(), cy = mRECT.T + 14.f + 25.f, r = 19.f;
     const double v = GetValue();
     const IParam* p = GetParam();
@@ -72,15 +72,15 @@ public:
     {
       const float za = -135.f + 270.f * (float)i / (float)(mZones.size() - 1);
       const float zx = cx + std::sin(Rad(za)) * (r + 15.f), zy = cy - std::cos(Rad(za)) * (r + 13.f);
-      g.DrawText(T(7.5f, kDim), mZones[i].c_str(), IRECT(zx - 20.f, zy - 5.f, zx + 20.f, zy + 5.f));
+      g.DrawText(T(8.5f, kDim), mZones[i].c_str(), IRECT(zx - 22.f, zy - 6.f, zx + 22.f, zy + 6.f));
     }
     const IRECT below = mRECT.GetFromBottom(14.f);
     if ((mMouseDown || mMouseIsOver) && p)
     {
       WDL_String s; s.SetFormatted(32, bip ? "%+.1f" : "%.1f", p->Value());
-      g.DrawText(T(9.5f, kOr), s.Get(), below);
+      g.DrawText(T(10.5f, kOr), s.Get(), below);
     }
-    else g.DrawText(T(8.f, kDim), mSub.Get(), below);
+    else g.DrawText(T(9.f, kDim), mSub.Get(), below);
   }
   void OnMouseOver(float x, float y, const IMouseMod& m) override { IKnobControlBase::OnMouseOver(x, y, m); SetDirty(false); }
   void OnMouseOut() override { IKnobControlBase::OnMouseOut(); SetDirty(false); }
@@ -97,7 +97,7 @@ public:
   : IKnobControlBase(r, param, EDirection::Vertical, 1.0), mLabel(label), mNames(names) {}
   void Draw(IGraphics& g) override
   {
-    g.DrawText(T(10.5f, kInk), mLabel.Get(), mRECT.GetFromTop(14.f));
+    g.DrawText(T(11.5f, kInk), mLabel.Get(), mRECT.GetFromTop(14.f));
     const IParam* p = GetParam();
     const int n = (int)mNames.size(), sel = p ? (int)std::lround(p->Value()) : 0;
     const float cx = mRECT.MW(), cy = mRECT.T + 14.f + 25.f, r = 13.f;
@@ -112,7 +112,7 @@ public:
     g.FillCircle(mMouseIsOver || mMouseDown ? kCardHi : kKnob, cx, cy, r);
     g.DrawCircle(kFaint, cx, cy, r, nullptr, 1.f);
     g.DrawLine(kInk, cx, cy, cx + std::sin(Rad(a)) * r * 0.9f, cy - std::cos(Rad(a)) * r * 0.9f, nullptr, 2.2f);
-    if (sel >= 0 && sel < n) g.DrawText(T(9.f, kOr), mNames[sel].c_str(), mRECT.GetFromBottom(14.f));
+    if (sel >= 0 && sel < n) g.DrawText(T(10.5f, kOr), mNames[sel].c_str(), mRECT.GetFromBottom(14.f));
   }
   void OnMouseDown(float x, float y, const IMouseMod& m) override { mDragged = false; IKnobControlBase::OnMouseDown(x, y, m); }
   void OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& m) override { mDragged = true; IKnobControlBase::OnMouseDrag(x, y, dX, dY, m); }
@@ -160,7 +160,7 @@ public:
     {
       const IRECT b(mRECT.L + i * w + 1.f, mRECT.T, mRECT.L + (i + 1) * w - 1.f, mRECT.B);
       g.FillRoundRect(i == mLayer ? kOr : kKnob, b, 3.f);
-      g.DrawText(T(9.f, i == mLayer ? kBg : kDim), kEspLayers[i].name, b);
+      g.DrawText(T(10.5f, i == mLayer ? kBg : kDim), kEspLayers[i].name, b);
     }
   }
   void OnMouseDown(float x, float y, const IMouseMod&) override { SetLayer(std::max(0, std::min(2, (int)((x - mRECT.L) / (mRECT.W() / 3.f))))); }
@@ -213,7 +213,7 @@ public:
     const int c = i % COLS, row = i / COLS;
     return IRECT(mRECT.L + 8.f + c * cw, mRECT.T + 24.f + row * ch, mRECT.L + 8.f + (c + 1) * cw, mRECT.T + 24.f + (row + 1) * ch);
   }
-  void JackXY(int i, float& x, float& y) const { const IRECT c = Cell(i); x = c.MW(); y = c.T + 30.f; }
+  void JackXY(int i, float& x, float& y) const { const IRECT c = Cell(i); x = c.MW(); y = c.T + 34.f; }
   int HitJack(float x, float y) const
   {
     for (int i = 0; i < 35; i++) { float jx, jy; JackXY(i, jx, jy); if ((x - jx) * (x - jx) + (y - jy) * (y - jy) < 12.f * 12.f) return i; }
@@ -246,16 +246,16 @@ public:
   void Draw(IGraphics& g) override
   {
     g.FillRoundRect(kCard, mRECT, 6.f);
-    g.DrawText(T(11.f, kOr, EAlign::Near), "PATCH PANEL", mRECT.GetFromTop(20.f).GetHShifted(10.f));
-    g.DrawText(T(8.5f, kDim, EAlign::Far), "drag between jacks  \xC2\xB7  click a plug to pull it out", mRECT.GetFromTop(20.f).GetHShifted(-10.f));
+    g.DrawText(T(12.f, kOr, EAlign::Near), "PATCH PANEL", mRECT.GetFromTop(20.f).GetHShifted(10.f));
+    g.DrawText(T(9.f, kDim, EAlign::Far), "drag between jacks  \xC2\xB7  click a plug to pull it out", mRECT.GetFromTop(20.f).GetHShifted(-10.f));
     auto* d = GetDelegate();
     for (int i = 0; i < 35; i++)
     {
       const Jack& j = kJacks[i];
       const IRECT c = Cell(i);
       const bool used = j.kind != 0;
-      g.DrawText(T(8.f, used ? kInk : kFaint), j.top, IRECT(c.L, c.T + 2.f, c.R, c.T + 11.f));
-      g.DrawText(T(7.f, used ? kDim : kFaint), j.bottom, IRECT(c.L, c.T + 11.f, c.R, c.T + 19.f));
+      g.DrawText(T(9.5f, used ? kInk : kFaint), j.top, IRECT(c.L, c.T + 1.f, c.R, c.T + 12.f));
+      g.DrawText(T(8.5f, used ? kDim : kFaint), j.bottom, IRECT(c.L, c.T + 12.f, c.R, c.T + 21.f));
       float x, y; JackXY(i, x, y);
       const bool hot = (mHover == i || mDragFrom == i) && used;
       g.FillCircle(used ? (j.kind == 1 ? kOrDim : kKnob) : kBg, x, y, 9.f);
@@ -375,7 +375,7 @@ public:
   void Draw(IGraphics& g) override
   {
     g.FillRoundRect(kCard, mRECT, 6.f);
-    g.DrawText(T(11.f, kOr, EAlign::Near), "MEMORY", mRECT.GetFromTop(20.f).GetHShifted(10.f));
+    g.DrawText(T(12.f, kOr, EAlign::Near), "MEMORY", mRECT.GetFromTop(20.f).GetHShifted(10.f));
     const int slot = mHost->MemSlot();
     const int show = mHover >= 0 ? mHover : (slot >= 0 ? slot : 36);
     WDL_String a, b;
@@ -384,16 +384,16 @@ public:
     const IRECT bt = Buttons();
     g.DrawText(T(26.f, kInk, EAlign::Near, EVAlign::Top), a.Get(), IRECT(bt.L, bt.T + 10.f, bt.R, bt.T + 40.f));
     g.DrawText(T(13.f, kInk, EAlign::Near, EVAlign::Top), b.Get(), IRECT(bt.L, bt.T + 42.f, bt.R, bt.T + 60.f));
-    if (mSaveArmed) g.DrawText(T(9.5f, kOr, EAlign::Near, EVAlign::Top), "click a key to store this sound", IRECT(bt.L, bt.T + 60.f, bt.R, bt.T + 74.f));
+    if (mSaveArmed) g.DrawText(T(10.5f, kOr, EAlign::Near, EVAlign::Top), "click a key to store this sound", IRECT(bt.L, bt.T + 60.f, bt.R, bt.T + 74.f));
     // momentary switch
     g.FillRoundRect(mSwitch ? kOr : kKnob, SwitchR(), 3.f);
-    g.DrawText(T(9.f, mSwitch ? kBg : kDim), "SWITCH (hold)", SwitchR());
+    g.DrawText(T(10.f, mSwitch ? kBg : kDim), "SWITCH (hold)", SwitchR());
     static const char* kBtn[3] = { "SAVE", "IMPORT", "EXPORT" };
     for (int i = 0; i < 3; i++)
     {
       const bool on = (i == 0 && mSaveArmed);
       g.FillRoundRect(on ? kOr : kKnob, Btn(i), 3.f);
-      g.DrawText(T(9.f, on ? kBg : kInk), kBtn[i], Btn(i));
+      g.DrawText(T(10.f, on ? kBg : kInk), kBtn[i], Btn(i));
     }
     // keys
     for (int pass = 0; pass < 2; pass++)
@@ -408,8 +408,8 @@ public:
         if (!IsBlack(n)) g.DrawRect(IColor(255, 120, 118, 112), k, nullptr, 0.6f);
         if (cur) g.FillRect(kOr, IRECT(k.L + 2.f, k.B - 5.f, k.R - 2.f, k.B - 2.f));
         if (n < 36 && mHost->MemValid(n)) g.FillCircle(IsBlack(n) ? kDim : IColor(255, 110, 108, 104), k.MW(), k.B - 12.f, 2.f);
-        if (n == 36) g.DrawText(T(7.f, IColor(255, 90, 88, 84)), "PANEL", k.GetFromBottom(26.f));
-        else if (n % 12 == 0) { WDL_String s; s.SetFormatted(8, "C%d", n / 12 + 1); g.DrawText(T(7.f, IColor(255, 90, 88, 84)), s.Get(), k.GetFromBottom(26.f)); }
+        if (n == 36) g.DrawText(T(8.f, IColor(255, 90, 88, 84)), "PANEL", k.GetFromBottom(26.f));
+        else if (n % 12 == 0) { WDL_String s; s.SetFormatted(8, "C%d", n / 12 + 1); g.DrawText(T(8.f, IColor(255, 90, 88, 84)), s.Get(), k.GetFromBottom(26.f)); }
       }
   }
   void OnMouseDown(float x, float y, const IMouseMod& m) override
@@ -463,11 +463,11 @@ public:
     const int c = mCtl ? mCtl() : 0;
     WDL_String s; if (c > 0) s.SetFormatted(64, "%s connected", kNames[c]); else s.Set("Play from any MIDI keyboard  \xC2\xB7  an MS-20ic moves the knobs");
     const IRECT rr = mRECT.GetHShifted(-16.f);
-    g.DrawText(T(10.5f, c > 0 ? kInk : kDim, EAlign::Far), s.Get(), rr.GetFromTop(mRECT.H() * 0.6f));
-    IRECT tb; const float tw = g.MeasureText(T(10.5f, kInk), s.Get(), tb);
+    g.DrawText(T(11.5f, c > 0 ? kInk : kDim, EAlign::Far), s.Get(), rr.GetFromTop(mRECT.H() * 0.6f));
+    IRECT tb; const float tw = g.MeasureText(T(11.5f, kInk), s.Get(), tb);
     if (c > 0) g.FillCircle(kOr, rr.R - tw - 12.f, mRECT.T + mRECT.H() * 0.3f, 4.f);
     char st[200] = ""; if (mStatus) mStatus(st, sizeof(st));
-    if (*st) g.DrawText(T(9.f, kDim, EAlign::Far), st, rr.GetFromBottom(mRECT.H() * 0.4f));
+    if (*st) g.DrawText(T(10.f, kDim, EAlign::Far), st, rr.GetFromBottom(mRECT.H() * 0.4f));
   }
   bool IsDirty() override { if (++mTick >= 30) { mTick = 0; return true; } return IControl::IsDirty(); }
 private:
@@ -481,12 +481,15 @@ inline void Layout(IGraphics* g, PatchHost* ph, MemoryHost* mh, std::function<in
 {
   g->AttachPanelBackground(kBg);
   g->AttachControl(new Header(IRECT(0, 0, kW, 46), controller, status));
-  const float cw = 62.f, ch = 92.f, gap = 10.f, x0 = 16.f;
+  const float ch = 92.f, gap = 10.f, x0 = 16.f, rowW = 830.f;   // every row ends where the patch panel begins
+  float cw = 62.f;
+  auto rowCells = [&](int sections, int knobs) { cw = (rowW - sections * 12.f - (sections - 1) * gap) / (float)knobs; };
   float x = x0, y = 52.f;
   auto section = [&](const char* title, int n) { IRECT r(x, y, x + n * cw + 12.f, y + ch + 24.f); g->AttachControl(new Section(r, title)); const float sx = x + 6.f; x += n * cw + 12.f + gap; return sx; };
   auto cell = [&](float sx, int i) { return IRECT(sx + i * cw, y + 20.f, sx + (i + 1) * cw, y + 20.f + ch); };
   const std::vector<std::string> scale = { "32'", "16'", "8'", "4'" };
   // row 1: oscillators, mixer, filters
+  rowCells(5, 12);
   float s = section("VCO 1", 3);
   g->AttachControl(new Selector(cell(s, 0), PARAM_INDEX_MS20__Voices_vco1oct, "Scale", scale));
   g->AttachControl(new Selector(cell(s, 1), PARAM_INDEX_MS20__Voices_vco1wave, "Wave", { "Sine", "Saw", "Pulse", "Noise" }));
@@ -505,7 +508,7 @@ inline void Layout(IGraphics* g, PatchHost* ph, MemoryHost* mh, std::function<in
   g->AttachControl(new Knob(cell(s, 0), PARAM_INDEX_Filter__Macro_lpfcut, "Cutoff"));
   g->AttachControl(new Knob(cell(s, 1), PARAM_INDEX_Filter__Macro_lpfpeak, "Peak"));
   // row 2: pitch, modulation amounts, MG
-  x = x0; y += ch + 24.f + 8.f;
+  x = x0; y += ch + 24.f + 8.f; rowCells(5, 10);
   s = section("PITCH", 2);
   g->AttachControl(new Knob(cell(s, 0), PARAM_INDEX_MS20__Voices_portamento, "Portamento", "Multibend in poly"));
   g->AttachControl(new Knob(cell(s, 1), PARAM_INDEX_MS20__Master__Tune_tune, "Tune"));
@@ -522,7 +525,7 @@ inline void Layout(IGraphics* g, PatchHost* ph, MemoryHost* mh, std::function<in
   g->AttachControl(new Knob(cell(s, 0), PARAM_INDEX_MG__Morphing__LFO_shape, "Wave", "", { "TRI", "SQ", "RND" }));
   g->AttachControl(new Knob(cell(s, 1), PARAM_INDEX_MG__Morphing__LFO_rate, "Freq"));
   // row 3: envelopes, output
-  x = x0; y += ch + 24.f + 8.f;
+  x = x0; y += ch + 24.f + 8.f; rowCells(3, 12);
   s = section("EG 1", 3);
   g->AttachControl(new Knob(cell(s, 0), PARAM_INDEX_EG1_delay, "Delay"));
   g->AttachControl(new Knob(cell(s, 1), PARAM_INDEX_EG1_attack, "Attack"));
@@ -539,7 +542,7 @@ inline void Layout(IGraphics* g, PatchHost* ph, MemoryHost* mh, std::function<in
   g->AttachControl(new Knob(cell(s, 2), PARAM_INDEX_Filter__Macro_clicknoise, "Key Click"));
   g->AttachControl(new Knob(cell(s, 3), PARAM_INDEX_VCA__Macro_mastervol, "Volume"));
   // row 4: the ESP knobs (play mode + four knobs on three layers)
-  x = x0; y += ch + 24.f + 8.f;
+  x = x0; y += ch + 24.f + 8.f; cw = 76.f;
   s = section("ESP  \xC2\xB7  PLAY MODE, DELAY, ARP", 5);
   g->AttachControl(new Knob(cell(s, 0), PARAM_INDEX_MS20__Voices_arpmode, "Play Mode", "SIGNAL LEVEL", { "POLY", "ARP", "LATCH" }));
   Knob* esp[4];
@@ -554,10 +557,12 @@ inline void Layout(IGraphics* g, PatchHost* ph, MemoryHost* mh, std::function<in
       esp[i]->SetLabels(kEspLayers[l].labels[i], kEspHardware[i]);
     }
   };
-  const float swx = x + 4.f;
-  g->AttachControl(new EspSwitch(IRECT(swx, y + 30.f, swx + 150.f, y + 50.f), relayer));
-  g->AttachControl(new ITextControl(IRECT(swx, y + 56.f, swx + 200.f, y + 68.f), "What the four ESP knobs do.", T(8.5f, kDim, EAlign::Near), COLOR_TRANSPARENT));
-  g->AttachControl(new ITextControl(IRECT(swx, y + 69.f, swx + 200.f, y + 81.f), "Follows the play mode; click to change.", T(8.5f, kDim, EAlign::Near), COLOR_TRANSPARENT));
+  // the layer switch, in a card of its own next to the knobs
+  const float swl = x, swr = x0 + rowW;
+  g->AttachControl(new Section(IRECT(swl, y, swr, y + ch + 24.f), "ESP KNOBS"));
+  g->AttachControl(new EspSwitch(IRECT(swl + 12.f, y + 34.f, swr - 12.f, y + 58.f), relayer));
+  g->AttachControl(new ITextControl(IRECT(swl + 12.f, y + 66.f, swr - 12.f, y + 80.f), "Picks what the four ESP knobs do.", T(10.f, kDim, EAlign::Near), COLOR_TRANSPARENT));
+  g->AttachControl(new ITextControl(IRECT(swl + 12.f, y + 81.f, swr - 12.f, y + 95.f), "Follows the play mode; click to change.", T(10.f, kDim, EAlign::Near), COLOR_TRANSPARENT));
   // the patch panel
   g->AttachControl(new PatchPanel(IRECT(862.f, 52.f, kW - 16.f, 52.f + 4 * (ch + 24.f) + 3 * 8.f), ph));
   // memory keys
