@@ -144,7 +144,7 @@ inline float ftan(float x){float x2=x*x;return x*(945.f-105.f*x2+x2*x2)/(945.f-4
 inline float softc(float x){if(x>1.5f)return 1.f;if(x<-1.5f)return -1.f;return x-0.148148f*x*x*x;}   // soft clip in the resonance loop (analog-style, no division) (fold gain max 4.5)
 inline float pblp(float t,float dt,float rdt){if((t-dt)*((1.f-dt)-t)>0.f)return 0.f; /* one compare for the common case (identical result) */ if(t<dt){t*=rdt;return t+t-t*t-1.f;}else if(t>1.f-dt){t=(t-1.f)*rdt;return t*t+t+t+1.f;}return 0.f;}
 // band-limited corners (polyBLAMP) for the triangles, band-limited square for the ring modulator (v43)
-inline float pblm(float t,float dt,float rdt){if((t-dt)*((1.f-dt)-t)>0.f)return 0.f;if(t<dt){t=t*rdt-1.f;return -0.33333333f*t*t*t;}t=(t-1.f)*rdt+1.f;return 0.33333333f*t*t*t;}
+inline float pblm(float t,float dt,float rdt){if((t-dt)*((1.f-dt)-t)>0.f)return 0.f;if(t<dt){t=t*rdt-1.f;return -0.33333333f*t*t*t;}if(t>1.f-dt){t=(t-1.f)*rdt+1.f;return 0.33333333f*t*t*t;}return 0.f;} /* v50d: no fall-through */
 inline float tri_bl(float t,float dt,float rdt){float o=(t<0.5f)?(t*4.f-1.f):(3.f-t*4.f);/* plugin HQ: triangle corner correction on */
  float u=t-0.5f;if(u<0.f)u+=1.f;return o+4.f*dt*(pblm(t,dt,rdt)-pblm(u,dt,rdt));}
 inline float sq_bl(float t,float dt,float rdt){float o=(t<0.5f)?1.f:-1.f;o+=pblp(t,dt,rdt);float u=t-0.5f;if(u<0.f)u+=1.f;return o-pblp(u,dt,rdt);}

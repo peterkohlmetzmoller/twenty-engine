@@ -102,6 +102,10 @@ SIZEOPT = re.compile(r'__attribute__\s*\(\(\s*noinline\s*,\s*optimize\s*\(\s*"Os
 HQ = {
  'MS20_Voices': [
   ('return o;   /* v48b: triangle corner correction off (CPU) */', '/* plugin HQ: triangle corner correction on */'),
+  # v50d fix: pblm fell through to the "near 1" formula when t landed exactly on dt (or the guard product underflowed),
+  # returning values up to ~-650 for one sample = the random clicks on triangle/sine. Only the HQ build calls pblm.
+  ('if(t<dt){t=t*rdt-1.f;return -0.33333333f*t*t*t;}t=(t-1.f)*rdt+1.f;return 0.33333333f*t*t*t;}',
+   'if(t<dt){t=t*rdt-1.f;return -0.33333333f*t*t*t;}if(t>1.f-dt){t=(t-1.f)*rdt+1.f;return 0.33333333f*t*t*t;}return 0.f;} /* v50d: no fall-through */'),
   # HQ: poly oscillators at MS20_OSF x 48 kHz (2 = 96 kHz), back to 48 kHz through the filter's half-band FIR
   ('float ap_s[12],ph_fb,ph_a,ph_da;bool phwas;',
    'float ap_s[12],ph_fb,ph_a,ph_da;bool phwas;\n'
