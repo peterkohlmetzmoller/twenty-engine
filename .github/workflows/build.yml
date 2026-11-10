@@ -222,7 +222,7 @@ jobs:
           /Applications/REAPER.app/Contents/MacOS/REAPER -nosplash -new > daw/stdout.txt 2>&1 &
           RP=$!
           # a fresh REAPER asks about the audio device first: answer "No" until the test script has started
-          ( for i in $(seq 1 40); do sleep 3; [ -f daw/reaper_log.txt ] && break; osascript -e 'tell application "System Events" to tell process "SecurityAgent" to click button "Cancel" of window 1' >> daw/dialogs.txt 2>&1; osascript -e 'tell application "System Events" to tell process "REAPER" to keystroke "n"' >> daw/dialogs.txt 2>&1; done ) &
+          ( for i in $(seq 1 40); do sleep 3; [ -f daw/reaper_log.txt ] && break; osascript -e 'tell application "System Events" to tell process "SecurityAgent" to click button "Cancel" of window 1' >> daw/dialogs.txt 2>&1; osascript -e 'tell application "System Events" to tell process "REAPER" to click button "No" of window 1' >> daw/dialogs.txt 2>&1; done ) &
           for i in $(seq 1 150); do grep -q DONE daw/reaper_log.txt 2>/dev/null && break; sleep 4; done
           screencapture -x shot.png 2>/dev/null && sips -Z 900 shot.png > /dev/null 2>&1 && { echo "SCREENSHOT-BEGIN"; base64 -i shot.png | tr -d '\n'; echo; echo "SCREENSHOT-END"; }
           echo "---- diagnostics"; sort daw/dialogs.txt 2>/dev/null | uniq -c | head; cat daw/stdout.txt | tail -20; ls -la "$RES" "$RES/Scripts"
