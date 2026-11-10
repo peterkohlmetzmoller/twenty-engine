@@ -25,7 +25,10 @@ Free software under the GNU GPL v3 (`LICENSE`), with an additional permission fo
 - `led_port.h`           LED SysEx to the MS-20ic and controller detection (Core MIDI on Mac, WinMM on Windows)
 - `installer/`           Mac .pkg and Windows .exe installer definitions
 - `tools/make_variant.py` generates the Twenty Engine Studio source
-- `tests/`               checks that run on any computer (`recall_test.cpp` simulates Logic recording and playback)
+- `tests/`               checks that run on any computer (`recall_test.cpp` simulates recording and playback with
+                         the timing of Logic and of hosts that report the song position smoothly)
+- `tests/daw/`           REAPER test: CI installs REAPER on Mac and Windows, plays both plugins (AU and VST3),
+                         checks the renders, MIDI CC, automation and saved state. CI also runs pluginval on every plugin.
 - `.github/workflows/build.yml`  builds, tests and validates every format and both installers
 
 ## New patch version
