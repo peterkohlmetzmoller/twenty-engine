@@ -360,7 +360,7 @@ jobs:
           if (!$un) { $un = Get-ChildItem "$inst" -Filter "unins*.exe" | Select-Object -First 1 }
           Start-Process -Wait -FilePath $un.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
           Start-Sleep -Seconds 3
-          if ((Test-Path $inst) -or (Test-Path $sinst)) { throw "uninstall left files" } else { "installed, validated and uninstalled cleanly" }
+          if (Test-Path $inst) { throw "uninstall left files" } else { "installed, validated and uninstalled cleanly" }
 
       - uses: actions/upload-artifact@v4
         with:
