@@ -17,6 +17,7 @@ const int kNumParams = ms20::NPARAMS;   // every parameter of the Ksoloti patch
 #include "engine/ms20_host.h"
 #include "engine/recall.h"
 #include "engine/autowrite.h"
+#include "engine/panel_memory.h"
 #include <memory>
 #include <atomic>
 #include <cstdio>
@@ -46,6 +47,7 @@ public:
   void DrainController();                                    // audio thread: everything straight from the controller
   void StudioDiag(char* out, int n) const;                   // Studio test build: what Logic does with the knobs
   void RecallClear() { mRecall.clear(); }                    // UI: forget them
+  int PanelSource() const { return mPanelSrc.load(); }       // UI: 0 unknown, 1 from memory (MS20PANEL.BIN), 2 read from the controller
 
 private:
   static int32_t ToRaw(int idx, double value);     // plugin parameter value -> engine (Ksoloti) units
@@ -64,6 +66,12 @@ private:
   bool mWasRunning = false, mWasRec = false, mPanelInit = false;
   void WriteToHost(int idx, int32_t raw);   // Automation: one value as a host gesture (Latch writes it)
   int64_t mClock = 0;
+  // the controller's last panel (engine/panel_memory.h): replayed as a start-up dump when the controller connects
+  ms20::PanelMemory mPanelMem;
+  char mPanelPath[1100] = "";
+  bool mWasDirect = false;
+  std::atomic<int> mPanelSrc{0};
+  uint32_t mPanelSeenVer = 0, mPanelSavedVer = 0, mPanelPons = 0; int mPanelQuiet = 0;
   std::atomic<int> mDiagTouched{0}, mDiagHost{0}, mDiagSent{0}, mDiagRec{0}; std::atomic<uint64_t> mDiagHostBits{0};   // mDiagRec: bit 0 the host reports recording at all, bit 1 recording now, bit 2 recording seen since the plugin opened
   // ---- beta diagnostics: what touches the parameters around a memory recall
   struct DbgEv { int idx; int src; int32_t raw; };

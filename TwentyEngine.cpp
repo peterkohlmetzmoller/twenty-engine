@@ -66,7 +66,7 @@ public:
 
   bool IsDirty() override
   {
-    if (++mFrames >= 30) { mFrames = 0; bool d = Scan(); const int t = Takes(); if (t != mTakes) { mTakes = t; d = true; } if (TWENTY_STUDIO) d = true; if (d) return true; }   // about twice a second
+    if (++mFrames >= 30) { mFrames = 0; bool d = Scan(); const int t = Takes(); if (t != mTakes) { mTakes = t; d = true; } const int ps = mPlug ? mPlug->PanelSource() : 0; if (ps != mPanel) { mPanel = ps; d = true; } if (TWENTY_STUDIO) d = true; if (d) return true; }   // about twice a second
     return IControl::IsDirty();
   }
 
@@ -113,6 +113,15 @@ public:
     else tk.Set("Recorded performances: none yet");
 #endif
     g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), tk.Get(), TakesRect());
+
+    // where the live sound's panel came from (engine/panel_memory.h): the controller's own dump, or the copy kept here
+    if (on)
+    {
+      const char* ptxt = mPanel == 2 ? "Panel read from the MS-20ic"
+                       : mPanel == 1 ? "Panel from memory  \xC2\xB7  volume off/on reads the knobs"
+                                     : "Switch the volume off and on to read the knobs";
+      g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), ptxt, IRECT(in.L, in.T + 48.f, in.R, in.T + 64.f));
+    }
   }
 
 private:
@@ -122,6 +131,7 @@ private:
   TwentyEngine* mPlug = nullptr;
   int mController = -1;
   int mTakes = -1;
+  int mPanel = -1;
   int mFrames = 0;
 };
 #endif
@@ -199,6 +209,7 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       snprintf(dir, sizeof(dir), "%s/Twenty Engine/", base);
       MakeDir(dir);
       mHost->loadMemories(dir);
+      snprintf(mPanelPath, sizeof(mPanelPath), "%sMS20PANEL.BIN", dir);
       /* beta diagnostics log (off): char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug.txt", dir); mDbg = fopen(lp, "w"); */
     }
 #else
@@ -208,10 +219,14 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       char parent[1024]; snprintf(parent, sizeof(parent), "%s/Library/Application Support", home);
       MakeDir(parent); MakeDir(dir);
       mHost->loadMemories(dir);
+      snprintf(mPanelPath, sizeof(mPanelPath), "%sMS20PANEL.BIN", dir);
       /* beta diagnostics log (off): char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug.txt", dir); mDbg = fopen(lp, "w"); */
     }
 #endif
   }
+#endif
+#if IPLUG_DSP
+  if (mPanelPath[0] && mPanelMem.load(mPanelPath)) mPanelSrc.store(1);   // the last panel: replayed when the controller connects
 #endif
   // Same ranges as the Ksoloti editor shows them: knobs 0..64 (bipolar -64..64), selectors as integers.
   // Not automatable: the sound is played on the controller and stored by performance recall, not edited in the DAW.
@@ -333,6 +348,10 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
     if (r != was) mDiagRec.store(r); }
   mRecall.setEnabled(TWENTY_STUDIO ? false : direct);   // Automation keeps the performance in the host's automation
   const bool twoEngines = direct;
+  // the controller has just connected (or the plugin just started with it): play the last panel into the live
+  // engine as a start-up dump - the sound matches the knobs and the start-up light show runs
+  if (direct && !mWasDirect) mPanelMem.replay([this](uint8_t st, uint8_t d1, uint8_t d2) { mHost->midi(0, st, d1, d2); });
+  mWasDirect = direct;
   if (direct) DrainController();
   mClock += nFrames;
   mRecall.beginBlock(GetTransportIsRunning(), GetPPQPos(), (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0, nFrames);
@@ -421,6 +440,11 @@ void TwentyEngine::OnIdle()
     mFromEngine = false;
 #endif
   }
+  // 1c. the controller's panel: a real start-up dump (volume switched on) makes it "read"; saved after a quiet second
+  { const uint32_t pons = mPanelMem.powerOns(); if (pons != mPanelPons) { mPanelPons = pons; mPanelSrc.store(2); }
+    const uint32_t v = mPanelMem.changed();
+    if (v != mPanelSeenVer) { mPanelSeenVer = v; mPanelQuiet = 0; }
+    else if (v != mPanelSavedVer && ++mPanelQuiet >= 50 && mPanelPath[0]) { if (mPanelMem.save(mPanelPath)) mPanelSavedVer = v; mPanelQuiet = 0; } }
   // 2. patch memory: write the file after a save on the keys (never on the audio thread).
   //    While stored settings play back, replayed save gestures never overwrite the memory.
   mHost->pollMemorySave();
@@ -476,6 +500,7 @@ void TwentyEngine::DrainController()
   uint8_t s, d1, d2;
   while (mLed.PopKnob(s, d1, d2))
   {
+    mPanelMem.onMessage(s, d1, d2);                    // keep the panel (MS20PANEL.BIN)
     if ((s & 0xF0) == 0xB0 && (d1 == 102 || d1 == 103)) { s = (uint8_t)((d1 == 102 ? 0x90 : 0x80) | (s & 0x0F)); d1 = d2; d2 = (s & 0xF0) == 0x90 ? 100 : 0; }
     const bool late = mRecall.directMsg(s, d1, d2);   // the host's copy of this key came first
     if (late) mPlay->midi(0, (uint8_t)(0x80 | (s & 0x0F)), d1, 0);   // silence the host's copy on the playback engine

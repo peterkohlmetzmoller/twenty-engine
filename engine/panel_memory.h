@@ -54,6 +54,7 @@ struct PanelMemory {
     ev(6, 0, s.power == 0 ? 0 : 127);
   }
   bool known() const { return seen; }   // a panel was loaded or received
+  uint32_t powerOns() const { return pons.load(std::memory_order_relaxed); }   // volume switch-on events from the controller (its real dump)
 
   // ---- main thread ----
   uint32_t changed() const { return ver.load(std::memory_order_acquire); }
@@ -92,6 +93,7 @@ private:
   State s;
   std::atomic<uint32_t> ver{0};
   bool seen = false;
+  std::atomic<uint32_t> pons{0};
   int m99 = 0, m98 = 0, m6 = 0; bool h99 = false, h98 = false, h6 = false;
   void bump() { seen = true; ver.fetch_add(1, std::memory_order_release); }
   void del(int a, int b) {
@@ -101,7 +103,7 @@ private:
     s.ncab = (uint8_t)w;
   }
   void event(int t, int a, int b) {
-    if (t == 6) { const int8_t p = (a != b) ? 1 : 0; if (p != s.power) { s.power = p; bump(); } return; }
+    if (t == 6) { const int8_t p = (a != b) ? 1 : 0; if (p) pons.fetch_add(1, std::memory_order_relaxed); if (p != s.power) { s.power = p; bump(); } return; }
     if ((t != 4 && t != 5) || a < 0 || a > 34 || b < 0 || b > 34) return;
     del(a, b);
     if (t == 4 && s.ncab < MAXCABLES) { s.cab[s.ncab][0] = (uint8_t)a; s.cab[s.ncab][1] = (uint8_t)b; s.ncab++; }

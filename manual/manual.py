@@ -499,6 +499,11 @@ story.append(side(
                   ['90', 'CV ADJUST: wow / arp order'], ['91', 'THRESHOLD: delay amount / tone'], ['102 / 103', 'Memory key down / up']],
                  [18 * mm, None], ('CC', 'Function'))), FULLW * 0.5))
 story.append(Spacer(1, 3))
+story.append(p('<b>The plugins and your panel.</b> The MS-20ic only sends where its knobs are when you switch it on with the volume knob. '
+               'So the plugins remember the last panel they saw and start from it when they connect, with the start-up light show; '
+               'the plugin window says <font name="CondB">Panel from memory</font>. Moved knobs while no plugin was open? '
+               'Switch the volume off and on: the window then says <font name="CondB">Panel read from the MS-20ic</font>.', 'small'))
+story.append(Spacer(1, 3))
 story.append(p('Wiring and step-by-step installation are in the separate <b>build guide</b>. '
                'Twenty Engine is free software under the GNU GPL v3, built on Axoloti/Ksoloti, PJRC Teensy, iPlug2 and the VST 3 SDK. '
                'MS-20 is a trademark of KORG Inc.; this is an independent project, not affiliated with or endorsed by KORG.', 'cap'))

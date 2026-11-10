@@ -58,6 +58,7 @@ jobs:
           clang++ -std=c++17 -O2 -w -o rs_test rs_test.cpp && ./rs_test
           clang++ -std=c++17 -O2 -w -o recall_test recall_test.cpp && ./recall_test
           clang++ -std=c++17 -O2 -w -o automation_test automation_test.cpp && ./automation_test
+          clang++ -std=c++17 -O2 -w -o panel_test panel_test.cpp && ./panel_test
           clang++ -std=c++17 -O2 -w -o mem_test mem_test.cpp && ./mem_test
 
       - name: Configure
