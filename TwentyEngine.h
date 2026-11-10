@@ -16,6 +16,7 @@ const int kNumParams = ms20::NPARAMS;   // every parameter of the Ksoloti patch
 #if IPLUG_DSP
 #include "engine/ms20_host.h"
 #include "engine/recall.h"
+#include "engine/autowrite.h"
 #include <memory>
 #include <atomic>
 #include <cstdio>
@@ -57,10 +58,12 @@ private:
   bool mFromEngine = false;     // true while we push an engine-side change to the host
   int mRescan = 0;
   float mScratchL[512], mScratchR[512], mPlayL[512], mPlayR[512];
-  // Studio: the start of a new take is written as automation (every parameter touched once)
-  std::atomic<bool> mTouchReq{false}, mRunningA{false};
-  bool mTouchedThisRun = false, mWasRunning = false;
-  int64_t mClock = 0, mLastRegionNote = -(int64_t)1 << 40;
+  // Automation (engine/autowrite.h): written into the host's automation only while it records
+  ms20::AutoWrite<kNumParams> mAuto;
+  std::atomic<bool> mRecStartReq{false}, mRunningA{false}, mRecA{false};
+  bool mWasRunning = false, mWasRec = false, mPanelInit = false;
+  void WriteToHost(int idx, int32_t raw);   // Automation: one value as a host gesture (Latch writes it)
+  int64_t mClock = 0;
   std::atomic<int> mDiagTouched{0}, mDiagHost{0}, mDiagSent{0}, mDiagRec{0}; std::atomic<uint64_t> mDiagHostBits{0};   // mDiagRec: bit 0 the host reports recording at all, bit 1 recording now, bit 2 recording seen since the plugin opened
   // ---- beta diagnostics: what touches the parameters around a memory recall
   struct DbgEv { int idx; int src; int32_t raw; };

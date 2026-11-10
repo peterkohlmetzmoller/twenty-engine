@@ -523,22 +523,23 @@ story.append(side(
           p('The knob data is not editable, on purpose: a take is a recording, like audio. Use Twenty Engine Automation when you want to shape the sound afterwards.', 'small')),
     stack(p('<b>Twenty Engine Automation: edit every knob</b>', 'h2'),
           gtable([['1', 'Put Twenty Engine Automation on an instrument track with the MS-20ic as its input.'],
-                  ['2', 'Set the track\'s automation mode to <b>Latch</b> (Ableton Live: switch on Automation Arm) and record. Your knob moves are written as automation lanes.'],
-                  ['3', 'At the start of each take every setting is written once, so the part always starts from the sound you played it with.'],
-                  ['4', 'Set the track back to <b>Read</b> (Ableton Live: Automation Arm off). Now draw and edit filter sweeps, envelope changes and anything else with the mouse.']],
+                  ['2', 'Set the track\'s automation mode to <b>Latch</b> once and leave it there (Ableton Live: switch on Automation Arm). Record as usual: your knob moves become automation lanes.'],
+                  ['3', 'Each take starts with the sound you hear: when recording starts, every setting that differs from what the lanes hold there is written once.'],
+                  ['4', 'Draw and edit filter sweeps, envelope changes and anything else in the lanes with the mouse, whenever you like.']],
                  [7 * mm, None], ('', 'How')),
           Spacer(1, 3),
-          p('<b>Record in Latch, listen in Read.</b> In Latch the DAW keeps writing what the plugin reports while it plays, so playing keys '
-            'over a take in Latch writes your current sound over it.', 'small'),
-          p('<b>A new sound for a new take:</b> dial it in, then start recording with the playhead after the takes you want to keep. '
-            'In Latch, knobs turned while stopped are written from wherever playback starts.', 'small'),
-          p('While a track plays its automation, the automation wins over the knobs. To redo a sweep, record it again in Latch or redraw the line. '
+          p('<b>Only recording writes.</b> Listening back, playing along, and turning knobs while stopped or playing never change a take: '
+            'the knobs change the sound on your keys, the track plays its own automation. A new sound for a new take: dial it in and record, anywhere.', 'small'),
+          p('<b>Adding a sweep to a take:</b> record over it while the panel still has that take\'s sound (right after recording it, or recalled from memory). '
+            'Only the knobs you move are written. With a different sound on the panel, the take gets that sound: what you hear while recording is what you get.', 'small'),
+          p('Automation belongs to the track: takes that overlap in time on one track share one sound. Put a layered part on a second track. '
             'Use your DAW\'s undo for automation; the plugin has no undo of its own.', 'small'),
-          p('Your knob moves also land in the region as MIDI CC. While the MS-20ic is connected the plugin ignores them: the automation lanes '
-            'are what plays. Automation plays one sound at a time: live playing and the track share it.', 'small')), FULLW * 0.5))
+          p('Your knob moves also land in the region as MIDI CC. While the MS-20ic is connected the plugin ignores them: the automation lanes are what plays. '
+            'A DAW that does not tell plugins when it records gets knob moves written whenever it plays, and no starting sound.', 'small')), FULLW * 0.5))
 story.append(Spacer(1, 4))
 story.append(p('<b>Windows.</b> To keep a take and the panel apart, Twenty Engine Instrument opens the MS-20ic next to your DAW. Windows 11 with Windows MIDI Services allows that. '
-               'On older Windows the plugin says so in its window and works like a normal MIDI instrument: knob moves go into the region as MIDI CC.', 'small'))
+               'On older Windows the plugin says so in its window and works like a normal MIDI instrument: knob moves go into the region as MIDI CC. '
+               'Twenty Engine Automation then has one engine: while a track plays its automation, the sound on your keys follows it.', 'small'))
 
 doc = BaseDocTemplate(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'TwentyEngine_Manual.pdf'), pagesize=PAGE,
                       leftMargin=M, rightMargin=M, topMargin=14 * mm, bottomMargin=14 * mm,

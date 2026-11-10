@@ -183,6 +183,10 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
   mHost = std::make_unique<MS20Host>();
   mPlay = std::make_unique<MS20Host>();
   mRecall.setEngines(mHost.get(), mPlay.get());
+#if TWENTY_STUDIO
+  mHost->setHook(nullptr); mPlay->setHook(nullptr);   // Automation: the playback engine plays the host's automation
+  for (int i = 0; i < kNumParams; i++) mAuto.frac[i] = strncmp(kParamInfo[i].type, "frac32", 6) == 0;
+#endif
   // Patch memory (36 sounds on the iC's keys) lives in one file, shared by every instance and project,
   // like the SD card in the hardware version. No file yet = factory sounds.
   //   Mac:     ~/Library/Application Support/Twenty Engine/MS20MEM.BIN
@@ -282,7 +286,20 @@ void TwentyEngine::OnReset()
   mPlay->reset(GetSampleRate());
   mRecall.resetAudio();
   // the reset keeps the engine's settings; make sure the plugin's current values are applied
+#if TWENTY_STUDIO
+  // Automation: the plugin's values are the host's automation: the playback engine. The live engine keeps the
+  // panel (it starts with the project's sound once); with one engine (no direct connection) it plays them too.
+  const bool first = !mPanelInit; mPanelInit = true;
+  for (int i = 0; i < kNumParams; i++)
+  {
+    const int32_t raw = ToRaw(i, GetParam(i)->Value());
+    mPlay->setParamRaw(i, raw);
+    if (first && mAuto.fromProject(i, raw)) mHost->setParamRaw(i, raw);
+    else if (!mLed.KnobsDirect()) mHost->setParamRaw(i, raw);
+  }
+#else
   for (int i = 0; i < kNumParams; i++) mHost->setParamRaw(i, ToRaw(i, GetParam(i)->Value()));
+#endif
 }
 
 void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
@@ -296,12 +313,6 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   const int type = msg.mStatus & 0xF0;
   if (type == 0xB0 && msg.mData1 != 1) return;                        // knob/cable data on the track: never used
   if (mRecall.trackIsLive(msg.mStatus, msg.mData1, msg.mData2)) return;   // the host's copy of live playing: the live engine has it
-#if TWENTY_STUDIO
-  // Studio: one engine plays the panel, the live playing and the regions; the knobs' performance is Logic automation
-  if (type == 0x90 && msg.mData2 > 0) mLastRegionNote = mClock;
-  mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);
-  return;
-#endif
   if (type == 0x90 && msg.mData2 > 0) mRecall.trackNoteOn(msg.mOffset, msg.mData1);
   mPlay->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);      // a region: the playback engine
 }
@@ -312,18 +323,16 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   const bool direct = mLed.KnobsDirect();
   const bool running = GetTransportIsRunning();
   if (running && !mWasRunning) { mDiagHost.store(0); mDiagHostBits.store(0); mDiagSent.store(0); }   // test counters: per playback
-  if (!running) mTouchedThisRun = false;
   mWasRunning = running; mRunningA.store(running);
+  // Automation: is the host recording? (AU transportStateProc2 / VST3 kRecording, tools/iplug2-recording.patch)
+  const bool rec = ms20::hostRecording(running, mTimeInfo.mRecordingKnown, mTimeInfo.mTransportIsRecording);
+  if (rec && !mWasRec) mRecStartReq.store(true);
+  mWasRec = rec; mRecA.store(ms20::hostWrites(running, mTimeInfo.mRecordingKnown, mTimeInfo.mTransportIsRecording));
   { const int was = mDiagRec.load();   // test line: does the host tell us it is recording?
     const int r = (mTimeInfo.mRecordingKnown ? 1 : 0) | (mTimeInfo.mTransportIsRecording ? 2 : 0) | (mTimeInfo.mTransportIsRecording || (was & 4) ? 4 : 0);
     if (r != was) mDiagRec.store(r); }
-#if TWENTY_STUDIO
-  mRecall.setEnabled(false);                    // Studio keeps the performance in Logic's automation
-  const bool twoEngines = false;
-#else
-  mRecall.setEnabled(direct);
+  mRecall.setEnabled(TWENTY_STUDIO ? false : direct);   // Automation keeps the performance in the host's automation
   const bool twoEngines = direct;
-#endif
   if (direct) DrainController();
   mClock += nFrames;
   mRecall.beginBlock(GetTransportIsRunning(), GetPPQPos(), (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0, nFrames);
@@ -352,8 +361,29 @@ void TwentyEngine::OnParamChange(int paramIdx, EParamSource source, int sampleOf
   if (!mFromEngine) mDbgQ.push({paramIdx, (int)source, ToRaw(paramIdx, GetParam(paramIdx)->Value())});
   if (!mFromEngine && source == kHost && mRunningA.load()) { mDiagHost++; mDiagHostBits.fetch_or(1ull << (paramIdx & 63)); }
   if (mFromEngine) return;   // the engine already has this value (it made the change)
-  mHost->setParamRaw(paramIdx, ToRaw(paramIdx, GetParam(paramIdx)->Value()));
+  const int32_t raw = ToRaw(paramIdx, GetParam(paramIdx)->Value());
+#if TWENTY_STUDIO
+  // Automation: the host's values play on the playback engine. The live engine (the panel) takes them only from a
+  // loaded project before the controller has moved anything, or when there is one engine (no direct connection).
+  mPlay->setParamRaw(paramIdx, raw);
+  if (!mLed.KnobsDirect() || (source == kPresetRecall && mAuto.fromProject(paramIdx, raw))) mHost->setParamRaw(paramIdx, raw);
+#else
+  mHost->setParamRaw(paramIdx, raw);
+#endif
 }
+
+#if TWENTY_STUDIO
+void TwentyEngine::WriteToHost(int idx, int32_t raw)
+{
+  mFromEngine = true;
+  BeginInformHostOfParamChangeFromUI(idx);   // a gesture: the host's automation (Latch) writes it
+  SetParameterValue(idx, GetParam(idx)->ToNormalized(FromRaw(idx, raw)));
+  EndInformHostOfParamChangeFromUI(idx);
+  mFromEngine = false;
+  mPlay->setParamRaw(idx, raw);              // the playback engine plays what is written
+  if (!mLed.KnobsDirect()) mHost->setParamRaw(idx, raw);
+}
+#endif
 
 void TwentyEngine::OnIdle()
 {
@@ -365,40 +395,32 @@ void TwentyEngine::OnIdle()
     DbgMidi m; while (mDbgMidiQ.pop(m)) { const char* k = (m.s & 0xF0) == 0x90 ? (m.d2 ? "NOTE ON " : "NOTE ON v0") : (m.s & 0xF0) == 0x80 ? "NOTE OFF" : (m.s & 0xF0) == 0xD0 ? "PRESSURE" : (m.s & 0xF0) == 0xA0 ? "POLY AT " : "OTHER   ";
       Dbg("MIDI in %s  status %02X  data %3d %3d  (offset %d)", k, m.s, m.d1, m.d2, m.off); }
     DbgEv e; while (mDbgQ.pop(e)) Dbg("HOST sets param %d '%s' = %.2f  (source %d)", e.idx, kParamInfo[e.idx].label, e.raw / 2097152.0, e.src); }
+#if TWENTY_STUDIO
+  // 1a. Automation: recording has started. Every parameter where the panel differs from what the host's automation
+  //     holds here is written once (engine/autowrite.h), so the take starts with the sound you hear.
+  if (mRecStartReq.exchange(false))
+  {
+    int32_t host[kNumParams];
+    for (int i = 0; i < kNumParams; i++) host[i] = ToRaw(i, GetParam(i)->Value());
+    mDiagSent.store(0);
+    mDiagTouched.store(mAuto.recordStart(host, [this](int i, int32_t raw) { WriteToHost(i, raw); }));
+  }
+#endif
   // 1. changes made by the engine (iC knobs via CC, power-on dump, ESP knob layers, tap tempo, patch bay)
   ParamSet p;
   while (mHost->popEngineChange(p))
   {
     mDbgEngine++;
     if (p.idx < 0 || p.idx >= kNumParams) continue;
-    const double v = FromRaw(p.idx, p.raw);
-    mFromEngine = true;
 #if TWENTY_STUDIO
-    if (mRunningA.load()) mDiagSent++;           // test counter: knob moves handed to the host while it plays
-    BeginInformHostOfParamChangeFromUI(p.idx);   // Studio: a knob move is a gesture Logic can write (Latch)
-    SetParameterValue(p.idx, GetParam(p.idx)->ToNormalized(v));
-    EndInformHostOfParamChangeFromUI(p.idx);
+    // Automation: the panel changed. Written to the host only while it records; otherwise it is only what you hear.
+    if (mAuto.liveChange(p.idx, p.raw, mRecA.load())) { WriteToHost(p.idx, p.raw); mDiagSent++; }
 #else
-    GetParam(p.idx)->Set(v);   // keep the plugin's copy in step (saved with the project); no automation gestures to the host
-#endif
-    mFromEngine = false;
-  }
-#if TWENTY_STUDIO
-  // 1b. Studio: the start of a new take. Every parameter is touched once with its current value, so Logic
-  //     (track automation in Latch) writes the complete starting sound into the automation lanes.
-  if (mTouchReq.exchange(false))
-  {
     mFromEngine = true;
-    for (int i = 0; i < kNumParams; i++)
-    {
-      BeginInformHostOfParamChangeFromUI(i);
-      SetParameterValue(i, GetParam(i)->GetNormalized());
-      EndInformHostOfParamChangeFromUI(i);
-    }
+    GetParam(p.idx)->Set(FromRaw(p.idx, p.raw));   // keep the plugin's copy in step (saved with the project); no automation gestures to the host
     mFromEngine = false;
-    mDiagTouched.store(kNumParams);
-  }
 #endif
+  }
   // 2. patch memory: write the file after a save on the keys (never on the audio thread).
   //    While stored settings play back, replayed save gestures never overwrite the memory.
   mHost->pollMemorySave();
@@ -456,14 +478,7 @@ void TwentyEngine::DrainController()
   {
     if ((s & 0xF0) == 0xB0 && (d1 == 102 || d1 == 103)) { s = (uint8_t)((d1 == 102 ? 0x90 : 0x80) | (s & 0x0F)); d1 = d2; d2 = (s & 0xF0) == 0x90 ? 100 : 0; }
     const bool late = mRecall.directMsg(s, d1, d2);   // the host's copy of this key came first
-#if TWENTY_STUDIO
-    if (late) continue;                                // one engine: it already plays that key
-    // the first key of a new take (the host runs, no region is playing): write the whole start as automation
-    if ((s & 0xF0) == 0x90 && d2 > 0 && mRunningA.load() && !mTouchedThisRun && mClock - mLastRegionNote > (int64_t)(2.0 * GetSampleRate()))
-    { mTouchedThisRun = true; mTouchReq.store(true); }
-#else
     if (late) mPlay->midi(0, (uint8_t)(0x80 | (s & 0x0F)), d1, 0);   // silence the host's copy on the playback engine
-#endif
     mHost->midi(0, s, d1, d2);
   }
 #endif
@@ -475,7 +490,7 @@ void TwentyEngine::StudioDiag(char* out, int n) const
   int k = 0; uint64_t b = mDiagHostBits.load(); while (b) { k += (int)(b & 1); b >>= 1; }
   const int rec = mDiagRec.load();
   const char* now = !(rec & 1) ? "no transport info" : (rec & 2) ? "RECORDING" : mRunningA.load() ? "playing" : "stopped";
-  snprintf(out, n, "Host now: %s  \xC2\xB7  recording seen: %s", now, (rec & 4) ? "YES" : "no");
+  snprintf(out, n, "Host: %s \xC2\xB7 take start wrote %d \xC2\xB7 knob moves wrote %d", now, mDiagTouched.load(), mDiagSent.load());
   (void)k;
 #else
   if (n > 0) out[0] = 0;
