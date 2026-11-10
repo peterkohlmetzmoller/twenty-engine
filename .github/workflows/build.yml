@@ -431,6 +431,13 @@ jobs:
           powershell -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \$m=New-Object System.Drawing.Bitmap \$b.Width,\$b.Height; \$g=[System.Drawing.Graphics]::FromImage(\$m); \$g.CopyFromScreen(\$b.Location,[System.Drawing.Point]::Empty,\$b.Size); \$m.Save('ui.png')" && { echo "UISHOT-BEGIN"; base64 -w0 ui.png; echo; echo "UISHOT-END"; }
           powershell -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \$m=New-Object System.Drawing.Bitmap \$b.Width,\$b.Height; \$g=[System.Drawing.Graphics]::FromImage(\$m); \$g.CopyFromScreen(\$b.Location,[System.Drawing.Point]::Empty,\$b.Size); \$s=New-Object System.Drawing.Bitmap \$m,([int](\$b.Width/2)),([int](\$b.Height/2)); \$s.Save('shot.png')" && { echo "SCREENSHOT-BEGIN"; base64 -w0 shot.png; echo; echo "SCREENSHOT-END"; }
           taskkill //F //IM reaper.exe > /dev/null 2>&1 || true
+          echo "---- crashes (Windows event log)"
+          powershell -Command "Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000} -MaxEvents 3 -ErrorAction SilentlyContinue | ForEach-Object { \$_.Message }" || true
+          echo "---- editor windows in pluginval (GUI tests)"
+          for p in TwentyEngine.vst3 TwentyEngineStudio.vst3; do
+            "$(find pv -iname pluginval.exe | head -1)" --strictness-level 2 --validate "C:\\Program Files\\Common Files\\VST3\\$p" > pvgui.log 2>&1; echo "pluginval with editor, $p: exit $?"
+            grep -E "Opening editor|editor|FAILED|!!!|\*\*\*|crash" -i pvgui.log | head -12
+          done
           echo "---- reaper.ini (Windows)"; grep -v -i -E "^(lastproject|recent)" "$RES/reaper.ini" | head -80
           echo "---- REAPER log"; cat daw/reaper_log.txt 2>/dev/null || echo "(no log: the script did not run)"
           echo "---- renders"; python tests/daw/analyze.py daw
