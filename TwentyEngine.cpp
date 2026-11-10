@@ -102,10 +102,8 @@ public:
     WDL_String tk;
 #if TWENTY_STUDIO
     if (mPlug) { char d[200]; mPlug->StudioDiag(d, sizeof(d)); tk.Set(d); }   // test build: what Logic does with the knobs
-    if (false)
 #else
     if (mPlug && !mPlug->RecallOn())
-#endif
 #ifdef _WIN32
       tk.Set("Performance recall off: needs Windows 11 MIDI Services");   // the DAW holds the controller's port
 #else
@@ -113,6 +111,7 @@ public:
 #endif
     else if (mTakes > 0) tk.SetFormatted(96, "Recorded performances: %d  \xC2\xB7  double-click to forget them", mTakes);
     else tk.Set("Recorded performances: none yet");
+#endif
     g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), tk.Get(), TakesRect());
   }
 
@@ -312,7 +311,7 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   const double sr = GetSampleRate(), tempo = GetTempo();
   const bool direct = mLed.KnobsDirect();
   const bool running = GetTransportIsRunning();
-  if (running && !mWasRunning) { mDiagHost.store(0); mDiagHostBits.store(0); }   // test counters: per playback
+  if (running && !mWasRunning) { mDiagHost.store(0); mDiagHostBits.store(0); mDiagSent.store(0); }   // test counters: per playback
   if (!running) mTouchedThisRun = false;
   mWasRunning = running; mRunningA.store(running);
 #if TWENTY_STUDIO
@@ -372,6 +371,7 @@ void TwentyEngine::OnIdle()
     const double v = FromRaw(p.idx, p.raw);
     mFromEngine = true;
 #if TWENTY_STUDIO
+    if (mRunningA.load()) mDiagSent++;           // test counter: knob moves handed to the host while it plays
     BeginInformHostOfParamChangeFromUI(p.idx);   // Studio: a knob move is a gesture Logic can write (Latch)
     SetParameterValue(p.idx, GetParam(p.idx)->ToNormalized(v));
     EndInformHostOfParamChangeFromUI(p.idx);
@@ -470,8 +470,8 @@ void TwentyEngine::StudioDiag(char* out, int n) const
 {
 #if IPLUG_DSP
   int k = 0; uint64_t b = mDiagHostBits.load(); while (b) { k += (int)(b & 1); b >>= 1; }
-  snprintf(out, n, "Automation test \xC2\xB7 start written: %d params \xC2\xB7 from Logic since play: %d values, %d params",
-           mDiagTouched.load(), mDiagHost.load(), k);
+  snprintf(out, n, "Test \xC2\xB7 start written: %d \xC2\xB7 knob moves sent: %d \xC2\xB7 from Logic since play: %d values, %d params",
+           mDiagTouched.load(), mDiagSent.load(), mDiagHost.load(), k);
 #else
   if (n > 0) out[0] = 0;
 #endif

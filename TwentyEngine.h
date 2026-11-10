@@ -61,7 +61,7 @@ private:
   std::atomic<bool> mTouchReq{false}, mRunningA{false};
   bool mTouchedThisRun = false, mWasRunning = false;
   int64_t mClock = 0, mLastRegionNote = -(int64_t)1 << 40;
-  std::atomic<int> mDiagTouched{0}, mDiagHost{0}; std::atomic<uint64_t> mDiagHostBits{0};
+  std::atomic<int> mDiagTouched{0}, mDiagHost{0}, mDiagSent{0}; std::atomic<uint64_t> mDiagHostBits{0};
   // ---- beta diagnostics: what touches the parameters around a memory recall
   struct DbgEv { int idx; int src; int32_t raw; };
   ms20::SpscQueue<DbgEv, 2048> mDbgQ;
