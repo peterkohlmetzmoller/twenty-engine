@@ -144,7 +144,7 @@ public:
       else if (m.type == EV) { if (inPass) passEv.push_back({m.ppq, m.raw, m.idx}); }
       else if (m.type == MID) { if (inPass) passMidi.push_back({m.ppq, (uint8_t)(m.raw >> 16), (uint8_t)(m.raw >> 8), (uint8_t)m.raw}); }
       else if (m.type == END) { if (inPass && !overflow) merge(passS, m.ppq, passEv, passMidi); inPass = false; passEv.clear(); passMidi.clear(); }
-      else if (m.type == OVERFLOW) overflow = true;
+      else if (m.type == LOSTEVENTS) overflow = true;
     }
     for (size_t i = 0; i < retired.size();) { if (--retired[i].second <= 0) { delete retired[i].first; retired.erase(retired.begin() + i); } else i++; }
   }
@@ -181,7 +181,7 @@ public:
 
 private:
   enum { IDLE, REC, PLAY };
-  enum { START, EV, MID, END, OVERFLOW };
+  enum { START, EV, MID, END, LOSTEVENTS };
   struct Msg { double ppq; int32_t raw; int16_t idx; uint8_t type; };
   static int32_t packMidi(uint8_t s, uint8_t d1, uint8_t d2) { return ((int32_t)s << 16) | ((int32_t)d1 << 8) | d2; }
 
@@ -207,7 +207,7 @@ private:
   }
   void startPass(double x) { passActive = true; passStart = x; qFull = false; push(START, x, 0, 0); needSnap = true; }
   void endPass(double x) {
-    if (qFull) push(OVERFLOW, 0, 0, 0);   // events were lost: this take is not stored (better none than a wrong one)
+    if (qFull) push(LOSTEVENTS, 0, 0, 0);   // events were lost: this take is not stored (better none than a wrong one)
     push(END, x, 0, 0); passActive = false; needSnap = false; touched = false;
   }
   bool covered(double x) const {
