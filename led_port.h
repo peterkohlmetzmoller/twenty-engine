@@ -41,7 +41,7 @@ public:
     if (mPort) MIDIPortDispose(mPort);
     if (mClient) MIDIClientDispose(mClient);
   }
-  // audio thread: next knob/cable message from the controller (status, data1, data2)
+  // audio thread: next knob/cable message or note-on from the controller (status, data1, data2)
   bool PopKnob(uint8_t &s, uint8_t &d1, uint8_t &d2) { uint32_t v; if (!mKnobs.pop(v)) return false; s = v >> 16; d1 = v >> 8; d2 = v; return true; }
   // any thread: the knobs reach the plugin straight from the controller
   bool KnobsDirect() const { return mDirect.load(std::memory_order_relaxed); }
@@ -131,6 +131,8 @@ private:
     mDirect.store(mSrc != 0);
   }
   // Core MIDI thread: keep control changes (except CC 1, the mod wheel, which is playing, not a setting)
+  // and note-ons (only used to tell live playing from a region playing back; the notes reach the engine
+  // through the track)
   static void ReadProc(const MIDIPacketList *pl, void *self, void *)
   {
     LedPort *p = (LedPort *)self;
@@ -153,7 +155,8 @@ private:
     const int need = ((mRun & 0xF0) == 0xC0 || (mRun & 0xF0) == 0xD0) ? 1 : 2;
     if (mNd < need) return;
     mNd = 0;
-    if ((mRun & 0xF0) == 0xB0 && mD[0] != 1) mKnobs.push(((uint32_t)mRun << 16) | ((uint32_t)mD[0] << 8) | mD[1]);
+    if (((mRun & 0xF0) == 0xB0 && mD[0] != 1) || ((mRun & 0xF0) == 0x90 && mD[1] > 0))
+      mKnobs.push(((uint32_t)mRun << 16) | ((uint32_t)mD[0] << 8) | mD[1]);
   }
 };
 

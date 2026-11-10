@@ -56,7 +56,12 @@ public:
     g.DrawText(IText(14.f, on ? ink : dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), txt.Get(), row.GetHShifted(20.f));
 
     WDL_String tk;
-    if (mTakes > 0) tk.SetFormatted(96, "Sound stored for %d part%s of the song  \xC2\xB7  double-click to clear", mTakes, mTakes == 1 ? "" : "s");
+#ifdef _WIN32
+    if (true) tk.Set("Sound recall: Mac only for now");
+#else
+    if (mPlug && !mPlug->RecallOn()) tk.Set("Sound recall: connect the MS-20ic to this computer");
+#endif
+    else if (mTakes > 0) tk.SetFormatted(96, "Sound stored for %d take%s  \xC2\xB7  double-click to clear", mTakes, mTakes == 1 ? "" : "s");
     else tk.Set("No sound stored in this song yet");
     g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), tk.Get(), TakesRect());
   }
@@ -180,18 +185,19 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   // everything goes to the engine: notes, CCs (knobs, rotaries, patch bay NRPN), channel pressure (button)
   if (msg.mStatus < 0xF0 && (msg.mStatus & 0xF0) != 0xB0) mDbgMidiQ.push({msg.mStatus, msg.mData1, msg.mData2, msg.mOffset});   // beta diagnostics: notes, pressure (not the many knob CCs)
   // performance recall (engine/recall.h): the track plays the notes, the switch and the mod wheel; knob and
-  // cable CCs on the track are ignored when the knobs reach the plugin straight from the controller
-  if (!mRecall.midiIn(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2, mLed.KnobsDirect())) return;
+  // cable CCs on the track are ignored when the knobs reach the plugin straight from the controller.
+  // Keys pressed on the controller are read first, so a live note can be told from a region playing back.
+  DrainController();
+  if (!mRecall.midiIn(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2)) return;
   mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);
 }
 
 void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
   const double sr = GetSampleRate(), tempo = GetTempo();
+  mRecall.setEnabled(mLed.KnobsDirect());
+  DrainController();
   mRecall.beginBlock(mHost.get(), GetTransportIsRunning(), GetPPQPos(), (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0, nFrames);
-  // knobs and cables straight from the controller (Mac): always live, and while the host plays they
-  // replace the stored settings from that moment (performance recall)
-  { uint8_t s, d1, d2; while (mLed.PopKnob(s, d1, d2)) { mRecall.directIn(s, d1, d2); mHost->midi(0, s, d1, d2); } }
   int done = 0;
   while (done < nFrames)
   {
@@ -279,3 +285,19 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
   return pos;
 }
 
+
+// Knobs, cables and keys straight from the controller (Mac). Knobs and cables go to the engine (and to
+// recall: stored with the take being played, or replacing a stored take's sound from here). Keys only tell
+// recall that a note is being played live; the notes themselves reach the engine through the track.
+void TwentyEngine::DrainController()
+{
+#if IPLUG_DSP
+  uint8_t s, d1, d2;
+  while (mLed.PopKnob(s, d1, d2))
+  {
+    if ((s & 0xF0) == 0x90) { mRecall.directNote(d1); continue; }
+    mRecall.directIn(s, d1, d2);
+    mHost->midi(0, s, d1, d2);
+  }
+#endif
+}

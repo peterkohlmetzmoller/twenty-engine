@@ -35,6 +35,8 @@ public:
   bool SerializeState(IByteChunk& chunk) const override;
   int UnserializeState(const IByteChunk& chunk, int startPos) override;
   int RecallTakes() const { return mRecall.takes(); }      // UI: takes stored in this project
+  bool RecallOn() const { return mLed.KnobsDirect(); }       // UI: recall needs the direct connection to the controller
+  void DrainController();                                    // audio thread: knobs and keys straight from the controller
   void RecallClear() { mRecall.clear(); }                    // UI: forget them
 
 private:
