@@ -225,6 +225,12 @@ jobs:
           ( for i in $(seq 1 40); do sleep 3; [ -f daw/reaper_log.txt ] && break; osascript -e 'tell application "System Events" to tell process "REAPER" to keystroke "n"' 2>/dev/null; done ) &
           for i in $(seq 1 150); do grep -q DONE daw/reaper_log.txt 2>/dev/null && break; sleep 4; done
           screencapture -x shot.png 2>/dev/null && sips -Z 900 shot.png > /dev/null 2>&1 && { echo "SCREENSHOT-BEGIN"; base64 -i shot.png | tr -d '\n'; echo; echo "SCREENSHOT-END"; }
+          echo "---- diagnostics"; cat daw/stdout.txt | tail -20; ls -la "$RES" "$RES/Scripts"
+          osascript -e 'tell application "System Events" to get name of every window of process "REAPER"' 2>&1 | head -3
+          osascript -e 'tell application "System Events" to get entire contents of window 1 of process "REAPER"' 2>&1 | head -c 1500; echo
+          screencapture -x shot2.png 2>&1 | head -3; ls -la shot*.png 2>/dev/null
+          [ -f "$RES/reaper.ini" ] && { echo "---- reaper.ini"; head -60 "$RES/reaper.ini"; }
+          ps aux | grep -i -E "reaper|TCC|UserNotification" | grep -v grep | cut -c1-200 | head
           kill -9 $RP 2>/dev/null || true
           echo "---- REAPER log"; cat daw/reaper_log.txt 2>/dev/null || echo "(no log: the script did not run)"
           echo "---- renders"; python3 tests/daw/analyze.py daw
@@ -419,6 +425,7 @@ jobs:
           for i in $(seq 1 150); do grep -q DONE daw/reaper_log.txt 2>/dev/null && break; sleep 4; done
           powershell -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \$m=New-Object System.Drawing.Bitmap \$b.Width,\$b.Height; \$g=[System.Drawing.Graphics]::FromImage(\$m); \$g.CopyFromScreen(\$b.Location,[System.Drawing.Point]::Empty,\$b.Size); \$s=New-Object System.Drawing.Bitmap \$m,([int](\$b.Width/2)),([int](\$b.Height/2)); \$s.Save('shot.png')" && { echo "SCREENSHOT-BEGIN"; base64 -w0 shot.png; echo; echo "SCREENSHOT-END"; }
           taskkill //F //IM reaper.exe > /dev/null 2>&1 || true
+          echo "---- reaper.ini (Windows)"; grep -v -i -E "^(lastproject|recent)" "$RES/reaper.ini" | head -80
           echo "---- REAPER log"; cat daw/reaper_log.txt 2>/dev/null || echo "(no log: the script did not run)"
           echo "---- renders"; python tests/daw/analyze.py daw
       - name: Result
