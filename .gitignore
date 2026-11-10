@@ -8,3 +8,4 @@ tests/*.raw
 .DS_Store
 tests/memtest/
 tests/mem_test
+tests/recall_test
