@@ -351,8 +351,8 @@ story.append(cards([
     ('MIDI to your computer', 'Everything you play goes out over USB, so you can record it or play plugins with it while the synth plays.', 'p. 9'),
 ], 4, 30 * mm))
 story.append(Spacer(1, 2))
-story.append(p('Twenty Engine runs inside the MS-20ic on a <b>Ksoloti Core</b> or a <b>Teensy 4.1</b> (see the build guide), or as two <b>AU/VST3 plugins</b> played from a stock MS-20ic. '
-               'It works the same on all three. Recording with the plugins is on p. 10.', 'small'))
+story.append(p('Twenty Engine runs inside the MS-20ic on a <b>Ksoloti Core</b> or a <b>Teensy 4.1</b> (see the build guide), or as an <b>AU/VST3 plugin</b> played from a stock MS-20ic. '
+               'It works the same on all three. Recording with the plugin is on p. 10.', 'small'))
 story.append(PageBreak())
 
 # ---------------- 2. shortcuts
@@ -486,8 +486,8 @@ story.append(cards([
      'Sounds are saved on the SD card.'),
     ('Teensy 4.1', 'Inside the MS-20ic, with the PJRC audio shield. Open <font name="CondB">TwentyEngineTeensy.hex</font> in the free Teensy Loader and press the button on the Teensy. '
      'Sounds are saved in its own flash; no SD card needed. Oscillators run at 96 kHz and each voice drifts slightly, for an extra analog feel. Very low latency.'),
-    ('AU / VST3 plugins', 'On your computer, played from a stock MS-20ic over USB. Mac (macOS 10.13 or newer, Intel and Apple Silicon) and Windows. '
-     'One installer adds two plugins, Twenty Engine Instrument and Twenty Engine Automation (p. 10). No graphics on purpose: the MS-20ic is the interface.'),
+    ('AU / VST3 plugin', 'On your computer, played from a stock MS-20ic over USB. Mac (macOS 10.13 or newer, Intel and Apple Silicon) and Windows. '
+     'The installer adds Twenty Engine Instrument, which records your playing like audio (p. 10). No graphics on purpose: the MS-20ic is the interface.'),
 ], 3, 40 * mm))
 story.append(Spacer(1, 3))
 story.append(side(
@@ -499,8 +499,8 @@ story.append(side(
                   ['90', 'CV ADJUST: wow / arp order'], ['91', 'THRESHOLD: delay amount / tone'], ['102 / 103', 'Memory key down / up']],
                  [18 * mm, None], ('CC', 'Function'))), FULLW * 0.5))
 story.append(Spacer(1, 3))
-story.append(p('<b>The plugins and your panel.</b> The MS-20ic only sends where its knobs are when you switch it on with the volume knob. '
-               'So the plugins remember the last panel they saw and start from it when they connect, with the start-up light show; '
+story.append(p('<b>The plugin and your panel.</b> The MS-20ic only sends where its knobs are when you switch it on with the volume knob. '
+               'So the plugin remembers the last panel it saw and starts from it when it connects, with the start-up light show; '
                'the plugin window says <font name="CondB">Panel from memory</font>. Moved knobs while no plugin was open? '
                'Switch the volume off and on: the window then says <font name="CondB">Panel read from the MS-20ic</font>.', 'small'))
 story.append(Spacer(1, 3))
@@ -509,42 +509,32 @@ story.append(p('Wiring and step-by-step installation are in the separate <b>buil
                'MS-20 is a trademark of KORG Inc.; this is an independent project, not affiliated with or endorsed by KORG.', 'cap'))
 story.append(PageBreak())
 
-# ---------------- 9. recording with the plugins
-story += [H1('Recording with the plugins')]
-story.append(p('The installer adds two plugins with the same sound. Pick one per track: <b>Twenty Engine Instrument</b> records your playing like audio, '
-               '<b>Twenty Engine Automation</b> turns every knob into automation you can edit. Both remember the sound a take started with.', 'lead'))
+# ---------------- 9. recording with the plugin
+story += [H1('Recording with the plugin')]
+story.append(p('<b>Twenty Engine Instrument</b> records your playing like audio: every take plays back exactly as you played it, '
+               'knob moves included, from the sound it started with. Your panel stays yours the whole time.', 'lead'))
 story.append(side(
-    stack(p('<b>Twenty Engine Instrument: record it like audio</b>', 'h2'),
+    stack(p('<b>Record it like audio</b>', 'h2'),
           gtable([['1', 'Put Twenty Engine Instrument on an instrument track and select the MS-20ic as its MIDI input.'],
                   ['2', 'Record as usual. The region gets your notes; the plugin itself records every knob move, switch and sound recall that belongs to them.'],
                   ['3', 'Play it back: you hear the take exactly as you played it, knob moves included, from the sound you started with.'],
                   ['4', 'Meanwhile the panel stays yours. Play along live on top: the live sound follows the knobs as they are now.']],
                  [7 * mm, None], ('', 'How')),
           Spacer(1, 3),
-          p('Start playback in the middle of a take and it picks up at the next note. Copy, loop or move a region and the take goes with its notes. '
-            'Change the notes and the region plays with the panel instead, like a new part.', 'small'),
           p('Takes are saved with the project. The plugin window counts them: <font name="CondB">Recorded performances: 12</font>; '
-            'double-click that line to forget them all.', 'small'),
-          p('The knob data is not editable, on purpose: a take is a recording, like audio. Use Twenty Engine Automation when you want to shape the sound afterwards.', 'small')),
-    stack(p('<b>Twenty Engine Automation: edit every knob</b>', 'h2'),
-          gtable([['1', 'Put Twenty Engine Automation on an instrument track with the MS-20ic as its input.'],
-                  ['2', 'Set the track\'s automation mode to <b>Latch</b> once and leave it there (Ableton Live: switch on Automation Arm). Record as usual: your knob moves become automation lanes.'],
-                  ['3', 'Each take starts with the sound you hear: when recording starts, every setting that differs from what the lanes hold there is written once.'],
-                  ['4', 'Draw and edit filter sweeps, envelope changes and anything else in the lanes with the mouse, whenever you like.']],
-                 [7 * mm, None], ('', 'How')),
-          Spacer(1, 3),
-          p('<b>Only recording writes.</b> Listening back, playing along, and turning knobs while stopped or playing never change a take: '
-            'the knobs change the sound on your keys, the track plays its own automation. A new sound for a new take: dial it in and record, anywhere.', 'small'),
-          p('<b>Adding a sweep to a take:</b> record over it while the panel still has that take\'s sound (right after recording it, or recalled from memory). '
-            'Only the knobs you move are written. With a different sound on the panel, the take gets that sound: what you hear while recording is what you get.', 'small'),
-          p('Automation belongs to the track: takes that overlap in time on one track share one sound. Put a layered part on a second track. '
-            'Use your DAW\'s undo for automation; the plugin has no undo of its own.', 'small'),
-          p('Your knob moves also land in the region as MIDI CC. While the MS-20ic is connected the plugin ignores them: the automation lanes are what plays. '
-            'A DAW that does not tell plugins when it records gets knob moves written whenever it plays, and no starting sound.', 'small')), FULLW * 0.5))
+            'double-click that line to forget them all.', 'small')),
+    stack(p('<b>Good to know</b>', 'h2'),
+          p('<b>A new sound for the next take:</b> just dial it in and record. Nothing to switch, no modes: '
+            'earlier takes keep their own sound, whatever you do with the knobs afterwards.', 'small'),
+          p('<b>Start anywhere.</b> Start playback in the middle of a take and it picks up at the next note. Copy, loop or move a region and the take goes with its notes. '
+            'Change the notes and the region plays with the panel instead, like a new part.', 'small'),
+          p('<b>A take is a recording, like audio.</b> Its knob moves are not edited with the mouse: to change a part, play it again. '
+            'Several parts with different sounds can share one track.', 'small'),
+          p('<b>Your knob moves also land in the region as MIDI CC.</b> While the MS-20ic is connected the plugin ignores them: '
+            'the take it recorded itself is what plays.', 'small')), FULLW * 0.5))
 story.append(Spacer(1, 4))
-story.append(p('<b>Windows.</b> To keep a take and the panel apart, Twenty Engine Instrument opens the MS-20ic next to your DAW. Windows 11 with Windows MIDI Services allows that. '
-               'On older Windows the plugin says so in its window and works like a normal MIDI instrument: knob moves go into the region as MIDI CC. '
-               'Twenty Engine Automation then has one engine: while a track plays its automation, the sound on your keys follows it.', 'small'))
+story.append(p('<b>Windows.</b> To keep a take and the panel apart, the plugin opens the MS-20ic next to your DAW. Windows 11 with Windows MIDI Services allows that. '
+               'On older Windows the plugin says so in its window and works like a normal MIDI instrument: knob moves go into the region as MIDI CC and play back from there.', 'small'))
 
 doc = BaseDocTemplate(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'TwentyEngine_Manual.pdf'), pagesize=PAGE,
                       leftMargin=M, rightMargin=M, topMargin=14 * mm, bottomMargin=14 * mm,
