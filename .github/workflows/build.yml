@@ -3,6 +3,11 @@ name: Build plugins
 on:
   push:
   workflow_dispatch:
+    inputs:
+      artifacts_run:
+        description: 'Only run the DAW tests, on the plugins built by this run id'
+        required: false
+        default: ''
 
 env:
   IPLUG2_COMMIT: d82b2e99b17c8f723d3f6e2a88ffd8b656f28e5d
@@ -12,6 +17,7 @@ env:
 jobs:
   # ---------------- Mac: AU + VST3, universal (Apple Silicon + Intel) ----------------
   build-mac:
+    if: ${{ !inputs.artifacts_run }}
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
@@ -164,6 +170,7 @@ jobs:
   # ---------------- the plugins in other hosts: pluginval and REAPER (Mac) ----------------
   daw-test-mac:
     needs: build-mac
+    if: ${{ !cancelled() && (needs.build-mac.result == 'success' || inputs.artifacts_run) }}
     runs-on: macos-15-intel
     timeout-minutes: 45
     steps:
@@ -172,6 +179,8 @@ jobs:
         with:
           name: TwentyEngine-Mac
           path: art
+          run-id: ${{ inputs.artifacts_run || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Install both plugins (AU + VST3)
         run: |
           mkdir -p ~/Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/VST3
@@ -201,7 +210,9 @@ jobs:
           F=$(curl -sL https://www.reaper.fm/download.php | grep -oE 'files/[0-9]+\.x/reaper[0-9]+_universal\.dmg' | head -1)
           echo "REAPER download: $F"
           curl -sL -o reaper.dmg "https://www.reaper.fm/$F"
-          hdiutil attach -nobrowse -quiet reaper.dmg -mountpoint /Volumes/R
+          ls -la reaper.dmg
+          yes | PAGER=cat hdiutil attach -nobrowse -mountpoint /Volumes/R reaper.dmg > /dev/null   # the image shows a licence: accept it
+          ls /Volumes/R
           APP=$(find /Volumes/R -maxdepth 2 -name "REAPER*.app" | head -1); echo "app: $APP"
           cp -R "$APP" /Applications/REAPER.app
           RES="$HOME/Library/Application Support/REAPER"
@@ -210,6 +221,8 @@ jobs:
           export TE_OUT="$PWD/daw"
           /Applications/REAPER.app/Contents/MacOS/REAPER -nosplash -new > daw/stdout.txt 2>&1 &
           RP=$!
+          # a fresh REAPER asks about the audio device first: answer "No" until the test script has started
+          ( for i in $(seq 1 40); do sleep 3; [ -f daw/reaper_log.txt ] && break; osascript -e 'tell application "System Events" to tell process "REAPER" to keystroke "n"' 2>/dev/null; done ) &
           for i in $(seq 1 150); do grep -q DONE daw/reaper_log.txt 2>/dev/null && break; sleep 4; done
           screencapture -x shot.png 2>/dev/null && sips -Z 900 shot.png > /dev/null 2>&1 && { echo "SCREENSHOT-BEGIN"; base64 -i shot.png | tr -d '\n'; echo; echo "SCREENSHOT-END"; }
           kill -9 $RP 2>/dev/null || true
@@ -223,6 +236,7 @@ jobs:
 
   # ---------------- Windows: VST3 (64-bit), checked with Steinberg's validator ----------------
   build-windows:
+    if: ${{ !inputs.artifacts_run }}
     runs-on: windows-2022
     defaults:
       run:
@@ -353,6 +367,7 @@ jobs:
   # ---------------- the plugins in other hosts: pluginval and REAPER (Windows) ----------------
   daw-test-windows:
     needs: build-windows
+    if: ${{ !cancelled() && (needs.build-windows.result == 'success' || inputs.artifacts_run) }}
     runs-on: windows-2022
     timeout-minutes: 45
     defaults:
@@ -364,6 +379,8 @@ jobs:
         with:
           name: TwentyEngine-Windows
           path: art
+          run-id: ${{ inputs.artifacts_run || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Install both plugins (VST3)
         run: |
           D="/c/Program Files/Common Files/VST3"; mkdir -p "$D"
@@ -397,6 +414,8 @@ jobs:
           cp tests/daw/reaper_test.lua "$RES/Scripts/__startup.lua"
           export TE_OUT="$(cygpath -w "$PWD/daw")"
           /c/REAPER/reaper.exe -nosplash -new > daw/stdout.txt 2>&1 &
+          # a fresh REAPER asks "You have not yet selected an audio device": answer "No" until the test script has started
+          ( for i in $(seq 1 40); do sleep 3; [ -f daw/reaper_log.txt ] && break; powershell -Command "\$w=New-Object -ComObject wscript.shell; if (\$w.AppActivate('REAPER')) { \$w.SendKeys('n') }" > /dev/null 2>&1; done ) &
           for i in $(seq 1 150); do grep -q DONE daw/reaper_log.txt 2>/dev/null && break; sleep 4; done
           powershell -Command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \$m=New-Object System.Drawing.Bitmap \$b.Width,\$b.Height; \$g=[System.Drawing.Graphics]::FromImage(\$m); \$g.CopyFromScreen(\$b.Location,[System.Drawing.Point]::Empty,\$b.Size); \$s=New-Object System.Drawing.Bitmap \$m,([int](\$b.Width/2)),([int](\$b.Height/2)); \$s.Save('shot.png')" && { echo "SCREENSHOT-BEGIN"; base64 -w0 shot.png; echo; echo "SCREENSHOT-END"; }
           taskkill //F //IM reaper.exe > /dev/null 2>&1 || true
