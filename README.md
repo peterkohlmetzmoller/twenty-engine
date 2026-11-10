@@ -9,11 +9,11 @@ Free software under the GNU GPL v3 (`LICENSE`), with an additional permission fo
 (`LICENSE-EXCEPTIONS.md`).
 
 ## Two plugins
-- **Twenty Engine** (`Tw20`): the instrument. Parameters are not automatable. It records every knob move of a
+- **Twenty Engine Instrument** (`Tw20`). Parameters are not automatable. It records every knob move of a
   take itself (`engine/recall.h`) and plays the take back exactly on a second engine, while the live engine keeps
   following the panel. It needs the controller opened directly next to the DAW: Core MIDI on Mac, WinMM on Windows
   (multi-client with Windows MIDI Services on Windows 11). Without that it runs as a single-engine MIDI instrument.
-- **Twenty Engine Studio** (`Tw2S`): the same code built with `TWENTY_STUDIO 1`. Every parameter is automatable,
+- **Twenty Engine Automation** (`Tw2S`): the same code built with `TWENTY_STUDIO 1`. Every parameter is automatable,
   and at the first note of a new take it touches all parameters so Latch writes the starting sound.
   `tools/make_variant.py studio` generates its source tree (own name, AU/VST3/AAX IDs, bundle IDs and class prefix).
 
@@ -24,7 +24,7 @@ Free software under the GNU GPL v3 (`LICENSE`), with an additional permission fo
 - `TwentyEngine.cpp/.h`  the iPlug2 plugin around the engine
 - `led_port.h`           LED SysEx to the MS-20ic and controller detection (Core MIDI on Mac, WinMM on Windows)
 - `installer/`           Mac .pkg and Windows .exe installer definitions
-- `tools/make_variant.py` generates the Twenty Engine Studio source
+- `tools/make_variant.py` generates the Twenty Engine Automation source
 - `tests/`               checks that run on any computer (`recall_test.cpp` simulates recording and playback with
                          the timing of Logic and of hosts that report the song position smoothly)
 - `tests/daw/`           REAPER test: CI installs REAPER on Mac and Windows, plays both plugins (AU and VST3),
@@ -53,5 +53,5 @@ The unsigned `.aaxplugin` loads in Pro Tools Developer. For retail Pro Tools, si
 the secrets `AAX_SDK_B64_1` … `AAX_SDK_B64_7`. The workflow then also builds unsigned AAX for Mac and Windows.
 
 ## Names
-Products "Twenty Engine" and "Twenty Engine Studio", manufacturer "Peter Kohlmetz Moller": `config.h`,
+Products "Twenty Engine Instrument" and "Twenty Engine Automation", manufacturer "Peter Kohlmetz Moller": `config.h`,
 `resources/*-Info.plist` and `tools/make_variant.py`.

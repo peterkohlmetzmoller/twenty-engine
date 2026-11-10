@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>Twenty Engine + Twenty Engine Studio</title>
+    <title>Twenty Engine</title>
     <welcome file="welcome.html" mime-type="text/html"/>
     <license file="license.txt" mime-type="text/plain"/>
     <options customize="allow" require-scripts="false" hostArchitectures="x86_64,arm64"/>

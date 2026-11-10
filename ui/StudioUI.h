@@ -1,4 +1,4 @@
-// StudioUI.h - the editor window of Twenty Engine Studio.
+// StudioUI.h - the editor window of Twenty Engine Automation.
 // The MS-20 panel layout (the same coordinates as manual/panel.py, traced from the MS-20ic), drawn in the look of
 // the Twenty Engine pictures: white panel, black line art, orange outputs, blue inputs, green cable gestures, grey for
 // what the engine does not use. Below it a status bar with the memory, as in the window mock-up.
@@ -25,9 +25,9 @@ using namespace iplug::igraphics;
 using namespace ms20;
 
 // ---------------------------------------------------------------- look (the Twenty Engine pictures)
-static const IColor kPaper(255, 255, 255, 255), kWin(255, 243, 243, 241), kInk(255, 17, 17, 17), kGrey(255, 140, 140, 140),
-  kDimC(255, 184, 184, 184), kAccent(255, 232, 84, 42), kOutC(255, 240, 144, 31), kInC(255, 47, 159, 208), kMonoC(255, 95, 181, 58),
-  kLed(255, 232, 50, 31), kWhiteKey(255, 244, 242, 236), kBlackKey(255, 18, 18, 18), kBar(255, 236, 236, 234);
+// black and white only; grey only for what is greyed out (jacks the engine does not use)
+static const IColor kPaper(255, 255, 255, 255), kWin = kPaper, kInk(255, 0, 0, 0), kGrey(255, 170, 170, 170),
+  kDimC = kGrey, kAccent = kInk, kOutC = kInk, kInC = kInk, kMonoC = kInk, kLed = kInk, kBar = kPaper;
 static const char *kF = "Cond", *kFB = "CondB", *kFI = "CondI";
 
 // panel geometry: units of manual/panel.py (1 unit = 1 mm on the drawing), scaled to pixels
@@ -149,12 +149,12 @@ static void Morph(IGraphics& g, int kind, float x, float y, float w, float h, in
   for (size_t i = 0; i + 1 < pts.size(); i++)
   {
     const float t = pts[i].t;
-    const IColor c = kind == 0 ? Mix(kAccent, kInk, t) : (kind == 2 ? kInk : Mix(kInk, kAccent, t));   // the new sound in orange
+    const IColor c = kInk; (void)t;
     g.DrawLine(c, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, nullptr, 1.4f);
   }
 }
 
-static void Arrow(IGraphics& g, std::vector<std::pair<float, float>> pts, const IColor& c = kGrey)
+static void Arrow(IGraphics& g, std::vector<std::pair<float, float>> pts, const IColor& c = kInk)
 {
   for (size_t i = 1; i < pts.size(); i++) g.DrawLine(c, pts[i - 1].first, pts[i - 1].second, pts[i].first, pts[i].second, nullptr, 1.5f);
   const float xa = pts[pts.size() - 2].first, ya = pts[pts.size() - 2].second, xb = pts.back().first, yb = pts.back().second;
@@ -165,7 +165,7 @@ static void Arrow(IGraphics& g, std::vector<std::pair<float, float>> pts, const 
   g.PathClose(); g.PathFill(IPattern(c));
 }
 
-static void Box(IGraphics& g, float x0, float yTop, float x1, float yBot, const char* label, float size, const IColor& c = kGrey)
+static void Box(IGraphics& g, float x0, float yTop, float x1, float yBot, const char* label, float size, const IColor& c = kInk)
 {
   g.DrawRect(c, IRECT(x0, yTop, x1, yBot), nullptr, 1.5f);
   const int n = Lines(label);
@@ -222,15 +222,15 @@ public:
     Box(g, RX(880), RY(500), RX(1000), RY(440), "EG 2", 1.9f);
     Box(g, RX(310), RY(740), RX(435), RY(680), "S&H", 1.9f);
     Box(g, RX(970), RY(740), RX(1085), RY(680), "NOISE", 1.9f);
-    g.PathMoveTo(RX(670), RY(735)); g.PathLineTo(RX(735), RY(710)); g.PathLineTo(RX(670), RY(685)); g.PathClose(); g.PathStroke(IPattern(kGrey), 1.5f);
-    Txt(g, RX(692), RY(716), "VCA", 1.3f, kGrey);
+    g.PathMoveTo(RX(670), RY(735)); g.PathLineTo(RX(735), RY(710)); g.PathLineTo(RX(670), RY(685)); g.PathClose(); g.PathStroke(IPattern(kInk), 1.5f);
+    Txt(g, RX(692), RY(716), "VCA", 1.3f, kInk);
     Arrow(g, {{RX(265), RY(710)}, {RX(310), RY(710)}}); Arrow(g, {{RX(435), RY(710)}, {RX(468), RY(710)}});
     Arrow(g, {{RX(365), RY(615)}, {RX(365), RY(680)}});
     Arrow(g, {{RX(630), RY(710)}, {RX(670), RY(710)}}); Arrow(g, {{RX(735), RY(710)}, {RX(775), RY(710)}});
     Arrow(g, {{RX(725), RY(612)}, {RX(725), RY(692)}});
     // ESP
     // ESP block diagram: drawn 30 grid steps higher than on the MS-20ic photo, so the knobs' arp names have room
-    Txt(g, RX(200), RY(795), "EXTERNAL SIGNAL PROCESSOR", 2.0f, kGrey, 'l');
+    Txt(g, RX(200), RY(795), "EXTERNAL SIGNAL PROCESSOR", 2.0f, kInk, 'l');
     Box(g, RX(330), RY(895), RX(410), RY(845), "AMP", 1.6f);
     Box(g, RX(555), RY(900), RX(680), RY(840), "BAND PASS\nFILTER", 1.55f);
     Box(g, RX(790), RY(900), RX(910), RY(840), "F-V\nCONVERTER", 1.55f);
@@ -275,7 +275,7 @@ public:
       const float a = Rad(240.f - 30.f * i);
       g.DrawLine(kInk, mCX + mR * 1.12f * std::cos(a), mCY - mR * 1.12f * std::sin(a), mCX + mR * 1.5f * std::cos(a), mCY - mR * 1.5f * std::sin(a), nullptr, 0.3f * S);
     }
-    g.FillCircle(mMouseIsOver || mMouseDown ? IColor(255, 246, 246, 244) : kPaper, mCX, mCY, mR);
+    g.FillCircle(kPaper, mCX, mCY, mR);
     g.DrawCircle(kInk, mCX, mCY, mR, nullptr, 0.38f * S);
     const float v = (float)GetValue(), a = Rad(240.f - 300.f * std::max(0.f, std::min(1.f, v)));
     IStrokeOptions o; o.mCapOption = ELineCap::Round;
@@ -329,7 +329,7 @@ public:
       if (mMarks[i].rfind("w:", 0) == 0) Wave(g, mMarks[i].c_str() + 2, mx, my, mR * 0.52f, c, 1.3f);
       else Txt(g, mx, my + mR * 0.18f, mMarks[i].c_str(), mR * 0.48f / S, c);
     }
-    g.FillCircle(mMouseIsOver || mMouseDown ? IColor(255, 246, 246, 244) : kPaper, mCX, mCY, mR);
+    g.FillCircle(kPaper, mCX, mCY, mR);
     g.DrawCircle(kInk, mCX, mCY, mR, nullptr, 0.55f * S);
     const float a = Rad(140.f - Sel() * (100.f / (n - 1)));
     IStrokeOptions o; o.mCapOption = ELineCap::Round;
@@ -359,10 +359,10 @@ private:
   float mCX, mCY, mR; std::string mLabel, mInfo; std::vector<std::string> mMarks; bool mDragged = false;
 };
 
-// ---------------------------------------------------------------- ESP knobs, as on the ESP sticker
-// Each knob carries its delay job (black, below) and its arp job (orange italic, above), like the sticker over the
-// MS-20's ESP knobs. As on the hardware the knobs follow the play mode: arp / latch -> the orange jobs, poly -> black.
-// Holding SWITCH brings the delay back (THRESHOLD becomes TONE). Clicking a label picks that job directly.
+// ---------------------------------------------------------------- ESP knobs
+// Plain knobs whose name follows the play mode, as on the hardware: in poly they run the delay, in VCO2 arp / latch
+// LOW CUT, HIGH CUT and CV ADJUST run the arp (RATE, OCTAVES, ORDER). Holding SWITCH brings the delay back, and
+// THRESHOLD becomes the delay TONE. Only the name under the knob changes; nothing else is shown.
 static bool& SwitchHeld() { static bool b = false; return b; }
 static int ArpZone(IEditorDelegate* d)   // engine zones of SIGNAL LEVEL: < 18 poly, < 42 VCO2 arp, else latch
 {
@@ -371,135 +371,73 @@ static int ArpZone(IEditorDelegate* d)   // engine zones of SIGNAL LEVEL: < 18 p
   return mo < 18.0 ? 0 : (mo < 42.0 ? 1 : 2);
 }
 
-// arp order glyphs (sticker): four bars, rising / falling / rising-falling / scattered
-static void OrderGlyph(IGraphics& g, int kind, float x, float y, float s, const IColor& c)
-{
-  static const float H[4][4] = {{.35f, .55f, .75f, 1.f}, {1.f, .75f, .55f, .35f}, {.4f, 1.f, .7f, .4f}, {.7f, .3f, 1.f, .5f}};
-  const float bw = s * 0.16f, gap = s * 0.1f, x0 = x - (4 * bw + 3 * gap) / 2;
-  for (int i = 0; i < 4; i++) g.FillRect(c, IRECT(x0 + i * (bw + gap), y + s * 0.5f - s * H[kind][i], x0 + i * (bw + gap) + bw, y + s * 0.5f));
-}
-
 class EspKnob : public IKnobControlBase
 {
 public:
   struct Job { int param; const char* name; };
-  // marks: 0 none, 1 play mode arc, 2 octave numbers, 3 order glyphs
-  EspKnob(float cx, float cy, const char* hw, Job delay, Job arp, Job sw, int marks)
-  : IKnobControlBase(IRECT(cx - (marks == 1 ? 9.f : 6.8f) * S, cy - 3.2f * 2.6f * S - 2.f * S, cx + (marks == 1 ? 9.f : 6.8f) * S, cy + 3.2f * 1.62f * S + 6.f * S), delay.param, EDirection::Vertical, 2.0),
-    mCX(cx), mCY(cy), mR(3.2f * S), mHw(hw), mMarks(marks) { mJob[0] = delay; mJob[1] = arp; mJob[2] = sw; }
+  EspKnob(float cx, float cy, const char* hw, Job delay, Job arp, Job sw)
+  : IKnobControlBase(IRECT(cx - 6.8f * S, cy - 3.2f * 2.4f * S, cx + 6.8f * S, cy + 3.2f * 1.62f * S + 6.f * S), delay.param, EDirection::Vertical, 2.0),
+    mCX(cx), mCY(cy), mR(3.2f * S), mHw(hw) { mJob[0] = delay; mJob[1] = arp; mJob[2] = sw; }
 
-  int Wanted()
-  {
-    if (mPick >= 0) return mPick;
-    if (SwitchHeld() && mJob[2].param >= 0) return 2;
-    if (SwitchHeld()) return 0;
-    if (ArpZone(GetDelegate()) > 0 && mJob[1].param >= 0) return 1;
-    return 0;
-  }
-  void Use(int j)
-  {
-    if (j == mActive || mJob[j].param < 0) return;
-    mActive = j;
-    SetParamIdx(mJob[j].param);
-    SetValue(GetDelegate()->GetParam(mJob[j].param)->GetNormalized());
-    SetDirty(false);
-  }
   bool IsDirty() override
   {
-    const int zone = ArpZone(GetDelegate()) > 0 ? 1 : 0; const bool sw = SwitchHeld();
-    if (zone != mZone || sw != mSw) { mZone = zone; mSw = sw; mPick = -1; }   // the play mode or the switch changed: follow it again
-    Use(Wanted());
+    int j = 0;
+    if (SwitchHeld()) j = mJob[2].param >= 0 ? 2 : 0;
+    else if (ArpZone(GetDelegate()) > 0 && mJob[1].param >= 0) j = 1;
+    if (j != mActive)
+    {
+      mActive = j;
+      SetParamIdx(mJob[j].param);
+      SetValue(GetDelegate()->GetParam(mJob[j].param)->GetNormalized());
+      SetDirty(false);
+    }
     return IKnobControlBase::IsDirty();
   }
-
   void Draw(IGraphics& g) override
   {
-    // ticks, cap, pointer (as every panel knob)
     for (int i = 0; i < 11; i++)
     {
       const float a = Rad(240.f - 30.f * i);
       g.DrawLine(kInk, mCX + mR * 1.12f * std::cos(a), mCY - mR * 1.12f * std::sin(a), mCX + mR * 1.5f * std::cos(a), mCY - mR * 1.5f * std::sin(a), nullptr, 0.3f * S);
     }
-    g.FillCircle(mMouseIsOver || mMouseDown ? IColor(255, 246, 246, 244) : kPaper, mCX, mCY, mR);
+    g.FillCircle(kPaper, mCX, mCY, mR);
     g.DrawCircle(kInk, mCX, mCY, mR, nullptr, 0.38f * S);
     const float v = (float)GetValue(), a = Rad(240.f - 300.f * std::max(0.f, std::min(1.f, v)));
     IStrokeOptions o; o.mCapOption = ELineCap::Round;
     g.PathMoveTo(mCX + mR * 0.1f * std::cos(a), mCY - mR * 0.1f * std::sin(a));
     g.PathLineTo(mCX + mR * 0.86f * std::cos(a), mCY - mR * 0.86f * std::sin(a));
-    g.PathStroke(IPattern(mActive == 1 || mMarks == 1 ? kAccent : kInk), mR * 0.13f, o);
-
-    const bool arpOn = mActive == 1;
-    const IColor orange = arpOn ? kAccent : kAccent.WithOpacity(0.65f);
-    const IColor black = (mActive == 0) ? kInk : kInk.WithOpacity(0.45f);
-    auto at = [&](float frac, float rr, float& x, float& y) { const float aa = Rad(240.f - 300.f * frac); x = mCX + rr * std::cos(aa); y = mCY - rr * std::sin(aa); };
-    if (mMarks == 1)   // SIGNAL LEVEL: the play mode arc (poly grey, VCO2 arp and latch orange)
+    g.PathStroke(IPattern(kInk), mR * 0.13f, o);
+    Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, mJob[mActive].name, 1.72f);
+    // play mode: a thin arc in three parts (poly, VCO2 arp, latch), the current one solid, the others dotted
+    if (mJob[0].param == PARAM_INDEX_MS20__Voices_arpmode)
     {
-      const float rr = mR * 1.72f;
-      auto arc = [&](float f0, float f1, const IColor& c, float w) {   // IGraphics arcs: degrees clockwise from 12 o'clock
-        g.DrawArc(c, mCX, mCY, rr, -150.f + 300.f * f0, -150.f + 300.f * f1, nullptr, w);
-      };
       const int zone = ArpZone(GetDelegate());
-      arc(0.f, 18.f / 64.f - 0.02f, zone == 0 ? kInk : kDimC, zone == 0 ? 2.5f : 1.5f);
-      arc(18.f / 64.f + 0.02f, 42.f / 64.f - 0.02f, zone == 1 ? kAccent : kAccent.WithOpacity(0.45f), zone == 1 ? 3.5f : 2.f);
-      arc(42.f / 64.f + 0.02f, 1.f, zone == 2 ? kAccent : kAccent.WithOpacity(0.45f), zone == 2 ? 3.5f : 2.f);
-      // zone names: VCO2 ARP on the orange line above (as on the sticker), POLY and LATCH under the ends of the arc
-      Txt(g, mCX, mCY - mR * 1.62f - 0.3f * S, "VCO2 ARP", 1.72f, zone == 1 ? kAccent : kAccent.WithOpacity(0.65f));
-      Txt(g, mCX - mR * 1.45f, mCY + mR * 1.75f, "POLY", 1.3f, zone == 0 ? kInk : kGrey);
-      Txt(g, mCX + mR * 1.45f, mCY + mR * 1.75f, "LATCH", 1.3f, zone == 2 ? kAccent : kAccent.WithOpacity(0.65f));
-    }
-    else if (mMarks == 2)   // OCTAVES 1..4
-      for (int i = 0; i < 4; i++) { float x, y; at(i / 3.f, mR * 1.9f, x, y); Txt(g, x, y + 4.f, std::to_string(i + 1).c_str(), 1.45f, orange); }
-    else if (mMarks == 3)   // ORDER: up, down, up/down, random
-      for (int i = 0; i < 4; i++) { float x, y; at(i / 3.f, mR * 1.95f, x, y); OrderGlyph(g, i, x, y, 0.95f * S, orange); }
-
-    // labels: arp job above (orange italic), delay job below (black), switch job and the MS-20 name small
-    mRectArp = mRectDelay = mRectSw = IRECT();
-    if (mJob[1].param >= 0)
-    {
-      const float y = mCY - mR * 1.62f - 0.3f * S;
-      Txt(g, mCX, y, mJob[1].name, 1.72f, orange);
-      mRectArp = IRECT(mCX - 7.f * S, y - 2.f * S, mCX + 7.f * S, y + 0.5f * S);
-    }
-    if (mMarks == 1) { Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 1.2f * S, "PLAY MODE", 1.72f); }
-    else
-    {
-      const float y = mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S;
-      Txt(g, mCX, y, mJob[0].name, 1.72f, black);
-      mRectDelay = IRECT(mCX - 8.f * S, y - 2.f * S, mCX + 8.f * S, y + 0.5f * S);
-      if (mJob[2].param >= 0)
+      const float rr = mR * 1.75f, edges[4] = {0.f, 18.f / 64.f, 42.f / 64.f, 1.f};
+      for (int z = 0; z < 3; z++)
       {
-        char b[48]; snprintf(b, sizeof(b), "SWITCH: %s", mJob[2].name);
-        Txt(g, mCX, y + 1.9f * S, b, 1.3f, mActive == 2 ? kInk : kGrey);
-        mRectSw = IRECT(mCX - 8.f * S, y + 0.6f * S, mCX + 8.f * S, y + 2.3f * S);
+        const float f0 = edges[z] + (z ? 0.025f : 0.f), f1 = edges[z + 1] - (z < 2 ? 0.025f : 0.f);
+        if (z == zone) g.DrawArc(kInk, mCX, mCY, rr, -150.f + 300.f * f0, -150.f + 300.f * f1, nullptr, 2.f);   // degrees clockwise from 12 o'clock
+        else
+          for (float f = f0; f <= f1 + 1e-4f; f += 0.03f)
+          {
+            const float aa = Rad(240.f - 300.f * f);
+            g.FillCircle(kInk, mCX + rr * std::cos(aa), mCY - rr * std::sin(aa), 1.1f);
+          }
       }
     }
   }
-  void OnMouseDown(float x, float y, const IMouseMod& m) override
-  {
-    if (mRectArp.Contains(x, y)) { mPick = 1; Use(1); Report(); return; }
-    if (mRectDelay.Contains(x, y)) { mPick = 0; Use(0); Report(); return; }
-    if (mRectSw.Contains(x, y)) { mPick = 2; Use(2); Report(); return; }
-    IKnobControlBase::OnMouseDown(x, y, m);
-  }
-  void OnMouseOver(float x, float y, const IMouseMod& m) override { IKnobControlBase::OnMouseOver(x, y, m); Report(); SetDirty(false); }
+  void OnMouseOver(float x, float y, const IMouseMod& m) override { IKnobControlBase::OnMouseOver(x, y, m); Report(); }
   void OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& m) override { IKnobControlBase::OnMouseDrag(x, y, dX, dY, m); Report(); }
-  void OnMouseOut() override { IKnobControlBase::OnMouseOut(); SetDirty(false); }
-  bool IsHit(float x, float y) const override
-  {
-    return (x - mCX) * (x - mCX) + (y - mCY) * (y - mCY) <= mR * mR * 2.4f || mRectArp.Contains(x, y) || mRectDelay.Contains(x, y) || mRectSw.Contains(x, y);
-  }
+  bool IsHit(float x, float y) const override { return (x - mCX) * (x - mCX) + (y - mCY) * (y - mCY) <= mR * mR * 2.4f; }
 private:
   void Report()
   {
     const IParam* p = GetParam(); if (!p) return;
-    char b[160];
-    if (mMarks == 1) snprintf(b, sizeof(b), "%s  \xC2\xB7  PLAY MODE  %.1f  \xC2\xB7  poly, VCO2 arp, latch", mHw, p->Value());
-    else snprintf(b, sizeof(b), "%s  \xC2\xB7  %s  %.1f  \xC2\xB7  click a label to choose", mHw, mJob[mActive].name, p->Value());
+    char b[128]; snprintf(b, sizeof(b), "%s  \xC2\xB7  %s  %.1f", mHw, mJob[mActive].name, p->Value());
     SetInfo(b);
   }
-  float mCX, mCY, mR; const char* mHw; int mMarks;
-  Job mJob[3]; int mActive = 0, mPick = -1, mZone = -1; bool mSw = false;
-  IRECT mRectArp, mRectDelay, mRectSw;
+  float mCX, mCY, mR; const char* mHw;
+  Job mJob[3]; int mActive = 0;
 };
 
 // ---------------------------------------------------------------- patch panel (jacks at the photo-grid positions)
@@ -566,35 +504,40 @@ public:
     {
       const Jack& j = kJacks[i];
       float x, y; JackXY(i, x, y);
-      const IColor ring = j.kind == 1 ? kOutC : (j.kind == 2 ? kInC : (j.kind >= 3 ? kMonoC : kDimC));
       const bool hot = (mHover == i || mDragFrom == i) && j.kind != 0;
       g.FillCircle(kPaper, x, y, r * 1.3f);
-      if (j.kind != 0)
+      if (j.kind == 1)        // output: a solid black ring
       {
-        g.DrawCircle(ring, x, y, r * 1.3f, nullptr, (hot ? 1.0f : 0.7f) * S);
-        g.DrawCircle(kInk, x, y, r * 0.95f, nullptr, 0.3f * S);
+        g.FillCircle(kInk, x, y, r * 1.3f);
+        g.FillCircle(kPaper, x, y, r * 0.75f);
+        if (hot) g.DrawCircle(kInk, x, y, r * 1.6f, nullptr, 1.5f);
       }
-      else g.DrawCircle(kDimC, x, y, r * 1.2f, nullptr, 0.35f * S);
+      else if (j.kind != 0)   // input: a thin ring
+      {
+        g.DrawCircle(kInk, x, y, r * 1.3f, nullptr, (hot ? 0.6f : 0.35f) * S);
+        g.DrawCircle(kInk, x, y, r * 0.75f, nullptr, 0.25f * S);
+      }
+      else g.DrawCircle(kGrey, x, y, r * 1.2f, nullptr, 0.3f * S);   // not used: grey
       const int n = Lines(j.label);
       Txt(g, x, y - (r * 1.3f + 0.8f * S + 1.75f * S * (n - 1)) - 0.1f * S, j.label, 1.75f, j.kind != 0 ? kInk : kDimC);
       // a plug with its far end loose (patched like that on the MS-20ic): the normal is broken, nothing comes in
       if (j.kind == 2 && d && (int)std::lround(d->GetParam(j.param)->Value()) == 13) g.FillCircle(kInk, x, y, r * 0.7f);
     }
-    static const IColor kCable[5] = { IColor(255, 232, 84, 42), IColor(255, 47, 159, 208), IColor(255, 95, 181, 58), IColor(255, 240, 144, 31), IColor(255, 40, 40, 40) };
     for (const Cable& cb : Cables())
     {
       float x1, y1, x2, y2; JackXY(cb.out, x1, y1); JackXY(cb.in, x2, y2);
-      DrawCable(g, x1, y1, x2, y2, kCable[(kJacks[cb.in].id * 3 + kJacks[cb.out].id) % 5]);
+      DrawCable(g, x1, y1, x2, y2, kInk);
     }
-    if (mDragFrom >= 0) { float x1, y1; JackXY(mDragFrom, x1, y1); DrawCable(g, x1, y1, mDragX, mDragY, kInk.WithOpacity(0.7f)); }
+    if (mDragFrom >= 0) { float x1, y1; JackXY(mDragFrom, x1, y1); DrawCable(g, x1, y1, mDragX, mDragY, kGrey); }
   }
 
   void DrawCable(IGraphics& g, float x1, float y1, float x2, float y2, const IColor& col)
   {
     const float dist = std::sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)), sag = 12.f + dist * 0.28f;
     IStrokeOptions o; o.mCapOption = ELineCap::Round;
-    g.PathMoveTo(x1, y1); g.PathCubicBezierTo(x1, y1 + sag, x2, y2 + sag, x2, y2); g.PathStroke(IPattern(col), 0.95f * S, o);
-    g.FillCircle(col, x1, y1, 0.95f * S); g.FillCircle(col, x2, y2, 0.95f * S);
+    g.PathMoveTo(x1, y1); g.PathCubicBezierTo(x1, y1 + sag, x2, y2 + sag, x2, y2); g.PathStroke(IPattern(kPaper), 1.25f * S, o);
+    g.PathMoveTo(x1, y1); g.PathCubicBezierTo(x1, y1 + sag, x2, y2 + sag, x2, y2); g.PathStroke(IPattern(col), 0.7f * S, o);
+    g.FillCircle(col, x1, y1, 0.9f * S); g.FillCircle(col, x2, y2, 0.9f * S);
   }
 
   void OnMouseDown(float x, float y, const IMouseMod&) override
@@ -673,7 +616,7 @@ public:
   void Draw(IGraphics& g) override
   {
     g.FillRect(kBar, mRECT);
-    g.DrawLine(IColor(255, 210, 210, 206), mRECT.L, mRECT.T, mRECT.R, mRECT.T, nullptr, 1.f);
+    g.DrawLine(kInk, mRECT.L, mRECT.T, mRECT.R, mRECT.T, nullptr, 1.f);
     const float cy = mRECT.MH();
     static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy" };
     const int c = mCtl ? mCtl() : 0;
@@ -707,8 +650,8 @@ public:
     g.DrawText(IText(12.f, kInk, kF, EAlign::Center, EVAlign::Middle), "SAVE", SaveB());
     if (mSwitch) g.FillRect(kAccent, SwitchB());
     g.DrawRect(mSwitch ? kAccent : kInk, SwitchB(), nullptr, 1.5f);
-    g.DrawText(IText(12.f, mSwitch ? kPaper : kInk, kF, EAlign::Center, EVAlign::Middle), "SWITCH", SwitchB());
-    g.DrawText(IText(17.f, kInk, kFB, EAlign::Far, EVAlign::Middle), "TWENTY ENGINE STUDIO", IRECT(mRECT.R - 260.f, mRECT.T, mRECT.R - 16.f, mRECT.B));
+    g.DrawText(IText(12.f, mSwitch ? kPaper : kInk, kF, EAlign::Center, EVAlign::Middle), "SWITCH", SwitchB());   // black while held
+    g.DrawText(IText(17.f, kInk, kFB, EAlign::Far, EVAlign::Middle), "TWENTY ENGINE AUTOMATION", IRECT(mRECT.R - 260.f, mRECT.T, mRECT.R - 16.f, mRECT.B));
     char d[200] = ""; if (mDiag) mDiag(d, sizeof(d));
     if (*d) g.DrawText(IText(9.f, kGrey, kF, EAlign::Far, EVAlign::Top), d, IRECT(mRECT.R - 600.f, mRECT.T + 1.f, mRECT.R - 16.f, mRECT.T + 11.f));
   }
@@ -852,14 +795,14 @@ inline void Layout(IGraphics* g, PatchHost* ph, MemoryHost* mh, std::function<in
   // patch panel (jacks + cables), volume
   g->AttachControl(new PatchPanel(ph));
   g->AttachControl(new PKnob(RX(1210), RY(280), 4.2f, PARAM_INDEX_VCA__Macro_mastervol, "", "VOLUME"));
-  // ESP: the play mode and the four knobs with their delay and arp jobs (as on the ESP sticker)
+  // ESP: play mode, and four knobs whose names follow it
   const float ey = RY(1010);
   const EspKnob::Job none = {-1, ""};
-  g->AttachControl(new EspKnob(RX(270), ey, "SIGNAL LEVEL", {PARAM_INDEX_MS20__Voices_arpmode, "PLAY MODE"}, none, none, 1));
-  g->AttachControl(new EspKnob(RX(460), ey, "LOW CUT FREQ", {PARAM_INDEX_BBD__Delay_time, "TIME"}, {PARAM_INDEX_MS20__Voices_arprate, "RATE"}, none, 0));
-  g->AttachControl(new EspKnob(RX(640), ey, "HIGH CUT FREQ", {PARAM_INDEX_BBD__Delay_feedback, "FEEDBACK"}, {PARAM_INDEX_MS20__Voices_arpoct, "OCTAVES"}, none, 2));
-  g->AttachControl(new EspKnob(RX(820), ey, "CV ADJUST", {PARAM_INDEX_BBD__Delay_wowflutter, "WOW / FLUTTER"}, {PARAM_INDEX_MS20__Voices_arporder, "ORDER"}, none, 3));
-  g->AttachControl(new EspKnob(RX(1000), ey, "THRESHOLD LEVEL", {PARAM_INDEX_BBD__Delay_drywet, "DELAY AMOUNT"}, none, {PARAM_INDEX_BBD__Delay_bbdfilter, "TONE"}, 0));
+  g->AttachControl(new EspKnob(RX(270), ey, "SIGNAL LEVEL", {PARAM_INDEX_MS20__Voices_arpmode, "PLAY MODE"}, none, none));
+  g->AttachControl(new EspKnob(RX(460), ey, "LOW CUT FREQ", {PARAM_INDEX_BBD__Delay_time, "TIME"}, {PARAM_INDEX_MS20__Voices_arprate, "RATE"}, none));
+  g->AttachControl(new EspKnob(RX(640), ey, "HIGH CUT FREQ", {PARAM_INDEX_BBD__Delay_feedback, "FEEDBACK"}, {PARAM_INDEX_MS20__Voices_arpoct, "OCTAVES"}, none));
+  g->AttachControl(new EspKnob(RX(820), ey, "CV ADJUST", {PARAM_INDEX_BBD__Delay_wowflutter, "WOW / FLUTTER"}, {PARAM_INDEX_MS20__Voices_arporder, "ORDER"}, none));
+  g->AttachControl(new EspKnob(RX(1000), ey, "THRESHOLD LEVEL", {PARAM_INDEX_BBD__Delay_drywet, "DELAY AMOUNT"}, none, {PARAM_INDEX_BBD__Delay_bbdfilter, "TONE"}));
   // status bar
   g->AttachControl(new StatusBar(IRECT(0, Yd(PH) + 10.f, (float)kW, Yd(PH) + 10.f + BARH), mh, ph, controller, diag));
   g->AttachCornerResizer(EUIResizerMode::Scale, false);

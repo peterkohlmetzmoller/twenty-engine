@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Builds the source tree of the second plugin, "Twenty Engine Studio", from this one (same code; the
+# Builds the source tree of the second plugin, "Twenty Engine Automation", from this one (same code; the
 # behaviour differs only where TwentyEngine.cpp checks TWENTY_STUDIO). Everything that identifies a plugin
 # to a host gets its own value: name, AU/VST3/AAX IDs, bundle IDs, Objective-C class prefix (from the
 # CMake project name), so both plugins can be installed and loaded side by side.
@@ -24,14 +24,14 @@ res_src, res_dst = os.path.join(root, 'resources'), os.path.join(out, 'resources
 TEXT = ('.plist', '.xib', '.xml', '.rc', '.storyboard', '_mac_dlg', '_mac_menu')
 for dirpath, dirs, files in os.walk(res_src):
     rel = os.path.relpath(dirpath, res_src)
-    ddir = os.path.join(res_dst, rel.replace('TwentyEngine', 'TwentyEngineStudio'))
+    ddir = os.path.join(res_dst, rel.replace('TwentyEngine', 'TwentyEngineAutomation'))
     os.makedirs(ddir, exist_ok=True)
     for f in files:
         src = os.path.join(dirpath, f)
-        dst = os.path.join(ddir, f.replace('TwentyEngine', 'TwentyEngineStudio'))
+        dst = os.path.join(ddir, f.replace('TwentyEngine', 'TwentyEngineAutomation'))
         if f.endswith(TEXT):
             s = open(src, encoding='utf-8', errors='surrogateescape').read()
-            s = s.replace('TwentyEngine', 'TwentyEngineStudio').replace('Twenty Engine', 'Twenty Engine Studio').replace('Tw20', 'Tw2S')
+            s = s.replace('TwentyEngine', 'TwentyEngineAutomation').replace('Twenty Engine Instrument', 'Twenty Engine').replace('Twenty Engine', 'Twenty Engine Automation').replace('Tw20', 'Tw2S')
             open(dst, 'w', encoding='utf-8', errors='surrogateescape').write(s)
         else:
             shutil.copy2(src, dst)
@@ -43,21 +43,21 @@ def edit(rel, pairs):
         s = s.replace(a, b)
     open(p, 'w', encoding='utf-8').write(s)
 
-edit('CMakeLists.txt', [('project(TwentyEngine VERSION', 'project(TwentyEngineStudio VERSION')])
+edit('CMakeLists.txt', [('project(TwentyEngine VERSION', 'project(TwentyEngineAutomation VERSION')])
 edit('config.h', [
-    ('#define PLUG_NAME "Twenty Engine"', '#define TWENTY_STUDIO 1\n#define PLUG_NAME "Twenty Engine Studio"'),
-    ('#define PLUG_WIDTH 360', '#define PLUG_WIDTH 1224'),     # Studio has the full editor window (ui/StudioUI.h)
+    ('#define PLUG_NAME "Twenty Engine Instrument"', '#define TWENTY_STUDIO 1\n#define PLUG_NAME "Twenty Engine Automation"'),
+    ('#define PLUG_WIDTH 360', '#define PLUG_WIDTH 1224'),     # Automation has the full editor window (ui/StudioUI.h)
     ('#define PLUG_HEIGHT 120', '#define PLUG_HEIGHT 580'),
     ('#define PLUG_HOST_RESIZE 0', '#define PLUG_HOST_RESIZE 1'),
     ("#define PLUG_UNIQUE_ID 'Tw20'", "#define PLUG_UNIQUE_ID 'Tw2S'"),
-    ('#define BUNDLE_NAME "TwentyEngine"', '#define BUNDLE_NAME "TwentyEngineStudio"'),
-    ('#define SHARED_RESOURCES_SUBPATH "TwentyEngine"', '#define SHARED_RESOURCES_SUBPATH "TwentyEngineStudio"'),
-    ('#define AUV2_ENTRY TwentyEngine_Entry', '#define AUV2_ENTRY TwentyEngineStudio_Entry'),
-    ('#define AUV2_ENTRY_STR "TwentyEngine_Entry"', '#define AUV2_ENTRY_STR "TwentyEngineStudio_Entry"'),
-    ('#define AUV2_FACTORY TwentyEngine_Factory', '#define AUV2_FACTORY TwentyEngineStudio_Factory'),
-    ('#define AUV2_VIEW_CLASS TwentyEngine_View', '#define AUV2_VIEW_CLASS TwentyEngineStudio_View'),
-    ('#define AUV2_VIEW_CLASS_STR "TwentyEngine_View"', '#define AUV2_VIEW_CLASS_STR "TwentyEngineStudio_View"'),
+    ('#define BUNDLE_NAME "TwentyEngine"', '#define BUNDLE_NAME "TwentyEngineAutomation"'),
+    ('#define SHARED_RESOURCES_SUBPATH "TwentyEngine"', '#define SHARED_RESOURCES_SUBPATH "TwentyEngineAutomation"'),
+    ('#define AUV2_ENTRY TwentyEngine_Entry', '#define AUV2_ENTRY TwentyEngineAutomation_Entry'),
+    ('#define AUV2_ENTRY_STR "TwentyEngine_Entry"', '#define AUV2_ENTRY_STR "TwentyEngineAutomation_Entry"'),
+    ('#define AUV2_FACTORY TwentyEngine_Factory', '#define AUV2_FACTORY TwentyEngineAutomation_Factory'),
+    ('#define AUV2_VIEW_CLASS TwentyEngine_View', '#define AUV2_VIEW_CLASS TwentyEngineAutomation_View'),
+    ('#define AUV2_VIEW_CLASS_STR "TwentyEngine_View"', '#define AUV2_VIEW_CLASS_STR "TwentyEngineAutomation_View"'),
     ("#define AAX_TYPE_IDS 'TW21', 'TW22'", "#define AAX_TYPE_IDS 'TW2T', 'TW2U'"),
-    ('#define AAX_PLUG_NAME_STR "TwentyEngine\\nTW20"', '#define AAX_PLUG_NAME_STR "TwentyEngineStudio\\nTW2S"'),
+    ('#define AAX_PLUG_NAME_STR "TwentyEngine\\nTW20"', '#define AAX_PLUG_NAME_STR "TwentyEngineAutomation\\nTW2S"'),
 ])
-print('Twenty Engine Studio source in', out)
+print('Twenty Engine Automation source in', out)
