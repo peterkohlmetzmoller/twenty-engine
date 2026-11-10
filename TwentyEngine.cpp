@@ -26,7 +26,7 @@ public:
 
   bool IsDirty() override
   {
-    if (++mFrames >= 6) { mFrames = 0; bool d = true; Scan(); const int t = Takes(); if (t != mTakes) { mTakes = t; d = true; } if (d) return true; }   // about twice a second
+    if (++mFrames >= 30) { mFrames = 0; bool d = Scan(); const int t = Takes(); if (t != mTakes) { mTakes = t; d = true; } if (d) return true; }   // about twice a second
     return IControl::IsDirty();
   }
 
@@ -56,11 +56,9 @@ public:
     g.DrawText(IText(14.f, on ? ink : dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), txt.Get(), row.GetHShifted(20.f));
 
     WDL_String tk;
-    if (mTakes > 0) tk.SetFormatted(96, "Recall: %d take%s  \xC2\xB7  double-click to clear", mTakes, mTakes == 1 ? "" : "s");
-    else tk.Set("Recall: no takes recorded");
+    if (mTakes > 0) tk.SetFormatted(96, "Sound stored for %d part%s of the song  \xC2\xB7  double-click to clear", mTakes, mTakes == 1 ? "" : "s");
+    else tk.Set("No sound stored in this song yet");
     g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), tk.Get(), TakesRect());
-    char dg[160] = ""; if (mPlug) mPlug->RecallDiag(dg, sizeof(dg));   // test build: what the host reports
-    g.DrawText(IText(10.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), dg, TakesRect().GetVShifted(14.f));
   }
 
 private:
@@ -112,21 +110,23 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
   }
 #endif
   // Same ranges as the Ksoloti editor shows them: knobs 0..64 (bipolar -64..64), selectors as integers.
+  // Not automatable: the sound is played on the controller and stored by performance recall, not edited in the DAW.
+  const int kFlags = IParam::kFlagCannotAutomate;
   for (int i = 0; i < kNumParams; i++)
   {
     const ParamInfo& p = kParamInfo[i];
     if (IsFrac(i))
     {
       const double def = p.def / 2097152.0;          // 1<<21 per display unit
-      if (IsBipolar(i)) GetParam(i)->InitDouble(p.label, def, -64.0, 64.0, 0.01, "", 0, p.object);
-      else              GetParam(i)->InitDouble(p.label, def, 0.0, 64.0, 0.01, "", 0, p.object);
+      if (IsBipolar(i)) GetParam(i)->InitDouble(p.label, def, -64.0, 64.0, 0.01, "", kFlags, p.object);
+      else              GetParam(i)->InitDouble(p.label, def, 0.0, 64.0, 0.01, "", kFlags, p.object);
     }
     else if (IsBool(i))
-      GetParam(i)->InitBool(p.label, p.def != 0, "", 0, p.object);
+      GetParam(i)->InitBool(p.label, p.def != 0, "", kFlags, p.object);
     else
     {
       const int maxv = (p.hmax > 0) ? p.hmax - 1 : 13;  // radio buttons; patch bay selectors 0..13
-      GetParam(i)->InitInt(p.label, p.def, 0, maxv, "", 0, p.object);
+      GetParam(i)->InitInt(p.label, p.def, 0, maxv, "", kFlags, p.object);
     }
   }
 
@@ -179,19 +179,19 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
 {
   // everything goes to the engine: notes, CCs (knobs, rotaries, patch bay NRPN), channel pressure (button)
   if (msg.mStatus < 0xF0 && (msg.mStatus & 0xF0) != 0xB0) mDbgMidiQ.push({msg.mStatus, msg.mData1, msg.mData2, msg.mOffset});   // beta diagnostics: notes, pressure (not the many knob CCs)
-  // performance recall: inside a recorded take the settings come from the take, so knob and cable messages
-  // replayed from the track are ignored; while recording, a knob you move takes over (see engine/recall.h)
-  if (!mRecall.midiIn(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2)) return;
+  // performance recall (engine/recall.h): the track plays the notes, the switch and the mod wheel; knob and
+  // cable CCs on the track are ignored when the knobs reach the plugin straight from the controller
+  if (!mRecall.midiIn(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2, mLed.KnobsDirect())) return;
   mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);
 }
 
 void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
   const double sr = GetSampleRate(), tempo = GetTempo();
-  mDiagRun.store(GetTransportIsRunning() ? 1 : 0); mDiagRec.store(GetTransportIsRecording() ? 1 : 0);
-  mDiagInfo.store(GetRecordingInfo()); mDiagPpq.store(GetPPQPos());
-  mRecall.beginBlock(mHost.get(), GetTransportIsRunning(), GetTransportIsRecording(), GetPPQPos(),
-                     (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0, nFrames);
+  mRecall.beginBlock(mHost.get(), GetTransportIsRunning(), GetPPQPos(), (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0, nFrames);
+  // knobs and cables straight from the controller (Mac): always live, and while the host plays they
+  // replace the stored settings from that moment (performance recall)
+  { uint8_t s, d1, d2; while (mLed.PopKnob(s, d1, d2)) { mRecall.directIn(s, d1, d2); mHost->midi(0, s, d1, d2); } }
   int done = 0;
   while (done < nFrames)
   {
@@ -232,14 +232,12 @@ void TwentyEngine::OnIdle()
     if (p.idx < 0 || p.idx >= kNumParams) continue;
     const double v = FromRaw(p.idx, p.raw);
     mFromEngine = true;
-    BeginInformHostOfParamChangeFromUI(p.idx);
-    SetParameterValue(p.idx, GetParam(p.idx)->ToNormalized(v));
-    EndInformHostOfParamChangeFromUI(p.idx);
+    GetParam(p.idx)->Set(v);   // keep the plugin's copy in step (saved with the project); no automation gestures to the host
     mFromEngine = false;
   }
   // 2. patch memory: write the file after a save on the keys (never on the audio thread).
-  //    While a take plays back, its save gestures are replayed too: those never overwrite the memory.
-  if (mRecall.playingBack()) mHost->dropMemorySave(); else mHost->pollMemorySave();
+  //    While stored settings play back, replayed save gestures never overwrite the memory.
+  if (mRecall.takePlaying()) mHost->dropMemorySave(); else mHost->pollMemorySave();
   // 2b. performance recall: store finished takes
   mRecall.idle();
   // 3. LEDs on the iC
@@ -281,15 +279,3 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
   return pos;
 }
 
-void TwentyEngine::RecallDiag(char* out, int n) const
-{
-#if IPLUG_DSP
-  const int info = mDiagInfo.load();
-  snprintf(out, n, "host: %s \xC2\xB7 rec %s \xC2\xB7 beat %.2f \xC2\xB7 takes started %d, stored %d",
-           mDiagRun.load() ? "playing" : "stopped",
-           info == 1 ? (mDiagRec.load() ? "YES" : "no") : (info == 0 ? "not reported" : "call failed"),
-           mDiagPpq.load(), mRecall.diagPasses.load(), mRecall.diagMerged);
-#else
-  if (n > 0) out[0] = 0;
-#endif
-}

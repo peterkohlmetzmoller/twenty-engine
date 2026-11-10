@@ -9,10 +9,15 @@
 // messages from the track are ignored there. Outside takes everything is live. Starting playback in the
 // middle of a take is exact too: the settings at that song position are rebuilt.
 //
-// While the host records:
-//  - outside takes: a new take is recorded (what you hear is what is stored)
-//  - inside an older take: it plays back exactly (recording another track never touches it), until you
-//    move a control on the controller: from that moment a new take replaces it ("touch to overwrite")
+// Hosts (Logic) do not tell a plugin when they record, only that they play. So the rule is the same for
+// playing and recording, like Latch automation built into the plugin:
+//  - where nothing is stored yet, the settings are stored while the host runs (the start of every take)
+//  - inside stored settings they play back exactly, until you move a control on the controller: from that
+//    moment your moves replace them ("touch to overwrite"). Turning knobs while stopped never changes them.
+// Knobs and cables come straight from the controller (directIn), so knob CCs on the track are always
+// ignored: the track holds the notes, the plugin holds the sound. Without the direct connection (a DAW
+// that holds the controller's port exclusively) the track's CCs are used, and replays are told from new
+// playing by a log of the knob messages of each take.
 //
 // Threads: the audio thread records into a lock-free queue and reads an immutable LaneData snapshot;
 // the main thread merges recordings, publishes new snapshots and saves/loads them with the project.
@@ -41,22 +46,21 @@ public:
 
   // ======================= audio thread =======================
   // Once per host block, before MS20Host::process(). ppqPerSample = tempo / 60 / sampleRate.
-  void beginBlock(MS20Host *h, bool running, bool recording, double ppq, double ppqPerSample, int nFrames) {
+  void beginBlock(MS20Host *h, bool running, double ppq, double ppqPerSample, int nFrames) {
     host = h; pps = ppqPerSample; ppq0 = ppq; chunk = 0;
     // pending knob messages belong to the block they arrived just before: drop older ones
     if (staleMark > 0) { int r = 0; for (int i = staleMark; i < npend; i++) pend[r++] = pend[i]; npend = r; }
     staleMark = npend;
     const bool valid = running && ppq > -1e8 && ppqPerSample > 0.0;
     const bool jump = (expected > -1e8) && (ppq < expected - 1e-6 || ppq > expected + 0.05);
-    const int newMode = !valid ? IDLE : (recording ? REC : PLAY);
+    const int newMode = valid ? REC : IDLE;
     if (mode == REC && passActive && (newMode != REC || jump)) endPass(lastPpq);
     if (newMode == REC && (mode != REC || jump)) { touched = false; passActive = false; }
     if (newMode != IDLE) {
       LaneData *d = pub.load(std::memory_order_acquire);
       if (mode != newMode || jump || d != lane || dirty) { lane = d; rebuild(ppq); dirty = false; }
-    } else locked = false;
+    } else { locked = false; guarded.store(false, std::memory_order_relaxed); }
     mode = newMode;
-    playing.store(newMode == PLAY, std::memory_order_relaxed);
     blockStart = ppq; firstInBlock = true;
     expected = valid ? ppq + nFrames * ppqPerSample : -1e9;
     lastPpq = ppq;
@@ -68,8 +72,10 @@ public:
 
   // Every MIDI message from the track, before it goes to the engine (audio thread, before beginBlock of the
   // block it belongs to). Returns false if the message must be ignored.
-  bool midiIn(int offset, uint8_t s, uint8_t d1, uint8_t d2) {
+  // directKnobs: the knobs reach the plugin straight from the controller, so knob CCs on the track are ignored.
+  bool midiIn(int offset, uint8_t s, uint8_t d1, uint8_t d2, bool directKnobs) {
     const int type = s & 0xF0;
+    if (directKnobs && type == 0xB0 && d1 != 1) return false;
     const bool setting = (type == 0xB0 && d1 != 1) || type == 0xD0;   // knobs, cables, the switch (CC 1 = mod wheel: playing)
     if (!setting) return true;
     // not recording yet: the coming block may start a recording, so keep it until before() knows
@@ -85,9 +91,14 @@ public:
       }
       return true;
     }
-    // playback
-    if (locked && type == 0xB0) return false;
     return true;
+  }
+
+  // A knob or cable message straight from the controller (audio thread, after beginBlock): always live.
+  void directIn(uint8_t s, uint8_t d1, uint8_t d2) {
+    if (mode != REC) return;                              // stopped: just changes the sound, stores nothing
+    if (!passActive) startPass(ppq0);                     // inside stored settings: you take over from here
+    touched = true; push(MID, ppq0, s, packMidi(s, d1, d2));
   }
 
   // per engine block, called by MS20Host::process() (k = sample index inside the current chunk)
@@ -112,11 +123,11 @@ public:
           for (int i = 0; i < NPARAMS; i++) { recKnown[i] = host->getParamRaw(i); push(EV, passStart, i, recKnown[i]); }
           needSnap = false;
         }
-        locked = false; lastPpq = x; return;
+        locked = false; guarded.store(false, std::memory_order_relaxed); lastPpq = x; return;
       }
     }
     if (firstInBlock) { npend = 0; staleMark = 0; firstInBlock = false; }
-    locked = cov;
+    locked = cov; guarded.store(cov, std::memory_order_relaxed);
     if (cov) for (int i = 0; i < NPARAMS; i++)
       if (have[i] && host->getParamRaw(i) != state[i]) host->setParamNow(i, state[i]);
   }
@@ -133,10 +144,8 @@ public:
   // diagnostics (any thread): takes started by the audio thread, takes merged by the main thread
   std::atomic<int> diagPasses{0}; int diagMerged = 0;
 
-  // true while inside a recorded take that is playing back: knob/cable CCs from the track are ignored
-  bool knobsLocked() const { return locked; }
-  // any thread: true while the host plays (not records). Memory saves from replayed key gestures are dropped then.
-  bool playingBack() const { return playing.load(std::memory_order_relaxed); }
+  // any thread: true while stored settings are playing back. Memory saves from replayed key gestures are dropped then.
+  bool takePlaying() const { return guarded.load(std::memory_order_relaxed); }
 
   // ======================= main thread =======================
   // call regularly (e.g. every 20 ms): merges finished takes and publishes them
@@ -183,7 +192,7 @@ public:
 #endif
 
 private:
-  enum { IDLE, REC, PLAY };
+  enum { IDLE, REC };
   enum { START, EV, MID, END, LOSTEVENTS };
   struct Msg { double ppq; int32_t raw; int16_t idx; uint8_t type; };
   static int32_t packMidi(uint8_t s, uint8_t d1, uint8_t d2) { return ((int32_t)s << 16) | ((int32_t)d1 << 8) | d2; }
@@ -191,7 +200,7 @@ private:
   // audio-thread state
   MS20Host *host = nullptr;
   int mode = IDLE; bool locked = false, needSnap = false, dirty = true, passActive = false, touched = false;
-  std::atomic<bool> playing{false};
+  std::atomic<bool> guarded{false};
   double ppq0 = 0, pps = 0, expected = -1e9, lastPpq = 0, passStart = 0, blockStart = 0; int chunk = 0;
   int32_t recKnown[NPARAMS];
   LaneData *lane = nullptr; int cur = 0; int32_t state[NPARAMS]; uint8_t have[NPARAMS];

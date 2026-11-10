@@ -4,8 +4,20 @@
 // so Logic keeps receiving the iC's knobs and keys).
 // Windows: the same through WinMM. Some Windows MIDI drivers let only one program open a port; if the
 // DAW holds the iC's output, opening fails and the LEDs simply stay as they are.
+// Knobs in (Mac): the plugin also reads the knobs and patch cables straight from the controller, so the
+// sound never depends on CCs stored in the DAW's track (performance recall, engine/recall.h). The track
+// keeps the notes, the switch and the mod wheel. Where this is not possible (Windows, where a port can
+// usually be opened by one program only) the knobs come through the track as before.
 #pragma once
 #include <stdint.h>
+#include <atomic>
+
+// knob messages from the Core MIDI thread to the audio thread (one producer, one consumer)
+struct KnobQueue {
+  uint32_t buf[2048]; std::atomic<int> head{0}, tail{0};
+  void push(uint32_t v) { int h = head.load(std::memory_order_relaxed), n = (h + 1) & 2047; if (n == tail.load(std::memory_order_acquire)) return; buf[h] = v; head.store(n, std::memory_order_release); }
+  bool pop(uint32_t &v) { int t = tail.load(std::memory_order_relaxed); if (t == head.load(std::memory_order_acquire)) return false; v = buf[t]; tail.store((t + 1) & 2047, std::memory_order_release); return true; }
+};
 
 #ifdef __APPLE__
 #include <CoreMIDI/CoreMIDI.h>
@@ -17,16 +29,26 @@ public:
   LedPort()
   {
     if (MIDIClientCreate(CFSTR("TwentyEngine LEDs"), nullptr, nullptr, &mClient) == noErr)
+    {
       MIDIOutputPortCreate(mClient, CFSTR("LED out"), &mPort);
+      MIDIInputPortCreate(mClient, CFSTR("Knobs in"), &LedPort::ReadProc, this, &mIn);
+    }
   }
   ~LedPort()
   {
+    if (mIn && mSrc) MIDIPortDisconnectSource(mIn, mSrc);
+    if (mIn) MIDIPortDispose(mIn);
     if (mPort) MIDIPortDispose(mPort);
     if (mClient) MIDIClientDispose(mClient);
   }
+  // audio thread: next knob/cable message from the controller (status, data1, data2)
+  bool PopKnob(uint8_t &s, uint8_t &d1, uint8_t &d2) { uint32_t v; if (!mKnobs.pop(v)) return false; s = v >> 16; d1 = v >> 8; d2 = v; return true; }
+  // any thread: the knobs reach the plugin straight from the controller
+  bool KnobsDirect() const { return mDirect.load(std::memory_order_relaxed); }
   // look for a destination whose name contains "MS-20" (the iC shows up as "MS-20 Controller")
   void Rescan()
   {
+    RescanInput();
     mDest = 0;
     if (!mPort) return;
     const ItemCount n = MIDIGetNumberOfDestinations();
@@ -77,8 +99,62 @@ public:
 
 private:
   MIDIClientRef mClient = 0;
-  MIDIPortRef mPort = 0;
-  MIDIEndpointRef mDest = 0;
+  MIDIPortRef mPort = 0, mIn = 0;
+  MIDIEndpointRef mDest = 0, mSrc = 0;
+  KnobQueue mKnobs;
+  std::atomic<bool> mDirect{false};
+  uint8_t mRun = 0, mD[2] = {0, 0}; int mNd = 0; bool mSysex = false;   // parser state (Core MIDI thread)
+
+  // the controller's MIDI source, by the same names as FindController (the hardware versions first)
+  void RescanInput()
+  {
+    if (!mIn) return;
+    MIDIEndpointRef best = 0; int bestK = 0;
+    const ItemCount n = MIDIGetNumberOfSources();
+    for (ItemCount i = 0; i < n; i++)
+    {
+      MIDIEndpointRef ep = MIDIGetSource(i);
+      CFStringRef name = nullptr;
+      if (MIDIObjectGetStringProperty(ep, kMIDIPropertyDisplayName, &name) != noErr || !name) continue;
+      auto has = [&](CFStringRef t) { return CFStringFind(name, t, kCFCompareCaseInsensitive).location != kCFNotFound; };
+      int k = 0;
+      if (has(CFSTR("Ksoloti"))) k = 2;
+      else if (has(CFSTR("Teensy")) || has(CFSTR("Twenty Engine"))) k = 3;
+      else if (has(CFSTR("MS-20"))) k = 1;
+      CFRelease(name);
+      if (k > bestK) { bestK = k; best = ep; }
+    }
+    if (best == mSrc) { mDirect.store(best != 0); return; }
+    if (mSrc) MIDIPortDisconnectSource(mIn, mSrc);
+    mSrc = 0;
+    if (best && MIDIPortConnectSource(mIn, best, nullptr) == noErr) mSrc = best;
+    mDirect.store(mSrc != 0);
+  }
+  // Core MIDI thread: keep control changes (except CC 1, the mod wheel, which is playing, not a setting)
+  static void ReadProc(const MIDIPacketList *pl, void *self, void *)
+  {
+    LedPort *p = (LedPort *)self;
+    const MIDIPacket *pk = &pl->packet[0];
+    for (UInt32 i = 0; i < pl->numPackets; i++)
+    {
+      for (UInt16 j = 0; j < pk->length; j++) p->Parse(pk->data[j]);
+      pk = MIDIPacketNext(pk);
+    }
+  }
+  void Parse(uint8_t b)
+  {
+    if (b >= 0xF8) return;                                   // realtime
+    if (b == 0xF0) { mSysex = true; return; }
+    if (b == 0xF7) { mSysex = false; return; }
+    if (mSysex) return;
+    if (b & 0x80) { mRun = (b < 0xF0) ? b : 0; mNd = 0; return; }
+    if (!mRun) return;
+    mD[mNd++] = b;
+    const int need = ((mRun & 0xF0) == 0xC0 || (mRun & 0xF0) == 0xD0) ? 1 : 2;
+    if (mNd < need) return;
+    mNd = 0;
+    if ((mRun & 0xF0) == 0xB0 && mD[0] != 1) mKnobs.push(((uint32_t)mRun << 16) | ((uint32_t)mD[0] << 8) | mD[1]);
+  }
 };
 
 #elif defined(_WIN32)
@@ -134,6 +210,8 @@ public:
     if (r != MMSYSERR_NOERROR) Close();   // unplugged: look again at the next rescan
   }
   bool Connected() const { return mOut != nullptr; }
+  bool PopKnob(uint8_t &, uint8_t &, uint8_t &) { return false; }   // knobs come through the track on Windows
+  bool KnobsDirect() const { return false; }
 
   // Which controller is plugged in (same rules as on the Mac), from the MIDI inputs Windows lists.
   static int FindController()
@@ -173,6 +251,8 @@ public:
   void Rescan() {}
   void Send(const uint8_t*, int) {}
   bool Connected() const { return false; }
+  bool PopKnob(uint8_t &, uint8_t &, uint8_t &) { return false; }
+  bool KnobsDirect() const { return false; }
   static int FindController() { return 0; }
 };
 #endif
