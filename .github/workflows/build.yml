@@ -134,8 +134,9 @@ jobs:
         run: |
           VER=$(grep -E '#define PLUG_VERSION_STR' config.h | sed -E 's/.*"(.*)".*/\1/')
           mkdir -p pkgroot/au pkgroot/vst3
-          cp -R out/TwentyEngine.component out/TwentyEngineAutomation.component pkgroot/au/
-          cp -R out/TwentyEngine.vst3 out/TwentyEngineAutomation.vst3 pkgroot/vst3/
+          # 1.0: the installer carries Twenty Engine Instrument only (Automation is built and tested, not shipped)
+          cp -R out/TwentyEngine.component pkgroot/au/
+          cp -R out/TwentyEngine.vst3 pkgroot/vst3/
           pkgbuild --root pkgroot/au --identifier com.peterkohlmetzmoller.twentyengine.au --version "$VER" \
             --install-location /Library/Audio/Plug-Ins/Components --scripts installer/scripts au.pkg
           pkgbuild --root pkgroot/vst3 --identifier com.peterkohlmetzmoller.twentyengine.vst3 --version "$VER" \
@@ -148,11 +149,10 @@ jobs:
           rm -rf ~/Library/Audio/Plug-Ins/Components/TwentyEngine.component ~/Library/Audio/Plug-Ins/Components/TwentyEngineAutomation.component
           sudo installer -pkg TwentyEngine-Installer.pkg -target /
           ls -d /Library/Audio/Plug-Ins/Components/TwentyEngine.component /Library/Audio/Plug-Ins/VST3/TwentyEngine.vst3
-          ls -d /Library/Audio/Plug-Ins/Components/TwentyEngineAutomation.component /Library/Audio/Plug-Ins/VST3/TwentyEngineAutomation.vst3
+          if [ -e /Library/Audio/Plug-Ins/Components/TwentyEngineAutomation.component ]; then echo "::error::the installer must not install Automation"; exit 1; fi
           killall -9 AudioComponentRegistrar || true
           sleep 2
           auval -v aumu Tw20 Pkmo
-          auval -v aumu Tw2S Pkmo
 
       - uses: actions/upload-artifact@v4
         with:
@@ -352,8 +352,7 @@ jobs:
           Start-Process -Wait -FilePath .\TwentyEngine-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
           $inst = "C:\Program Files\Common Files\VST3\TwentyEngine.vst3"
           if (!(Test-Path $inst)) { throw "not installed" }
-          $sinst = "C:\Program Files\Common Files\VST3\TwentyEngineAutomation.vst3"
-          if (!(Test-Path $sinst)) { throw "Automation not installed" }
+          if (Test-Path "C:\Program Files\Common Files\VST3\TwentyEngineAutomation.vst3") { throw "the installer must not install Automation" }
           $val = Get-ChildItem -Recurse -Filter validator.exe iPlug2\Dependencies\IPlug\VST3_SDK\vbuild | Select-Object -First 1
           & $val.FullName $inst | Select-Object -Last 3
           if ($LASTEXITCODE -ne 0) { throw "validator failed on the installed plugin" }

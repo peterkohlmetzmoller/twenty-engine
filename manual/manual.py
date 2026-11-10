@@ -484,7 +484,7 @@ story.append(cards([
     ('Ksoloti Core', 'Inside the MS-20ic. Install the Ksoloti Patcher 1.1.0 or newer, update the board\'s firmware, open '
      '<font name="CondB">TwentyEngine_Ksoloti_v50c.axp</font> and choose Patch &gt; Upload to SD Card as Startup. '
      'Sounds are saved on the SD card.'),
-    ('Teensy 4.1', 'Inside the MS-20ic, with the PJRC audio shield. Open <font name="CondB">TwentyEngineTeensy.hex</font> in the free Teensy Loader and press the button on the Teensy. '
+    ('Teensy 4.1', 'Inside the MS-20ic, with the PJRC audio shield. Open <font name="CondB">TwentyEngineTeensy.hex</font> in the Teensy Loader (included in the download) and press the button on the Teensy. '
      'Sounds are saved in its own flash; no SD card needed. Oscillators run at 96 kHz and each voice drifts slightly, for an extra analog feel. Very low latency.'),
     ('AU / VST3 plugin', 'On your computer, played from a stock MS-20ic over USB. Mac (macOS 10.13 or newer, Intel and Apple Silicon) and Windows. '
      'The installer adds Twenty Engine Instrument, which records your playing like audio (p. 10). No graphics on purpose: the MS-20ic is the interface.'),
@@ -503,6 +503,10 @@ story.append(p('<b>The plugin and your panel.</b> The MS-20ic only sends where i
                'So the plugin remembers the last panel it saw and starts from it when it connects, with the start-up light show; '
                'the plugin window says <font name="CondB">Panel from memory</font>. Moved knobs while no plugin was open? '
                'Switch the volume off and on: the window then says <font name="CondB">Panel read from the MS-20ic</font>.', 'small'))
+story.append(Spacer(1, 3))
+story.append(p('<b>Installing the plugin.</b> Mac: if macOS says it cannot check the installer for malicious software, open '
+               'System Settings &gt; Privacy &amp; Security and click <b>Open Anyway</b>. Windows: if "Windows protected your PC" appears, '
+               'click <b>More info</b> &gt; <b>Run anyway</b>. Then restart your music software.', 'small'))
 story.append(Spacer(1, 3))
 story.append(p('Wiring and step-by-step installation are in the separate <b>build guide</b>. '
                'Twenty Engine is free software under the GNU GPL v3, built on Axoloti/Ksoloti, PJRC Teensy, iPlug2 and the VST 3 SDK. '
@@ -534,7 +538,8 @@ story.append(side(
             'the take it recorded itself is what plays.', 'small')), FULLW * 0.5))
 story.append(Spacer(1, 4))
 story.append(p('<b>Windows.</b> To keep a take and the panel apart, the plugin opens the MS-20ic next to your DAW. Windows 11 with Windows MIDI Services allows that. '
-               'On older Windows the plugin says so in its window and works like a normal MIDI instrument: knob moves go into the region as MIDI CC and play back from there.', 'small'))
+               'On older Windows the plugin says so in its window and works like a normal MIDI instrument: knob moves go into the region as MIDI CC and play back from there. '
+               'For the panel LEDs, don\'t enable the MS-20ic as a MIDI output in your DAW.', 'small'))
 
 doc = BaseDocTemplate(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'TwentyEngine_Manual.pdf'), pagesize=PAGE,
                       leftMargin=M, rightMargin=M, topMargin=14 * mm, bottomMargin=14 * mm,
