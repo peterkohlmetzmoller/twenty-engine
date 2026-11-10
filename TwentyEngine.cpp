@@ -421,8 +421,9 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   // performance recall (engine/recall.h): the track plays the notes, the switch and the mod wheel; knob and
   // cable CCs on the track are ignored when the knobs reach the plugin straight from the controller
 #if TWENTY_STUDIO
-  // Automation: the region's settings (channels 16/15, engine/paramstream.h), applied per block in ProcessBlock
-  if (PanelPort::Get().Ok() && mStream.push(msg.mStatus, msg.mData1, msg.mData2)) return;
+  // Automation: the region's settings (channels 16/15, engine/paramstream.h), applied per block in ProcessBlock -
+  // always read, also where this computer has no port of its own (a project recorded elsewhere keeps its sounds)
+  if (mStream.push(msg.mStatus, msg.mData1, msg.mData2)) return;
 #endif
   if (!mLed.KnobsDirect()) { mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2); return; }   // Windows: the track plays the live engine
   DrainController();                                                  // what the controller sent first: tells live from region

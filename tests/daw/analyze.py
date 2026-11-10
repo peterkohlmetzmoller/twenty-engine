@@ -71,10 +71,8 @@ for name in list(res):
             if not base: continue
             gain = base['early'] / max(r['early'], 1e-9)    # early in the sweep the filter is nearly closed: much darker
             # required: MIDI CC moves the instrument's knobs (no controller attached), automation moves Studio's
-            # Automation's stream needs the plugin's own MIDI port (Mac; Windows has none yet)
-            windows = re.search(r'^REAPER .* OS Win', log, re.M) is not None
-            need = (name.startswith('inst') and kind == 'cc74') or (name.startswith('studio') and kind == 'auto') or \
-                   (name.startswith('studio') and kind == 'stream' and not windows)
+            # Automation plays a region's stream everywhere (recording it needs the plugin's own port; Mac only so far)
+            need = (name.startswith('inst') and kind == 'cc74') or (name.startswith('studio') and kind in ('auto', 'stream'))
             ok = gain > 1.5
             print('%-22s the sweep moves the filter: chord %.1fx darker than the plain render, end %.2fx  %s' % (
                 name, gain, r['late'] / max(base['late'], 1e-9), ('ok' if ok else 'FAIL') if need else '(info)'))
