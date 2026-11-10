@@ -163,6 +163,13 @@ local function run()
     render("both_vst3")
   end
   clear()
+  -- the instrument's window first (it is small), then Studio's: the log shows which one a host survives
+  if os.getenv("TE_UISHOT") and inst then
+    local ti, fi = newTrack(inst)
+    reaper.TrackFX_Show(ti, fi, 3)
+    L("WINDOW_INST", inst)
+    reaper.TrackFX_Show(ti, fi, 2)
+  end
   -- Studio's editor window, left open for a screenshot (with two cables patched)
   if os.getenv("TE_UISHOT") and studio then
     local tr, fx = newTrack(studio)
