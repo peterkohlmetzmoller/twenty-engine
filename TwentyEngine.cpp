@@ -226,6 +226,9 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
   }
 #endif
 #if IPLUG_DSP
+#if TWENTY_STUDIO
+  PanelPort::Get();   // the plugin's own MIDI port exists from the start, so the DAW sees it before recording
+#endif
   if (mPanelPath[0] && mPanelMem.load(mPanelPath)) mPanelSrc.store(1);   // the last panel: replayed when the controller connects
 #endif
   // Same ranges as the Ksoloti editor shows them: knobs 0..64 (bipolar -64..64), selectors as integers.
@@ -326,6 +329,12 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   if (!mLed.KnobsDirect()) { mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2); return; }   // Windows: the track plays the live engine
   DrainController();                                                  // what the controller sent first: tells live from region
   const int type = msg.mStatus & 0xF0;
+#if TWENTY_STUDIO
+  { int none = -1;                                                     // test build: the first marker the track sends after play starts
+    if (type == 0xB0 && msg.mData1 == 117) mRx117.compare_exchange_strong(none, msg.mData2);
+    none = -1;
+    if (type == 0xB0 && msg.mData1 == 118) mRx118.compare_exchange_strong(none, msg.mData2); }
+#endif
   if (type == 0xB0 && msg.mData1 != 1) return;                        // knob/cable data on the track: never used
   if (mRecall.trackIsLive(msg.mStatus, msg.mData1, msg.mData2)) return;   // the host's copy of live playing: the live engine has it
   if (type == 0x90 && msg.mData2 > 0) mRecall.trackNoteOn(msg.mOffset, msg.mData1);
@@ -337,7 +346,8 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   const double sr = GetSampleRate(), tempo = GetTempo();
   const bool direct = mLed.KnobsDirect();
   const bool running = GetTransportIsRunning();
-  if (running && !mWasRunning) { mDiagHost.store(0); mDiagHostBits.store(0); mDiagSent.store(0); }   // test counters: per playback
+  if (running && !mWasRunning) { mDiagHost.store(0); mDiagHostBits.store(0); mDiagSent.store(0); mPortStartReq.store(true); mPortNoteThisRun = false; }
+  if (!running) { mRx117.store(-1); mRx118.store(-1); }   // test build: the first marker the track sends after play starts   // test counters: per playback
   mWasRunning = running; mRunningA.store(running);
   // Automation: is the host recording? (AU transportStateProc2 / VST3 kRecording, tools/iplug2-recording.patch)
   const bool rec = ms20::hostRecording(running, mTimeInfo.mRecordingKnown, mTimeInfo.mTransportIsRecording);
@@ -445,6 +455,11 @@ void TwentyEngine::OnIdle()
     const uint32_t v = mPanelMem.changed();
     if (v != mPanelSeenVer) { mPanelSeenVer = v; mPanelQuiet = 0; }
     else if (v != mPanelSavedVer && ++mPanelQuiet >= 50 && mPanelPath[0]) { if (mPanelMem.save(mPanelPath)) mPanelSavedVer = v; mPanelQuiet = 0; } }
+#if TWENTY_STUDIO
+  // 1d. test build: marker CCs through the plugin's own port (CC 117 at transport start, CC 118 at the first key)
+  if (mPortStartReq.exchange(false)) { mPortStartN = mPortStartN % 127 + 1; const uint8_t m[3] = {0xB0, 117, (uint8_t)mPortStartN}; PanelPort::Get().Send(m, 3); }
+  if (mPortNoteReq.exchange(false))  { mPortNoteN = mPortNoteN % 127 + 1;   const uint8_t m[3] = {0xB0, 118, (uint8_t)mPortNoteN};  PanelPort::Get().Send(m, 3); }
+#endif
   // 2. patch memory: write the file after a save on the keys (never on the audio thread).
   //    While stored settings play back, replayed save gestures never overwrite the memory.
   mHost->pollMemorySave();
@@ -501,6 +516,9 @@ void TwentyEngine::DrainController()
   while (mLed.PopKnob(s, d1, d2))
   {
     mPanelMem.onMessage(s, d1, d2);                    // keep the panel (MS20PANEL.BIN)
+#if TWENTY_STUDIO
+    if ((s & 0xF0) == 0x90 && d2 > 0 && mRunningA.load() && !mPortNoteThisRun) { mPortNoteThisRun = true; mPortNoteReq.store(true); }   // test build
+#endif
     if ((s & 0xF0) == 0xB0 && (d1 == 102 || d1 == 103)) { s = (uint8_t)((d1 == 102 ? 0x90 : 0x80) | (s & 0x0F)); d1 = d2; d2 = (s & 0xF0) == 0x90 ? 100 : 0; }
     const bool late = mRecall.directMsg(s, d1, d2);   // the host's copy of this key came first
     if (late) mPlay->midi(0, (uint8_t)(0x80 | (s & 0x0F)), d1, 0);   // silence the host's copy on the playback engine
@@ -515,7 +533,11 @@ void TwentyEngine::StudioDiag(char* out, int n) const
   int k = 0; uint64_t b = mDiagHostBits.load(); while (b) { k += (int)(b & 1); b >>= 1; }
   const int rec = mDiagRec.load();
   const char* now = !(rec & 1) ? "no transport info" : (rec & 2) ? "RECORDING" : mRunningA.load() ? "playing" : "stopped";
-  snprintf(out, n, "Host: %s \xC2\xB7 take start wrote %d \xC2\xB7 knob moves wrote %d", now, mDiagTouched.load(), mDiagSent.load());
+  (void)now;
+  const int a = mRx117.load(), b = mRx118.load();
+  char ra[8], rb[8]; snprintf(ra, sizeof(ra), a < 0 ? "-" : "%d", a); snprintf(rb, sizeof(rb), b < 0 ? "-" : "%d", b);
+  snprintf(out, n, "Port %s \xC2\xB7 sent 117=%d 118=%d \xC2\xB7 track since play: 117=%s 118=%s",
+           PanelPort::Get().Ok() ? "OK" : "FAILED", mPortStartN, mPortNoteN, ra, rb);
   (void)k;
 #else
   if (n > 0) out[0] = 0;

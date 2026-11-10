@@ -88,7 +88,8 @@ public:
       if (MIDIObjectGetStringProperty(MIDIGetSource(i), kMIDIPropertyDisplayName, &name) != noErr || !name) continue;
       auto has = [&](CFStringRef s) { return CFStringFind(name, s, kCFCompareCaseInsensitive).location != kCFNotFound; };
       int k = 0;
-      if (has(CFSTR("Ksoloti"))) k = 2;
+      if (has(CFSTR("Twenty Engine Panel"))) k = 0;   // our own port (PanelPort), never the controller
+      else if (has(CFSTR("Ksoloti"))) k = 2;
       else if (has(CFSTR("Teensy")) || has(CFSTR("Twenty Engine"))) k = 3;
       else if (has(CFSTR("MS-20"))) k = 1;
       CFRelease(name);
@@ -118,7 +119,8 @@ private:
       if (MIDIObjectGetStringProperty(ep, kMIDIPropertyDisplayName, &name) != noErr || !name) continue;
       auto has = [&](CFStringRef t) { return CFStringFind(name, t, kCFCompareCaseInsensitive).location != kCFNotFound; };
       int k = 0;
-      if (has(CFSTR("Ksoloti"))) k = 2;
+      if (has(CFSTR("Twenty Engine Panel"))) k = 0;   // our own port (PanelPort), never the controller
+      else if (has(CFSTR("Ksoloti"))) k = 2;
       else if (has(CFSTR("Teensy")) || has(CFSTR("Twenty Engine"))) k = 3;
       else if (has(CFSTR("MS-20"))) k = 1;
       CFRelease(name);
@@ -156,6 +158,34 @@ private:
     mNd = 0;
     mKnobs.push(((uint32_t)mRun << 16) | ((uint32_t)mD[0] << 8) | (need > 1 ? mD[1] : 0));
   }
+};
+
+// PanelPort: the plugin's own MIDI port, "Twenty Engine Panel". What the plugin sends here reaches the DAW like
+// any MIDI input, so a recording track (input "All") records it into the region. One port per process, shared
+// by every instance. Main thread only.
+class PanelPort
+{
+public:
+  static PanelPort& Get() { static PanelPort p; return p; }
+  bool Ok() const { return mSrc != 0; }
+  void Send(const uint8_t* bytes, int len)
+  {
+    if (!mSrc || len <= 0 || len > 200) return;
+    Byte buf[512];
+    MIDIPacketList* pl = (MIDIPacketList*)buf;
+    MIDIPacket* pk = MIDIPacketListInit(pl);
+    pk = MIDIPacketListAdd(pl, sizeof(buf), pk, 0, (ByteCount)len, bytes);
+    if (pk) MIDIReceived(mSrc, pl);
+  }
+private:
+  PanelPort()
+  {
+    if (MIDIClientCreate(CFSTR("TwentyEngine Panel"), nullptr, nullptr, &mClient) != noErr) return;
+    if (MIDISourceCreate(mClient, CFSTR("Twenty Engine Panel"), &mSrc) != noErr) { mSrc = 0; return; }
+    MIDIObjectSetIntegerProperty(mSrc, kMIDIPropertyUniqueID, 0x54455031);   // stable: the DAW remembers the port
+  }
+  MIDIClientRef mClient = 0;
+  MIDIEndpointRef mSrc = 0;
 };
 
 #elif defined(_WIN32)
@@ -295,4 +325,9 @@ public:
   bool KnobsDirect() const { return false; }
   static int FindController() { return 0; }
 };
+#endif
+
+#ifndef __APPLE__
+// PanelPort: Mac only for now (Windows needs Windows MIDI Services for a port of our own)
+class PanelPort { public: static PanelPort& Get() { static PanelPort p; return p; } bool Ok() const { return false; } void Send(const uint8_t*, int) {} };
 #endif

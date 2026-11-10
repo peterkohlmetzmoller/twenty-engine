@@ -66,6 +66,9 @@ private:
   bool mWasRunning = false, mWasRec = false, mPanelInit = false;
   void WriteToHost(int idx, int32_t raw);   // Automation: one value as a host gesture (Latch writes it)
   int64_t mClock = 0;
+  // test build (Automation): marker CCs through the plugin's own port, to see what Logic records and chases
+  std::atomic<bool> mPortStartReq{false}, mPortNoteReq{false}; bool mPortNoteThisRun = false;
+  int mPortStartN = 0, mPortNoteN = 0; std::atomic<int> mRx117{-1}, mRx118{-1};
   // the controller's last panel (engine/panel_memory.h): replayed as a start-up dump when the controller connects
   ms20::PanelMemory mPanelMem;
   char mPanelPath[1100] = "";
