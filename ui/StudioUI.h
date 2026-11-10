@@ -285,17 +285,17 @@ public:
     if (mLook)   // the PW knob: the sticker's morph wave for the selected waveform, and what it is called
     {
       const Look lk = mLook(); mInfo = lk.info;
-      const float top = mCY + mR * 1.5f + 0.6f * S, ww = 9.f * S, hh = 1.7f * S;
+      const float top = mCY + mR * 1.5f + 0.5f * S, ww = 9.f * S, hh = 1.5f * S;
       Morph(g, lk.morph, mCX - ww / 2, top, ww, hh);
-      Txt(g, mCX, top + hh + 1.55f * S, lk.label.c_str(), 1.3f);
+      Txt(g, mCX, top + hh + 1.9f * S, lk.label.c_str(), 1.72f);
     }
     else if (!mLabel.empty() && !mAbove) Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, mLabel.c_str(), 1.72f);
     // the knob's current job (ESP layers), as on the ESP sticker: orange italic above
-    if (!mFn.empty()) Txt(g, mCX, mCY - mR * 1.62f - 0.3f * S, mFn.c_str(), 1.6f, kAccent, 'c', kFI);
+    if (!mFn.empty()) Txt(g, mCX, mCY - mR * 1.62f - 0.3f * S, mFn.c_str(), 1.72f, kAccent);
     for (size_t i = 0; i < mZones.size(); i++)   // play mode zones around SIGNAL LEVEL
     {
       const float za = Rad(240.f - 300.f * (float)i / (float)(mZones.size() - 1));
-      Txt(g, mCX + mR * 2.0f * std::cos(za), mCY - mR * 1.75f * std::sin(za) + 0.5f * S, mZones[i].c_str(), 1.25f, kAccent, 'c', kFI);
+      Txt(g, mCX + mR * 2.0f * std::cos(za), mCY - mR * 1.75f * std::sin(za) + 0.5f * S, mZones[i].c_str(), 1.3f, kAccent);
     }
   }
   void OnMouseOver(float x, float y, const IMouseMod& m) override { IKnobControlBase::OnMouseOver(x, y, m); Report(); SetDirty(false); }
@@ -443,12 +443,12 @@ public:
       arc(18.f / 64.f + 0.02f, 42.f / 64.f - 0.02f, zone == 1 ? kAccent : kAccent.WithOpacity(0.45f), zone == 1 ? 3.5f : 2.f);
       arc(42.f / 64.f + 0.02f, 1.f, zone == 2 ? kAccent : kAccent.WithOpacity(0.45f), zone == 2 ? 3.5f : 2.f);
       // zone names: VCO2 ARP on the orange line above (as on the sticker), POLY and LATCH under the ends of the arc
-      Txt(g, mCX, mCY - mR * 1.62f - 0.3f * S, "VCO2 ARP", 1.6f, zone == 1 ? kAccent : kAccent.WithOpacity(0.65f), 'c', kFI);
-      Txt(g, mCX - mR * 1.45f, mCY + mR * 1.75f, "POLY", 1.3f, zone == 0 ? kInk : kGrey, 'c', zone == 0 ? kFB : kF);
-      Txt(g, mCX + mR * 1.45f, mCY + mR * 1.75f, "LATCH", 1.3f, zone == 2 ? kAccent : kAccent.WithOpacity(0.65f), 'c', kFI);
+      Txt(g, mCX, mCY - mR * 1.62f - 0.3f * S, "VCO2 ARP", 1.72f, zone == 1 ? kAccent : kAccent.WithOpacity(0.65f));
+      Txt(g, mCX - mR * 1.45f, mCY + mR * 1.75f, "POLY", 1.3f, zone == 0 ? kInk : kGrey);
+      Txt(g, mCX + mR * 1.45f, mCY + mR * 1.75f, "LATCH", 1.3f, zone == 2 ? kAccent : kAccent.WithOpacity(0.65f));
     }
     else if (mMarks == 2)   // OCTAVES 1..4
-      for (int i = 0; i < 4; i++) { float x, y; at(i / 3.f, mR * 1.9f, x, y); Txt(g, x, y + 4.f, std::to_string(i + 1).c_str(), 1.45f, orange, 'c', kFI); }
+      for (int i = 0; i < 4; i++) { float x, y; at(i / 3.f, mR * 1.9f, x, y); Txt(g, x, y + 4.f, std::to_string(i + 1).c_str(), 1.45f, orange); }
     else if (mMarks == 3)   // ORDER: up, down, up/down, random
       for (int i = 0; i < 4; i++) { float x, y; at(i / 3.f, mR * 1.95f, x, y); OrderGlyph(g, i, x, y, 0.95f * S, orange); }
 
@@ -457,19 +457,19 @@ public:
     if (mJob[1].param >= 0)
     {
       const float y = mCY - mR * 1.62f - 0.3f * S;
-      Txt(g, mCX, y, mJob[1].name, 1.6f, orange, 'c', kFI);
+      Txt(g, mCX, y, mJob[1].name, 1.72f, orange);
       mRectArp = IRECT(mCX - 7.f * S, y - 2.f * S, mCX + 7.f * S, y + 0.5f * S);
     }
     if (mMarks == 1) { Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 1.2f * S, "PLAY MODE", 1.72f); }
     else
     {
       const float y = mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S;
-      Txt(g, mCX, y, mJob[0].name, 1.72f, black, 'c', mActive == 0 ? kFB : kF);
+      Txt(g, mCX, y, mJob[0].name, 1.72f, black);
       mRectDelay = IRECT(mCX - 8.f * S, y - 2.f * S, mCX + 8.f * S, y + 0.5f * S);
       if (mJob[2].param >= 0)
       {
         char b[48]; snprintf(b, sizeof(b), "SWITCH: %s", mJob[2].name);
-        Txt(g, mCX, y + 1.9f * S, b, 1.3f, mActive == 2 ? kInk : kGrey, 'c', mActive == 2 ? kFB : kF);
+        Txt(g, mCX, y + 1.9f * S, b, 1.3f, mActive == 2 ? kInk : kGrey);
         mRectSw = IRECT(mCX - 8.f * S, y + 0.6f * S, mCX + 8.f * S, y + 2.3f * S);
       }
     }
