@@ -87,12 +87,71 @@ static void Wave(IGraphics& g, const char* kind, float x, float y, float s, cons
          {x0 + w / 2 + w / 2 * d * 2, h / 2}, {x0 + w / 2 + w / 2 * d * 2, -h / 2}, {w / 2, -h / 2}};
   }
   else if (k == "noise") { const float r[13] = {0, .3f, -.4f, .5f, -.2f, .45f, -.5f, .1f, .4f, -.35f, .25f, -.45f, 0}; for (int i = 0; i <= 12; i++) p.push_back({-w / 2 + w * i / 12.f, r[i] * h * 1.2f}); }
+  else if (k == "phsaw")
+  {
+    for (int i = 0; i <= 12; i++) { const float t = i / 12.f; p.push_back({-w / 2 + w / 2 * t, -h / 2 + h * t + ((i % 12) ? 0.28f * h / 2 * std::sin(6.2831853f * 3 * t) : 0.f)}); }
+    p.push_back({0, -h / 2});
+    for (int i = 0; i <= 12; i++) { const float t = i / 12.f; p.push_back({w / 2 * t, -h / 2 + h * t + ((i % 12) ? 0.28f * h / 2 * std::sin(6.2831853f * 3 * t) : 0.f)}); }
+  }
+  else if (k == "pink") { const float r[9] = {0, .45f, .7f, .5f, -.2f, -.6f, -.4f, .2f, 0}; for (int i = 0; i < 9; i++) p.push_back({-w / 2 + w * i / 8.f, r[i] * h / 2}); }
   else if (k == "sine") { for (int i = 0; i <= 24; i++) { const float t = i / 24.f; p.push_back({-w / 2 + w * t, std::sin(t * 6.2831853f) * h / 2}); } }
   else if (k == "rnd") { const float r[9] = {0, .7f, .2f, .9f, -.6f, -.2f, .5f, -.8f, .1f}; for (int i = 0; i < 9; i++) p.push_back({-w / 2 + w * i / 8.f, r[i] * h / 2}); }
   if (p.empty()) return;
   g.PathMoveTo(x + p[0].first, y - p[0].second);
   for (size_t i = 1; i < p.size(); i++) g.PathLineTo(x + p[i].first, y - p[i].second);
   g.PathStroke(IPattern(c), lw, o);
+}
+
+// the PW sticker's legend (label/pw_label.py morph()): one wave from knob-left to knob-right, the Twenty Engine part
+// fading to orange. kind: 0 sine -> triangle, 1 saw -> phaser, 2 square -> narrow pulse, 3 white -> pink noise
+static IColor Mix(const IColor& a, const IColor& b, float t)
+{
+  return IColor(255, (int)(a.R + (b.R - a.R) * t), (int)(a.G + (b.G - a.G) * t), (int)(a.B + (b.B - a.B) * t));
+}
+static void Morph(IGraphics& g, int kind, float x, float y, float w, float h, int cycles = 3)
+{
+  const float m = y + h / 2, A = h / 2;
+  struct P { float x, y, t; };
+  std::vector<P> pts;
+  if (kind == 2)   // the pulse narrows cycle by cycle (all original MS-20)
+  {
+    for (int k = 0; k < cycles; k++)
+    {
+      const float t0 = (float)k / cycles, t1 = (float)(k + 1) / cycles, d = 0.5f - 0.36f * (k + 0.5f) / cycles, xe = t0 + (t1 - t0) * d;
+      pts.push_back({x + w * t0, m + A, t0}); pts.push_back({x + w * t0, m - A, t0}); pts.push_back({x + w * xe, m - A, xe}); pts.push_back({x + w * xe, m + A, xe});
+    }
+    pts.push_back({x + w, m + A, 1.f});
+  }
+  else if (kind == 3)   // white -> pink: steps get slower and smoother
+  {
+    uint32_t rs = 21u; auto rnd = [&]() { rs = rs * 1664525u + 1013904223u; return ((rs >> 8) & 0xFFFF) / 32767.5f - 1.f; };
+    float t = 0.f, prev = 0.f; pts.push_back({x, m - A * rnd(), 0.f});
+    while (t < 1.f)
+    {
+      t = std::min(1.f, t + 0.011f + 0.05f * t * t);
+      const float a = 0.55f * t; prev = a * prev + (1 - a) * rnd();
+      const float v = std::max(-1.f, std::min(1.f, prev / std::max(0.45f, 1 - 0.55f * a)));
+      pts.push_back({x + w * t, m - A * v, t});
+    }
+  }
+  else
+  {
+    const int N = 160;
+    for (int i = 0; i <= N; i++)
+    {
+      const float t = (float)i / N, ph = std::fmod(cycles * t, 1.f);
+      float v;
+      if (kind == 0) { const float tri = ph < 0.5f ? 4 * ph - 1 : 3 - 4 * ph; v = (1 - t) * std::sin(6.2831853f * (ph - 0.25f)) + t * tri; }
+      else v = (2 * ph - 1) * (1 - 0.25f * t) + 0.25f * t * std::sin(6.2831853f * 4 * ph);
+      pts.push_back({x + w * t, m - A * v, t});
+    }
+  }
+  for (size_t i = 0; i + 1 < pts.size(); i++)
+  {
+    const float t = pts[i].t;
+    const IColor c = kind == 0 ? Mix(kAccent, kInk, t) : (kind == 2 ? kInk : Mix(kInk, kAccent, t));   // the new sound in orange
+    g.DrawLine(c, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, nullptr, 1.4f);
+  }
 }
 
 static void Arrow(IGraphics& g, std::vector<std::pair<float, float>> pts, const IColor& c = kGrey)
@@ -205,6 +264,9 @@ public:
     mCX(cx), mCY(cy), mR(rUnits * S), mLabel(label), mInfo(infoName), mAbove(labelAbove) {}
   void SetFunction(const char* fn, const char* info) { mFn = fn; mInfo = info; SetDirty(false); }
   void SetZones(std::vector<std::string> z) { mZones = z; }
+  // label, hover name and the symbols at both ends of the scale, worked out while drawing (PW follows VCO 1's waveform)
+  struct Look { std::string label, info; int morph; };   // morph: the PW sticker's wave (see Morph())
+  void SetLook(std::function<Look()> f) { mLook = f; }
   void Draw(IGraphics& g) override
   {
     for (int i = 0; i < 11; i++)
@@ -219,7 +281,14 @@ public:
     g.PathMoveTo(mCX + mR * 0.1f * std::cos(a), mCY - mR * 0.1f * std::sin(a));
     g.PathLineTo(mCX + mR * 0.86f * std::cos(a), mCY - mR * 0.86f * std::sin(a));
     g.PathStroke(IPattern(kInk), mR * 0.13f, o);
-    if (!mLabel.empty() && !mAbove) Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, mLabel.c_str(), 1.72f);
+    if (mLook)   // the PW knob: the sticker's morph wave for the selected waveform, and what it is called
+    {
+      const Look lk = mLook(); mInfo = lk.info;
+      const float top = mCY + mR * 1.5f + 0.9f * S, ww = 9.5f * S, hh = 2.1f * S;
+      Morph(g, lk.morph, mCX - ww / 2, top, ww, hh);
+      Txt(g, mCX, top + hh + 1.75f * S, lk.label.c_str(), 1.45f);
+    }
+    else if (!mLabel.empty() && !mAbove) Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, mLabel.c_str(), 1.72f);
     // the knob's current job (ESP layers), as on the ESP sticker: orange italic above
     if (!mFn.empty()) Txt(g, mCX, mCY - mR * 1.62f - 0.3f * S, mFn.c_str(), 1.6f, kAccent, 'c', kFI);
     for (size_t i = 0; i < mZones.size(); i++)   // play mode zones around SIGNAL LEVEL
@@ -232,9 +301,11 @@ public:
   void OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& m) override { IKnobControlBase::OnMouseDrag(x, y, dX, dY, m); Report(); }
   void OnMouseOut() override { IKnobControlBase::OnMouseOut(); SetDirty(false); }
   bool IsHit(float x, float y) const override { return (x - mCX) * (x - mCX) + (y - mCY) * (y - mCY) <= mR * mR * 2.4f; }
+  bool IsDirty() override { if (mLook && ++mTick >= 10) { mTick = 0; return true; } return IKnobControlBase::IsDirty(); }
 private:
+  int mTick = 0;
   void Report() { if (const IParam* p = GetParam()) { char b[96]; snprintf(b, sizeof(b), "%s  %.1f", mInfo.c_str(), p->Value()); SetInfo(b); } }
-  float mCX, mCY, mR; std::string mLabel, mInfo, mFn; bool mAbove; std::vector<std::string> mZones;
+  float mCX, mCY, mR; std::string mLabel, mInfo, mFn; bool mAbove; std::vector<std::string> mZones; std::function<Look()> mLook;
 };
 
 // ---------------------------------------------------------------- rotary switch (panel.py rotary())
@@ -733,7 +804,20 @@ inline void Layout(IGraphics* g, PatchHost* ph, MemoryHost* mh, std::function<in
   auto knob = [&](int col, float yd, int param, const char* label, const char* info) { g->AttachControl(new PKnob(X(COLX[col]), Yd(yd), 3.0f, param, label, info)); };
   // VCO 1 / VCO 2 (rotaries: the waveform symbols are the sounds the engine makes in each position)
   g->AttachControl(new PRotary(X(COLX[0]), Yd(RA), PARAM_INDEX_MS20__Voices_vco1wave, "WAVEFORM", "VCO 1 WAVEFORM  \xC2\xB7  PULSE WIDTH shapes every waveform", {"w:tri", "w:saw", "w:pulse", "w:noise"}));
-  knob(0, RB, PARAM_INDEX_MS20__Voices_pw, "PULSE\nWIDTH", "VCO 1 PULSE WIDTH");
+  {
+    PKnob* pw = new PKnob(X(COLX[0]), Yd(RB), 3.0f, PARAM_INDEX_MS20__Voices_pw, "PULSE\nWIDTH", "VCO 1 PULSE WIDTH");
+    pw->SetLook([g]() -> PKnob::Look {   // what PW does depends on VCO 1's waveform
+      const int w = (int)std::lround(g->GetDelegate()->GetParam(PARAM_INDEX_MS20__Voices_vco1wave)->Value());
+      switch (w)
+      {
+        case 0: return {"SINE \xE2\x86\x92 TRIANGLE", "VCO 1  \xC2\xB7  PW morphs the sine into a triangle", 0};
+        case 1: return {"PHASER", "VCO 1  \xC2\xB7  PW is the phaser depth on the saw (the MG sweeps it)", 1};
+        case 3: return {"WHITE \xE2\x86\x92 PINK", "VCO 1  \xC2\xB7  PW turns white noise into pink", 3};
+        default: return {"PULSE WIDTH", "VCO 1  \xC2\xB7  PULSE WIDTH", 2};
+      }
+    });
+    g->AttachControl(pw);
+  }
   g->AttachControl(new PRotary(X(COLX[0]), Yd(RC), PARAM_INDEX_MS20__Voices_vco1oct, "SCALE", "VCO 1 SCALE", {"32'", "16'", "8'", "4'"}));
   knob(0, RD, PARAM_INDEX_MS20__Voices_portamento, "TIME", "PORTAMENTO  \xC2\xB7  Multibend glide in poly");
   g->AttachControl(new PRotary(X(COLX[1]), Yd(RA), PARAM_INDEX_MS20__Voices_vco2wave, "WAVEFORM", "VCO 2 WAVEFORM", {"w:tri", "w:saw", "w:sq", "w:ring"}));
