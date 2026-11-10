@@ -48,6 +48,15 @@ public:
   void StudioDiag(char* out, int n) const;                   // Studio test build: what Logic does with the knobs
   void RecallClear() { mRecall.clear(); }                    // UI: forget them
   int PanelSource() const { return mPanelSrc.load(); }       // UI: 0 unknown, 1 from memory (MS20PANEL.BIN), 2 read from the controller
+#if IPLUG_EDITOR && defined(_WIN32)
+  // Windows: the window is drawn with plain GDI instead of OpenGL (some graphics drivers, e.g. in virtual
+  // machines, crashed the OpenGL window)
+  void* OpenWindow(void* pParent) override;
+  void CloseWindow() override;
+  void PaintStatus(HDC dc);
+  static LRESULT CALLBACK StatusWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp);
+  HWND mStatusWnd = nullptr;
+#endif
 
 private:
   static int32_t ToRaw(int idx, double value);     // plugin parameter value -> engine (Ksoloti) units

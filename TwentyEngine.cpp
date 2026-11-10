@@ -272,6 +272,142 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 #endif
 }
 
+#if IPLUG_EDITOR && defined(_WIN32)
+// ---- Windows: the status window with GDI (same content as StatusControl, no OpenGL) ----
+#if TWENTY_STUDIO
+static const char* kStatusClass = "TwentyEngineAutomationStatus";
+#else
+static const char* kStatusClass = "TwentyEngineInstrumentStatus";
+#endif
+static HINSTANCE StatusModule()
+{
+  HMODULE m = nullptr;
+  GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&StatusModule, &m);
+  return (HINSTANCE)m;
+}
+static void DrawUtf8(HDC dc, const char* s, RECT r, UINT fmt)
+{
+  wchar_t w[256];
+  if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w, 256) > 0) DrawTextW(dc, w, -1, &r, fmt | DT_NOPREFIX);
+}
+static HFONT StatusFont(int px) { return CreateFontA(-px, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, "Segoe UI"); }
+
+void* TwentyEngine::OpenWindow(void* pParent)
+{
+  HINSTANCE hi = StatusModule();
+  WNDCLASSA have;
+  if (!GetClassInfoA(hi, kStatusClass, &have))
+  {
+    WNDCLASSA wc = {};
+    wc.style = CS_DBLCLKS; wc.lpfnWndProc = &TwentyEngine::StatusWndProc; wc.hInstance = hi;
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW); wc.lpszClassName = kStatusClass;
+    RegisterClassA(&wc);
+  }
+  mStatusWnd = CreateWindowExA(0, kStatusClass, "", WS_CHILD | WS_VISIBLE, 0, 0, PLUG_WIDTH, PLUG_HEIGHT, (HWND)pParent, nullptr, hi, nullptr);
+  if (mStatusWnd) { SetWindowLongPtrA(mStatusWnd, GWLP_USERDATA, (LONG_PTR)this); SetTimer(mStatusWnd, 1, 500, nullptr); }
+  return mStatusWnd;
+}
+
+void TwentyEngine::CloseWindow()
+{
+  if (!mStatusWnd) return;
+  KillTimer(mStatusWnd, 1);
+  SetWindowLongPtrA(mStatusWnd, GWLP_USERDATA, 0);
+  DestroyWindow(mStatusWnd);
+  mStatusWnd = nullptr;
+  UnregisterClassA(kStatusClass, StatusModule());   // a DLL's classes outlive it otherwise (fails harmlessly while other windows exist)
+}
+
+LRESULT CALLBACK TwentyEngine::StatusWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+{
+  TwentyEngine* p = (TwentyEngine*)GetWindowLongPtrA(h, GWLP_USERDATA);
+  switch (msg)
+  {
+    case WM_TIMER: InvalidateRect(h, nullptr, FALSE); return 0;
+    case WM_ERASEBKGND: return 1;
+    case WM_LBUTTONDBLCLK:   // double-click on the takes line: forget the recorded takes
+    {
+      const int y = (short)HIWORD(lp);
+      if (p && y >= 50 && y <= 70 && p->RecallTakes() > 0) { p->RecallClear(); InvalidateRect(h, nullptr, FALSE); }
+      return 0;
+    }
+    case WM_PAINT:
+    {
+      PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps);
+      if (p) p->PaintStatus(dc);
+      EndPaint(h, &ps);
+      return 0;
+    }
+  }
+  return DefWindowProcA(h, msg, wp, lp);
+}
+
+void TwentyEngine::PaintStatus(HDC wdc)
+{
+  const int W = PLUG_WIDTH, H = PLUG_HEIGHT;
+  HDC dc = CreateCompatibleDC(wdc);
+  HBITMAP bm = CreateCompatibleBitmap(wdc, W, H);
+  HGDIOBJ oldBm = SelectObject(dc, bm);
+  const COLORREF ink = RGB(20, 20, 20), paper = RGB(255, 255, 255), dim = RGB(150, 150, 150);
+  RECT all = {0, 0, W, H};
+  HBRUSH bPaper = CreateSolidBrush(paper); FillRect(dc, &all, bPaper); DeleteObject(bPaper);
+  HPEN pen = CreatePen(PS_SOLID, 2, ink); HGDIOBJ oldPen = SelectObject(dc, pen);
+  HGDIOBJ oldBr = SelectObject(dc, GetStockObject(NULL_BRUSH));
+  Rectangle(dc, 6, 6, W - 6, H - 6);
+  SetBkMode(dc, TRANSPARENT);
+  const int L = 22, R = W - 22, T = 22, B = H - 22;
+
+  HFONT fTitle = StatusFont(22), fRow = StatusFont(14), fSmall = StatusFont(12);
+  HGDIOBJ oldF = SelectObject(dc, fTitle);
+  SetTextColor(dc, ink);
+#if TWENTY_STUDIO
+  DrawUtf8(dc, "TWENTY ENGINE AUTOMATION", RECT{L, T - 4, R, T + 24}, DT_LEFT | DT_TOP | DT_SINGLELINE);
+#else
+  DrawUtf8(dc, "TWENTY ENGINE INSTRUMENT", RECT{L, T - 4, R, T + 24}, DT_LEFT | DT_TOP | DT_SINGLELINE);
+#endif
+
+  static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy" };
+  const int controller = LedPort::FindController();
+  const bool on = controller > 0;
+  // connection row at the bottom
+  const int cy = B - 9;
+  HBRUSH bInk = CreateSolidBrush(ink);
+  if (on) { HGDIOBJ ob = SelectObject(dc, bInk); HGDIOBJ op = SelectObject(dc, GetStockObject(NULL_PEN)); Ellipse(dc, L + 1, cy - 5, L + 12, cy + 6); SelectObject(dc, op); SelectObject(dc, ob); }
+  else { HPEN pd = CreatePen(PS_SOLID, 1, dim); HGDIOBJ op = SelectObject(dc, pd); Ellipse(dc, L + 1, cy - 5, L + 12, cy + 6); SelectObject(dc, op); DeleteObject(pd); }
+  DeleteObject(bInk);
+  char txt[96];
+  if (on) snprintf(txt, sizeof(txt), "Connected  \xC2\xB7  %s", kNames[controller]); else snprintf(txt, sizeof(txt), "Not connected");
+  SelectObject(dc, fRow); SetTextColor(dc, on ? ink : dim);
+  DrawUtf8(dc, txt, RECT{L + 20, B - 18, R, B}, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+  // takes line (Instrument) or the test line (Automation)
+  char tk[192];
+#if TWENTY_STUDIO
+  tk[0] = 0; StudioDiag(tk, sizeof(tk));
+#else
+  const int takes = RecallTakes();
+  if (!RecallOn()) snprintf(tk, sizeof(tk), "Performance recall off: needs Windows 11 MIDI Services");
+  else if (takes > 0) snprintf(tk, sizeof(tk), "Recorded performances: %d  \xC2\xB7  double-click to forget them", takes);
+  else snprintf(tk, sizeof(tk), "Recorded performances: none yet");
+#endif
+  SelectObject(dc, fSmall); SetTextColor(dc, dim);
+  DrawUtf8(dc, tk, RECT{L, T + 30, R, T + 46}, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+  if (on)
+  {
+    const int ps = PanelSource();
+    const char* ptxt = ps == 2 ? "Panel read from the MS-20ic"
+                     : ps == 1 ? "Panel from memory  \xC2\xB7  volume off/on reads the knobs"
+                               : "Switch the volume off and on to read the knobs";
+    DrawUtf8(dc, ptxt, RECT{L, T + 48, R, T + 64}, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+  }
+
+  SelectObject(dc, oldF); DeleteObject(fTitle); DeleteObject(fRow); DeleteObject(fSmall);
+  SelectObject(dc, oldBr); SelectObject(dc, oldPen); DeleteObject(pen);
+  BitBlt(wdc, 0, 0, W, H, dc, 0, 0, SRCCOPY);
+  SelectObject(dc, oldBm); DeleteObject(bm); DeleteDC(dc);
+}
+#endif
+
 #if IPLUG_DSP
 int32_t TwentyEngine::ToRaw(int idx, double value)
 {
