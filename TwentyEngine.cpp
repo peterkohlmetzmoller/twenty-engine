@@ -17,6 +17,46 @@ static void MakeDir(const char* d) { mkdir(d, 0755); }
 
 using namespace ms20;
 
+#if IPLUG_EDITOR && defined(_WIN32)
+// Windows: the plugin window draws with OpenGL 2 (NanoVG). Without it (virtual machines, some remote desktops, very
+// old drivers: only Windows' own OpenGL 1.1) the drawing calls are missing and opening the window would crash the
+// host. So test once with a hidden window; without OpenGL 2 the plugin offers no window and the host shows its own
+// parameter view. The sound is not affected.
+#include <windows.h>
+#include <GL/gl.h>
+#pragma comment(lib, "opengl32.lib")
+static bool WindowsHasOpenGL2()
+{
+  static int cached = -1;
+  if (cached >= 0) return cached == 1;
+  bool ok = false;
+  WNDCLASSA wc = {}; wc.lpfnWndProc = DefWindowProcA; wc.hInstance = GetModuleHandleA(nullptr); wc.lpszClassName = "TwentyEngineGLCheck";
+  RegisterClassA(&wc);
+  if (HWND w = CreateWindowA(wc.lpszClassName, "", WS_POPUP, 0, 0, 16, 16, nullptr, nullptr, wc.hInstance, nullptr))
+  {
+    HDC dc = GetDC(w);
+    PIXELFORMATDESCRIPTOR pfd = {}; pfd.nSize = sizeof(pfd); pfd.nVersion = 1;
+    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER; pfd.iPixelType = PFD_TYPE_RGBA; pfd.cColorBits = 32; pfd.cDepthBits = 24; pfd.cStencilBits = 8;
+    const int pf = ChoosePixelFormat(dc, &pfd);
+    if (pf && SetPixelFormat(dc, pf, &pfd))
+      if (HGLRC rc = wglCreateContext(dc))
+      {
+        if (wglMakeCurrent(dc, rc))
+        {
+          const char* v = (const char*)glGetString(GL_VERSION);
+          ok = v && atoi(v) >= 2 && wglGetProcAddress("glCreateShader") != nullptr && wglGetProcAddress("glGenBuffers") != nullptr;
+          wglMakeCurrent(nullptr, nullptr);
+        }
+        wglDeleteContext(rc);
+      }
+    ReleaseDC(w, dc);
+    DestroyWindow(w);
+  }
+  cached = ok ? 1 : 0;
+  return ok;
+}
+#endif
+
 #if IPLUG_EDITOR
 // The whole window: product name and whether a controller is plugged in. Nothing else.
 class StatusControl : public IControl
@@ -48,7 +88,7 @@ public:
     g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE", in);
 #endif
 
-    static const char* kNames[] = { "", "MS-20 iC", "Ksoloti Core", "Teensy" };
+    static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy" };
     const bool on = mController > 0;
     const IRECT row = in.GetFromBottom(18.f);
     const float cx = row.L + 6.f, cy = row.MH();
@@ -198,7 +238,10 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
   }
 
 #if IPLUG_EDITOR
-  mMakeGraphicsFunc = [&]() {
+  mMakeGraphicsFunc = [&]() -> IGraphics* {
+#ifdef _WIN32
+    if (!WindowsHasOpenGL2()) return nullptr;   // no OpenGL 2: no window (instead of a crash)
+#endif
     return MakeGraphics(*this, PLUG_WIDTH, PLUG_HEIGHT, PLUG_FPS, GetScaleForScreen(PLUG_WIDTH, PLUG_HEIGHT));
   };
   mLayoutFunc = [&](IGraphics* pGraphics) {
