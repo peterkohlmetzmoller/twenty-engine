@@ -528,9 +528,14 @@ story.append(side(
                   ['4', 'Set the track back to <b>Read</b> (Ableton Live: Automation Arm off). Now draw and edit filter sweeps, envelope changes and anything else with the mouse.']],
                  [7 * mm, None], ('', 'How')),
           Spacer(1, 3),
+          p('<b>Record in Latch, listen in Read.</b> In Latch the DAW keeps writing what the plugin reports while it plays, so playing keys '
+            'over a take in Latch writes your current sound over it.', 'small'),
+          p('<b>A new sound for a new take:</b> dial it in, then start recording with the playhead after the takes you want to keep. '
+            'In Latch, knobs turned while stopped are written from wherever playback starts.', 'small'),
           p('While a track plays its automation, the automation wins over the knobs. To redo a sweep, record it again in Latch or redraw the line. '
             'Use your DAW\'s undo for automation; the plugin has no undo of its own.', 'small'),
-          p('Automation plays one sound at a time: live playing and the track share it.', 'small')), FULLW * 0.5))
+          p('Your knob moves also land in the region as MIDI CC. While the MS-20ic is connected the plugin ignores them: the automation lanes '
+            'are what plays. Automation plays one sound at a time: live playing and the track share it.', 'small')), FULLW * 0.5))
 story.append(Spacer(1, 4))
 story.append(p('<b>Windows.</b> To keep a take and the panel apart, Twenty Engine Instrument opens the MS-20ic next to your DAW. Windows 11 with Windows MIDI Services allows that. '
                'On older Windows the plugin says so in its window and works like a normal MIDI instrument: knob moves go into the region as MIDI CC.', 'small'))

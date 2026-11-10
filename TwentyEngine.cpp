@@ -101,7 +101,7 @@ public:
 
     WDL_String tk;
 #if TWENTY_STUDIO
-    if (mPlug) { char d[200]; mPlug->StudioDiag(d, sizeof(d)); tk.Set(d); }   // test build: what Logic does with the knobs
+    tk.Set("Record in Latch  \xC2\xB7  listen in Read");   // the automation workflow (manual p. 10); StudioDiag() has the test counters
 #else
     if (mPlug && !mPlug->RecallOn())
 #ifdef _WIN32
