@@ -260,7 +260,7 @@ class PKnob : public IKnobControlBase
 {
 public:
   PKnob(float cx, float cy, float rUnits, int param, const char* label, const char* infoName, bool labelAbove = false)
-  : IKnobControlBase(IRECT(cx - rUnits * 2.1f * S, cy - rUnits * 2.1f * S, cx + rUnits * 2.1f * S, cy + rUnits * 2.1f * S), param, EDirection::Vertical, 2.0),
+  : IKnobControlBase(IRECT(cx - 6.2f * S, cy - rUnits * 2.4f * S - 2.5f * S, cx + 6.2f * S, cy + rUnits * 1.62f * S + 6.5f * S), param, EDirection::Vertical, 2.0),
     mCX(cx), mCY(cy), mR(rUnits * S), mLabel(label), mInfo(infoName), mAbove(labelAbove) {}
   void SetFunction(const char* fn, const char* info) { mFn = fn; mInfo = info; SetDirty(false); }
   void SetZones(std::vector<std::string> z) { mZones = z; }
@@ -284,9 +284,9 @@ public:
     if (mLook)   // the PW knob: the sticker's morph wave for the selected waveform, and what it is called
     {
       const Look lk = mLook(); mInfo = lk.info;
-      const float top = mCY + mR * 1.5f + 0.9f * S, ww = 9.5f * S, hh = 2.1f * S;
+      const float top = mCY + mR * 1.5f + 0.6f * S, ww = 9.f * S, hh = 1.7f * S;
       Morph(g, lk.morph, mCX - ww / 2, top, ww, hh);
-      Txt(g, mCX, top + hh + 1.75f * S, lk.label.c_str(), 1.45f);
+      Txt(g, mCX, top + hh + 1.55f * S, lk.label.c_str(), 1.3f);
     }
     else if (!mLabel.empty() && !mAbove) Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, mLabel.c_str(), 1.72f);
     // the knob's current job (ESP layers), as on the ESP sticker: orange italic above
@@ -314,7 +314,7 @@ class PRotary : public IKnobControlBase
 public:
   // marks: "w:tri" draws a waveform symbol, anything else is printed
   PRotary(float cx, float cy, int param, const char* label, const char* info, std::vector<std::string> marks)
-  : IKnobControlBase(IRECT(cx - 3.2f * 2.2f * S, cy - 3.2f * 2.2f * S, cx + 3.2f * 2.2f * S, cy + 3.2f * 2.2f * S), param, EDirection::Vertical, 0.8),
+  : IKnobControlBase(IRECT(cx - 6.2f * S, cy - 3.2f * 2.2f * S, cx + 6.2f * S, cy + 8.f * S), param, EDirection::Vertical, 0.8),
     mCX(cx), mCY(cy), mR(3.0f * 1.05f * S), mLabel(label), mInfo(info), mMarks(marks) {}
   void Draw(IGraphics& g) override
   {
@@ -384,7 +384,7 @@ public:
   struct Job { int param; const char* name; };
   // marks: 0 none, 1 play mode arc, 2 octave numbers, 3 order glyphs
   EspKnob(float cx, float cy, const char* hw, Job delay, Job arp, Job sw, int marks)
-  : IKnobControlBase(IRECT(cx - 3.2f * 2.4f * S, cy - 3.2f * 2.4f * S, cx + 3.2f * 2.4f * S, cy + 3.2f * 2.4f * S), delay.param, EDirection::Vertical, 2.0),
+  : IKnobControlBase(IRECT(cx - (marks == 1 ? 9.f : 6.8f) * S, cy - 3.2f * 2.6f * S - 2.f * S, cx + (marks == 1 ? 9.f : 6.8f) * S, cy + 3.2f * 1.62f * S + 6.f * S), delay.param, EDirection::Vertical, 2.0),
     mCX(cx), mCY(cy), mR(3.2f * S), mHw(hw), mMarks(marks) { mJob[0] = delay; mJob[1] = arp; mJob[2] = sw; }
 
   int Wanted()
