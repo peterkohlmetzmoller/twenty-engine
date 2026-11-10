@@ -466,11 +466,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Teensy toolchain (arduino-cli + Teensyduino)
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Teensy toolchain (Teensyduino)
         run: |
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR=$HOME/bin sh
-          echo "$HOME/bin" >> $GITHUB_PATH
-          export PATH=$HOME/bin:$PATH
           arduino-cli config init
           arduino-cli config add board_manager.additional_urls https://www.pjrc.com/teensy/package_teensy_index.json
           arduino-cli core update-index
