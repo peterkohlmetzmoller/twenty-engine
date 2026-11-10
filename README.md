@@ -1,21 +1,31 @@
 # Twenty Engine
 
-An 8-voice polysynth engine for the Korg MS-20 iC, by Peter Kohlmetz Moller.
+An 8-voice polysynth engine for the Korg MS-20ic, by Peter Kohlmetz Moller.
 This repository builds the plugin edition (AU and VST3 for macOS, VST3 for Windows; AAX optional) that runs
-the same engine as the Ksoloti patch, played from a stock MS-20 iC. No graphical interface, on purpose:
-the iC is the interface.
+the same engine as the Ksoloti patch, as two plugins installed together, played from a stock MS-20ic. No graphical interface, on purpose:
+the MS-20ic is the interface.
 
 Free software under the GNU GPL v3 (`LICENSE`), with an additional permission for the Avid AAX SDK
 (`LICENSE-EXCEPTIONS.md`).
+
+## Two plugins
+- **Twenty Engine** (`Tw20`): the instrument. Parameters are not automatable. It records every knob move of a
+  take itself (`engine/recall.h`) and plays the take back exactly on a second engine, while the live engine keeps
+  following the panel. It needs the controller opened directly next to the DAW: Core MIDI on Mac, WinMM on Windows
+  (multi-client with Windows MIDI Services on Windows 11). Without that it runs as a single-engine MIDI instrument.
+- **Twenty Engine Studio** (`Tw2S`): the same code built with `TWENTY_STUDIO 1`. Every parameter is automatable,
+  and at the first note of a new take it touches all parameters so Latch writes the starting sound.
+  `tools/make_variant.py studio` generates its source tree (own name, AU/VST3/AAX IDs, bundle IDs and class prefix).
 
 ## How it is put together
 - `patch/`    the Ksoloti patch the engine is generated from
 - `engine/`   `gen_engine.py` turns the patch into `engine_gen.h`; `ms20_host.h` runs it in a host
               (48 kHz engine + resampler, MIDI timing, parameters both ways, LED queue, patch memory file)
 - `TwentyEngine.cpp/.h`  the iPlug2 plugin around the engine
-- `led_port.h`           LED SysEx to the iC and controller detection (Core MIDI on Mac, WinMM on Windows)
+- `led_port.h`           LED SysEx to the MS-20ic and controller detection (Core MIDI on Mac, WinMM on Windows)
 - `installer/`           Mac .pkg and Windows .exe installer definitions
-- `tests/`               checks that run on any computer
+- `tools/make_variant.py` generates the Twenty Engine Studio source
+- `tests/`               checks that run on any computer (`recall_test.cpp` simulates Logic recording and playback)
 - `.github/workflows/build.yml`  builds, tests and validates every format and both installers
 
 ## New patch version
@@ -40,4 +50,5 @@ The unsigned `.aaxplugin` loads in Pro Tools Developer. For retail Pro Tools, si
 the secrets `AAX_SDK_B64_1` … `AAX_SDK_B64_7`. The workflow then also builds unsigned AAX for Mac and Windows.
 
 ## Names
-Product "Twenty Engine", manufacturer "Peter Kohlmetz Moller": `config.h` and `resources/*-Info.plist`.
+Products "Twenty Engine" and "Twenty Engine Studio", manufacturer "Peter Kohlmetz Moller": `config.h`,
+`resources/*-Info.plist` and `tools/make_variant.py`.
