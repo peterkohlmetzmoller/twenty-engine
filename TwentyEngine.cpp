@@ -534,8 +534,8 @@ void TwentyEngine::StudioDiag(char* out, int n) const
   const int rec = mDiagRec.load();
   const char* now = !(rec & 1) ? "no transport info" : (rec & 2) ? "RECORDING" : mRunningA.load() ? "playing" : "stopped";
   (void)now;
-  const int a = mRx117.load(), b = mRx118.load();
-  char ra[8], rb[8]; snprintf(ra, sizeof(ra), a < 0 ? "-" : "%d", a); snprintf(rb, sizeof(rb), b < 0 ? "-" : "%d", b);
+  const int r7 = mRx117.load(), r8 = mRx118.load();
+  char ra[8], rb[8]; snprintf(ra, sizeof(ra), r7 < 0 ? "-" : "%d", r7); snprintf(rb, sizeof(rb), r8 < 0 ? "-" : "%d", r8);
   snprintf(out, n, "Port %s \xC2\xB7 sent 117=%d 118=%d \xC2\xB7 track since play: 117=%s 118=%s",
            PanelPort::Get().Ok() ? "OK" : "FAILED", mPortStartN, mPortNoteN, ra, rb);
   (void)k;
