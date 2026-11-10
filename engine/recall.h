@@ -46,13 +46,18 @@ public:
 
   // ======================= audio thread =======================
   // Once per host block, before MS20Host::process(). ppqPerSample = tempo / 60 / sampleRate.
-  void beginBlock(MS20Host *h, bool running, double ppq, double ppqPerSample, int nFrames) {
-    host = h; pps = ppqPerSample; ppq0 = ppq; chunk = 0;
+  // The song position is counted here, sample by sample, from where the transport started: Logic reports
+  // the same beat for several blocks of a live track and then catches up, so its value is only used to
+  // start and to detect a real jump (more than a quarter beat away from where we are).
+  void beginBlock(MS20Host *h, bool running, double hostPpq, double ppqPerSample, int nFrames) {
+    host = h; pps = ppqPerSample; chunk = 0;
     // pending knob messages belong to the block they arrived just before: drop older ones
     if (staleMark > 0) { int r = 0; for (int i = staleMark; i < npend; i++) pend[r++] = pend[i]; npend = r; }
     staleMark = npend;
-    const bool valid = running && ppq > -1e8 && ppqPerSample > 0.0;
-    const bool jump = (expected > -1e8) && (ppq < expected - 1e-6 || ppq > expected + 0.05);
+    const bool valid = running && hostPpq > -1e8 && ppqPerSample > 0.0;
+    const bool jump = valid && (expected > -1e8) && fabs(hostPpq - expected) > 0.25;
+    const double ppq = (valid && expected > -1e8 && !jump) ? expected : hostPpq;
+    ppq0 = ppq;
     const int newMode = valid ? REC : IDLE;
     if (mode == REC && passActive && (newMode != REC || jump)) endPass(lastPpq);
     if (newMode == REC && (mode != REC || jump)) { touched = false; passActive = false; }
@@ -155,7 +160,7 @@ public:
       if (m.type == START) { passEv.clear(); passMidi.clear(); passS = m.ppq; inPass = true; overflow = false; }
       else if (m.type == EV) { if (inPass) passEv.push_back({m.ppq, m.raw, m.idx}); }
       else if (m.type == MID) { if (inPass) passMidi.push_back({m.ppq, (uint8_t)(m.raw >> 16), (uint8_t)(m.raw >> 8), (uint8_t)m.raw}); }
-      else if (m.type == END) { if (inPass && !overflow) merge(passS, m.ppq, passEv, passMidi); inPass = false; passEv.clear(); passMidi.clear(); }
+      else if (m.type == END) { if (inPass && !overflow && m.ppq - passS >= 0.02) merge(passS, m.ppq, passEv, passMidi); inPass = false; passEv.clear(); passMidi.clear(); }
       else if (m.type == LOSTEVENTS) overflow = true;
     }
     for (size_t i = 0; i < retired.size();) { if (--retired[i].second <= 0) { delete retired[i].first; retired.erase(retired.begin() + i); } else i++; }
@@ -280,6 +285,7 @@ private:
   void publish(LaneData *d) {
     LaneData *old = pub.exchange(d, std::memory_order_acq_rel);
     if (old) retired.push_back({old, 250});   // ~5 s of idle calls
+    while (retired.size() > 16) { delete retired.front().first; retired.erase(retired.begin()); }   // the audio thread only holds the newest
   }
 };
 

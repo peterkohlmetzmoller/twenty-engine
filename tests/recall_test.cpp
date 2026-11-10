@@ -23,6 +23,7 @@ typedef std::vector<std::vector<int32_t>> Trace;
 struct Daw {
   MS20Host h; Recall r; float L[BLK], R[BLK];
   bool direct = true;                          // the plugin found the controller's port
+  bool logic = false;                          // report the beat like Logic does to a live track: same value for 4 blocks, then catch up
   struct M { uint8_t s, d1, d2; }; std::vector<M> dq;   // direct-port queue (CoreMIDI thread -> audio)
   Daw() { h.setHook(&r); h.reset(SR); }
   // from the track (region replay or live): notes, pressure, wheel; knob CCs only matter without the direct port
@@ -33,7 +34,8 @@ struct Daw {
     Trace tr;
     for (int b = 0; b < nblk; b++) {
       if (ev) ev(b);
-      r.beginBlock(&h, running, ppqStart + b * BLK * PPS, PPS, BLK);
+      const int rb = logic ? b - (b % 4) : b;
+      r.beginBlock(&h, running, ppqStart + rb * BLK * PPS, PPS, BLK);
       for (auto &m : dq) { r.directIn(m.s, m.d1, m.d2); h.midi(0, m.s, m.d1, m.d2); }
       dq.clear();
       h.process(L, R, BLK);
@@ -51,9 +53,9 @@ static int diffBlocks(const Trace &a, int a0, const Trace &b, int b0, int n, int
   return bad;
 }
 
-static void suite(bool direct) {
-  printf("\n--- %s ---\n", direct ? "knobs straight from the controller (Mac)" : "knobs through the track (fallback)");
-  Daw d; d.direct = direct; int fb = -1;
+static void suite(bool direct, bool logic) {
+  printf("\n--- %s%s ---\n", direct ? "knobs straight from the controller (Mac)" : "knobs through the track (fallback)", logic ? ", beat reported like Logic" : "");
+  Daw d; d.direct = direct; d.logic = logic; int fb = -1;
   const int NB = 375;   // 8 beats at 120 bpm in blocks of 256
   // starting sound A, set while stopped
   d.run(false, 0, 20, [&](int b) { if (b == 0) { d.knob(74, 30); d.knob(71, 80); d.knob(28, 10); d.knob(77, 5); d.knob(20, 127); d.knob(21, 64); d.knob(91, 40); d.knob(88, 50); } });
@@ -73,7 +75,8 @@ static void suite(bool direct) {
   };
   auto rec = d.run(true, 0.0, NB, [&](int b) { perform(b, true); });
   d.run(false, 0, 10, nullptr);
-  check(d.r.takes() == 1, "the take is stored");
+  check(d.r.takes() == 1, "the take is stored (one part, not one per block)");
+  check(d.r.laneForTest().ev.size() < 2000, "a sensible number of stored changes");
   bool moved = false; for (int i = 0; i < NPARAMS; i++) if (rec.front()[i] != rec.back()[i]) moved = true;
   check(moved, "settings changed during the take");
 
@@ -99,7 +102,7 @@ static void suite(bool direct) {
 
   // 3. save and load into a new instance
   auto blob = d.r.serialize();
-  Daw e; e.direct = direct; e.r.unserialize(blob.data(), blob.size());
+  Daw e; e.direct = direct; e.logic = logic; e.r.unserialize(blob.data(), blob.size());
   e.run(false, 0, 10, [&](int b) { if (b == 0) { e.knob(74, 3); e.knob(91, 120); } });
   auto pe = e.run(true, 0.0, NB, [&](int b) { /* the same region, replayed into the new instance */
     auto k = [&](int c, int v) { e.track(0xB0, c, v); };
@@ -140,8 +143,10 @@ static void suite(bool direct) {
 }
 
 int main() {
-  suite(true);
-  suite(false);
+  suite(true, false);
+  suite(false, false);
+  suite(true, true);
+  suite(false, true);
   printf(fails ? "\n%d RECALL CHECKS FAILED\n" : "\nALL RECALL CHECKS PASSED\n", fails);
   return fails ? 1 : 0;
 }
