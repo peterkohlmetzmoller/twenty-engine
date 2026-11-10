@@ -428,8 +428,8 @@ public:
     g.PathStroke(IPattern(mActive == 1 || mMarks == 1 ? kAccent : kInk), mR * 0.13f, o);
 
     const bool arpOn = mActive == 1;
-    const IColor orange = arpOn ? kAccent : kAccent.WithOpacity(0.4f);
-    const IColor black = (mActive == 0) ? kInk : kInk.WithOpacity(0.35f);
+    const IColor orange = arpOn ? kAccent : kAccent.WithOpacity(0.65f);
+    const IColor black = (mActive == 0) ? kInk : kInk.WithOpacity(0.45f);
     auto at = [&](float frac, float rr, float& x, float& y) { const float aa = Rad(240.f - 300.f * frac); x = mCX + rr * std::cos(aa); y = mCY - rr * std::sin(aa); };
     if (mMarks == 1)   // SIGNAL LEVEL: the play mode arc (poly grey, VCO2 arp and latch orange)
     {
@@ -441,10 +441,10 @@ public:
       arc(0.f, 18.f / 64.f - 0.02f, zone == 0 ? kInk : kDimC, zone == 0 ? 2.5f : 1.5f);
       arc(18.f / 64.f + 0.02f, 42.f / 64.f - 0.02f, zone == 1 ? kAccent : kAccent.WithOpacity(0.45f), zone == 1 ? 3.5f : 2.f);
       arc(42.f / 64.f + 0.02f, 1.f, zone == 2 ? kAccent : kAccent.WithOpacity(0.45f), zone == 2 ? 3.5f : 2.f);
-      float x, y;
-      at(0.03f, mR * 2.25f, x, y); Txt(g, x - 2.f, y + 4.f, "POLY", 1.35f, zone == 0 ? kInk : kGrey, 'r');
-      at(0.5f, mR * 1.95f, x, y); Txt(g, x, y - 3.f, "VCO2 ARP", 1.35f, zone == 1 ? kAccent : kAccent.WithOpacity(0.6f), 'c', kFI);
-      at(0.97f, mR * 2.25f, x, y); Txt(g, x + 2.f, y + 4.f, "LATCH", 1.35f, zone == 2 ? kAccent : kAccent.WithOpacity(0.6f), 'l', kFI);
+      // zone names: VCO2 ARP on the orange line above (as on the sticker), POLY and LATCH under the ends of the arc
+      Txt(g, mCX, mCY - mR * 1.62f - 0.3f * S, "VCO2 ARP", 1.6f, zone == 1 ? kAccent : kAccent.WithOpacity(0.65f), 'c', kFI);
+      Txt(g, mCX - mR * 1.45f, mCY + mR * 1.75f, "POLY", 1.3f, zone == 0 ? kInk : kGrey, 'c', zone == 0 ? kFB : kF);
+      Txt(g, mCX + mR * 1.45f, mCY + mR * 1.75f, "LATCH", 1.3f, zone == 2 ? kAccent : kAccent.WithOpacity(0.65f), 'c', kFI);
     }
     else if (mMarks == 2)   // OCTAVES 1..4
       for (int i = 0; i < 4; i++) { float x, y; at(i / 3.f, mR * 1.9f, x, y); Txt(g, x, y + 4.f, std::to_string(i + 1).c_str(), 1.45f, orange, 'c', kFI); }
@@ -459,7 +459,7 @@ public:
       Txt(g, mCX, y, mJob[1].name, 1.6f, orange, 'c', kFI);
       mRectArp = IRECT(mCX - 7.f * S, y - 2.f * S, mCX + 7.f * S, y + 0.5f * S);
     }
-    if (mMarks == 1) { Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, "PLAY MODE", 1.72f); }
+    if (mMarks == 1) { Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 1.2f * S, "PLAY MODE", 1.72f); }
     else
     {
       const float y = mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S;
