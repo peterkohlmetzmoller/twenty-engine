@@ -21,7 +21,14 @@ else()
   set(TWENTY_FORMATS VST3 AAX)
 endif()
 
-# Minimal window: name + connection status (Logic shows the parameters in its own controls view)
+# Minimal window: name + connection status (Logic shows the parameters in its own controls view).
+# Windows: no IGraphics (its OpenGL window crashed with some drivers, e.g. in virtual machines); the plugin
+# draws the same status window itself with GDI (TwentyEngine.cpp).
+if(WIN32)
+  set(TWENTY_UI UI NONE DEFINES NO_IGRAPHICS)
+else()
+  set(TWENTY_UI "")
+endif()
 iplug_add_plugin(${PROJECT_NAME}
   SOURCES
     TwentyEngine.cpp
@@ -34,6 +41,7 @@ iplug_add_plugin(${PROJECT_NAME}
     resources/resource.h
     resources/font_data.h
   FORMATS ${TWENTY_FORMATS}
+  ${TWENTY_UI}
 )
 
 # The LED port and controller detection use Core MIDI on the Mac (every plugin format), WinMM on Windows
