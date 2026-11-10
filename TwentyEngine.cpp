@@ -5,6 +5,7 @@
 #include "resources/font_data.h"
 #if TWENTY_STUDIO
 #include "ui/StudioUI.h"
+#include "resources/font_cond.h"
 #endif
 #endif
 #include <string.h>
@@ -218,8 +219,11 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 #if TWENTY_STUDIO
   // Studio: the full editor (ui/StudioUI.h)
   mLayoutFunc = [&](IGraphics* pGraphics) {
-    pGraphics->LoadFont("Roboto-Regular", (void*)kRobotoTTF, (int)sizeof(kRobotoTTF));
-    te_ui::Layout(pGraphics, this, this, [this]() { return Controller(); }, [this](char* out, int n) { StudioDiag(out, n); });
+    pGraphics->LoadFont("Cond", (void*)kCondTTF, (int)sizeof(kCondTTF));      // DejaVu Sans Condensed: the font of the panel pictures
+    pGraphics->LoadFont("CondB", (void*)kCondBTTF, (int)sizeof(kCondBTTF));
+    pGraphics->LoadFont("CondI", (void*)kCondITTF, (int)sizeof(kCondITTF));
+    te_ui::Layout(pGraphics, this, this, [this]() { return Controller(); }, [this](char* out, int n) { StudioDiag(out, n); },
+                  [this](uint8_t v) { UiMidi(0xB0, 1, v); });   // the mod wheel
   };
 #else
   mLayoutFunc = [&](IGraphics* pGraphics) {
