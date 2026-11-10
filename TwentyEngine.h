@@ -1,6 +1,12 @@
 #pragma once
 
 #include "IPlug_include_in_plug_hdr.h"
+// Two plugins from one source: Twenty Engine (the instrument: plays like the hardware, keeps every take
+// exactly as played) and Twenty Engine Studio (TWENTY_STUDIO 1, set in the Studio build's config.h:
+// the knobs are automatable, so a performance becomes editable Logic automation).
+#ifndef TWENTY_STUDIO
+#define TWENTY_STUDIO 0
+#endif
 #include "engine/engine_gen.h"
 #include "led_port.h"
 
@@ -37,6 +43,7 @@ public:
   int RecallTakes() const { return mRecall.takes(); }      // UI: takes stored in this project
   bool RecallOn() const { return mLed.KnobsDirect(); }       // UI: recall needs the direct connection to the controller
   void DrainController();                                    // audio thread: everything straight from the controller
+  void StudioDiag(char* out, int n) const;                   // Studio test build: what Logic does with the knobs
   void RecallClear() { mRecall.clear(); }                    // UI: forget them
 
 private:
@@ -50,6 +57,11 @@ private:
   bool mFromEngine = false;     // true while we push an engine-side change to the host
   int mRescan = 0;
   float mScratchL[512], mScratchR[512], mPlayL[512], mPlayR[512];
+  // Studio: the start of a new take is written as automation (every parameter touched once)
+  std::atomic<bool> mTouchReq{false}, mRunningA{false};
+  bool mTouchedThisRun = false, mWasRunning = false;
+  int64_t mClock = 0, mLastRegionNote = -(int64_t)1 << 40;
+  std::atomic<int> mDiagTouched{0}, mDiagHost{0}; std::atomic<uint64_t> mDiagHostBits{0};
   // ---- beta diagnostics: what touches the parameters around a memory recall
   struct DbgEv { int idx; int src; int32_t raw; };
   ms20::SpscQueue<DbgEv, 2048> mDbgQ;

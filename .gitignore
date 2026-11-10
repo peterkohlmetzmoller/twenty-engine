@@ -9,3 +9,4 @@ tests/*.raw
 tests/memtest/
 tests/mem_test
 tests/recall_test
+/studio/

@@ -7,11 +7,15 @@ if [ -n "$USER_NAME" ] && [ "$USER_NAME" != "root" ]; then
   if [ -n "$USER_HOME" ]; then
     rm -rf "$USER_HOME/Library/Audio/Plug-Ins/Components/TwentyEngine.component"
     rm -rf "$USER_HOME/Library/Audio/Plug-Ins/VST3/TwentyEngine.vst3"
+    rm -rf "$USER_HOME/Library/Audio/Plug-Ins/Components/TwentyEngineStudio.component"
+    rm -rf "$USER_HOME/Library/Audio/Plug-Ins/VST3/TwentyEngineStudio.vst3"
   fi
 fi
 # 2. make sure nothing is flagged as "downloaded from the internet"
 xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/Components/TwentyEngine.component" 2>/dev/null
 xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/VST3/TwentyEngine.vst3" 2>/dev/null
+xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/Components/TwentyEngineStudio.component" 2>/dev/null
+xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/VST3/TwentyEngineStudio.vst3" 2>/dev/null
 # 3. let macOS rescan Audio Units
 killall -9 AudioComponentRegistrar 2>/dev/null
 exit 0

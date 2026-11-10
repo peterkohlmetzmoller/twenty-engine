@@ -26,7 +26,7 @@ public:
 
   bool IsDirty() override
   {
-    if (++mFrames >= 30) { mFrames = 0; bool d = Scan(); const int t = Takes(); if (t != mTakes) { mTakes = t; d = true; } if (d) return true; }   // about twice a second
+    if (++mFrames >= 30) { mFrames = 0; bool d = Scan(); const int t = Takes(); if (t != mTakes) { mTakes = t; d = true; } if (TWENTY_STUDIO) d = true; if (d) return true; }   // about twice a second
     return IControl::IsDirty();
   }
 
@@ -42,7 +42,11 @@ public:
     g.FillRect(paper, mRECT);
     g.DrawRect(ink, mRECT.GetPadded(-6.f), nullptr, 1.5f);
     const IRECT in = mRECT.GetPadded(-22.f);
+#if TWENTY_STUDIO
+    g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE STUDIO", in);
+#else
     g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE", in);
+#endif
 
     static const char* kNames[] = { "", "MS-20 iC", "Ksoloti Core", "Teensy" };
     const bool on = mController > 0;
@@ -56,10 +60,16 @@ public:
     g.DrawText(IText(14.f, on ? ink : dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), txt.Get(), row.GetHShifted(20.f));
 
     WDL_String tk;
-#ifdef _WIN32
-    if (true) tk.Set("Performance recall: Mac only for now");
+#if TWENTY_STUDIO
+    if (mPlug) { char d[200]; mPlug->StudioDiag(d, sizeof(d)); tk.Set(d); }   // test build: what Logic does with the knobs
+    if (false)
 #else
-    if (mPlug && !mPlug->RecallOn()) tk.Set("Performance recall: connect the MS-20ic to this computer");
+    if (mPlug && !mPlug->RecallOn())
+#endif
+#ifdef _WIN32
+      tk.Set("Performance recall off: needs Windows 11 MIDI Services");   // the DAW holds the controller's port
+#else
+      tk.Set("Performance recall: connect the MS-20ic to this computer");
 #endif
     else if (mTakes > 0) tk.SetFormatted(96, "Recorded performances: %d  \xC2\xB7  double-click to forget them", mTakes);
     else tk.Set("Recorded performances: none yet");
@@ -117,7 +127,11 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 #endif
   // Same ranges as the Ksoloti editor shows them: knobs 0..64 (bipolar -64..64), selectors as integers.
   // Not automatable: the sound is played on the controller and stored by performance recall, not edited in the DAW.
+#if TWENTY_STUDIO
+  const int kFlags = 0;   // Studio: every knob is automatable (Logic writes the performance as automation)
+#else
   const int kFlags = IParam::kFlagCannotAutomate;
+#endif
   for (int i = 0; i < kNumParams; i++)
   {
     const ParamInfo& p = kParamInfo[i];
@@ -193,6 +207,12 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   const int type = msg.mStatus & 0xF0;
   if (type == 0xB0 && msg.mData1 != 1) return;                        // knob/cable data on the track: never used
   if (mRecall.trackIsLive(msg.mStatus, msg.mData1, msg.mData2)) return;   // the host's copy of live playing: the live engine has it
+#if TWENTY_STUDIO
+  // Studio: one engine plays the panel, the live playing and the regions; the knobs' performance is Logic automation
+  if (type == 0x90 && msg.mData2 > 0) mLastRegionNote = mClock;
+  mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);
+  return;
+#endif
   if (type == 0x90 && msg.mData2 > 0) mRecall.trackNoteOn(msg.mOffset, msg.mData1);
   mPlay->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);      // a region: the playback engine
 }
@@ -201,8 +221,19 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 {
   const double sr = GetSampleRate(), tempo = GetTempo();
   const bool direct = mLed.KnobsDirect();
+  const bool running = GetTransportIsRunning();
+  if (running && !mWasRunning) { mDiagHost.store(0); mDiagHostBits.store(0); }   // test counters: per playback
+  if (!running) mTouchedThisRun = false;
+  mWasRunning = running; mRunningA.store(running);
+#if TWENTY_STUDIO
+  mRecall.setEnabled(false);                    // Studio keeps the performance in Logic's automation
+  const bool twoEngines = false;
+#else
   mRecall.setEnabled(direct);
+  const bool twoEngines = direct;
+#endif
   if (direct) DrainController();
+  mClock += nFrames;
   mRecall.beginBlock(GetTransportIsRunning(), GetPPQPos(), (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0, nFrames);
   int done = 0;
   while (done < nFrames)
@@ -210,7 +241,7 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
     const int n = (nFrames - done > 512) ? 512 : nFrames - done;
     mRecall.setChunkOffset(done);
     mHost->process(mScratchL, mScratchR, n);
-    if (direct)
+    if (twoEngines)
     {
       mPlay->process(mPlayL, mPlayR, n);
       for (int i = 0; i < n; i++) { mScratchL[i] += mPlayL[i]; mScratchR[i] += mPlayR[i]; }
@@ -227,6 +258,7 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 void TwentyEngine::OnParamChange(int paramIdx, EParamSource source, int sampleOffset)
 {
   if (!mFromEngine) mDbgQ.push({paramIdx, (int)source, ToRaw(paramIdx, GetParam(paramIdx)->Value())});
+  if (!mFromEngine && source == kHost && mRunningA.load()) { mDiagHost++; mDiagHostBits.fetch_or(1ull << (paramIdx & 63)); }
   if (mFromEngine) return;   // the engine already has this value (it made the change)
   mHost->setParamRaw(paramIdx, ToRaw(paramIdx, GetParam(paramIdx)->Value()));
 }
@@ -249,9 +281,31 @@ void TwentyEngine::OnIdle()
     if (p.idx < 0 || p.idx >= kNumParams) continue;
     const double v = FromRaw(p.idx, p.raw);
     mFromEngine = true;
+#if TWENTY_STUDIO
+    BeginInformHostOfParamChangeFromUI(p.idx);   // Studio: a knob move is a gesture Logic can write (Latch)
+    SetParameterValue(p.idx, GetParam(p.idx)->ToNormalized(v));
+    EndInformHostOfParamChangeFromUI(p.idx);
+#else
     GetParam(p.idx)->Set(v);   // keep the plugin's copy in step (saved with the project); no automation gestures to the host
+#endif
     mFromEngine = false;
   }
+#if TWENTY_STUDIO
+  // 1b. Studio: the start of a new take. Every parameter is touched once with its current value, so Logic
+  //     (track automation in Latch) writes the complete starting sound into the automation lanes.
+  if (mTouchReq.exchange(false))
+  {
+    mFromEngine = true;
+    for (int i = 0; i < kNumParams; i++)
+    {
+      BeginInformHostOfParamChangeFromUI(i);
+      SetParameterValue(i, GetParam(i)->GetNormalized());
+      EndInformHostOfParamChangeFromUI(i);
+    }
+    mFromEngine = false;
+    mDiagTouched.store(kNumParams);
+  }
+#endif
   // 2. patch memory: write the file after a save on the keys (never on the audio thread).
   //    While stored settings play back, replayed save gestures never overwrite the memory.
   mHost->pollMemorySave();
@@ -308,8 +362,27 @@ void TwentyEngine::DrainController()
   while (mLed.PopKnob(s, d1, d2))
   {
     if ((s & 0xF0) == 0xB0 && (d1 == 102 || d1 == 103)) { s = (uint8_t)((d1 == 102 ? 0x90 : 0x80) | (s & 0x0F)); d1 = d2; d2 = (s & 0xF0) == 0x90 ? 100 : 0; }
-    if (mRecall.directMsg(s, d1, d2)) mPlay->midi(0, (uint8_t)(0x80 | (s & 0x0F)), d1, 0);   // the host's copy came first: silence it there
+    const bool late = mRecall.directMsg(s, d1, d2);   // the host's copy of this key came first
+#if TWENTY_STUDIO
+    if (late) continue;                                // one engine: it already plays that key
+    // the first key of a new take (the host runs, no region is playing): write the whole start as automation
+    if ((s & 0xF0) == 0x90 && d2 > 0 && mRunningA.load() && !mTouchedThisRun && mClock - mLastRegionNote > (int64_t)(2.0 * GetSampleRate()))
+    { mTouchedThisRun = true; mTouchReq.store(true); }
+#else
+    if (late) mPlay->midi(0, (uint8_t)(0x80 | (s & 0x0F)), d1, 0);   // silence the host's copy on the playback engine
+#endif
     mHost->midi(0, s, d1, d2);
   }
+#endif
+}
+
+void TwentyEngine::StudioDiag(char* out, int n) const
+{
+#if IPLUG_DSP
+  int k = 0; uint64_t b = mDiagHostBits.load(); while (b) { k += (int)(b & 1); b >>= 1; }
+  snprintf(out, n, "Studio test \xC2\xB7 start written: %d params \xC2\xB7 from Logic since play: %d values, %d params",
+           mDiagTouched.load(), mDiagHost.load(), k);
+#else
+  if (n > 0) out[0] = 0;
 #endif
 }

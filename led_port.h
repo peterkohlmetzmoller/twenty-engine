@@ -171,10 +171,14 @@ private:
 class LedPort
 {
 public:
-  ~LedPort() { Close(); }
-  // look for an output whose name contains "MS-20"; keep it open while it works
+  ~LedPort() { Close(); CloseIn(); }
+  // look for an output whose name contains "MS-20"; keep it open while it works.
+  // Also open the controller's input for the plugin itself: Windows 11 with the new Windows MIDI Services
+  // lets several programs use one port (the DAW keeps it too). Older Windows: the DAW usually holds the
+  // port, opening fails, and the plugin works through the track as before.
   void Rescan()
   {
+    RescanInput();
     if (mOut) return;
     const UINT n = midiOutGetNumDevs();
     for (UINT i = 0; i < n; i++)
@@ -211,8 +215,8 @@ public:
     if (r != MMSYSERR_NOERROR) Close();   // unplugged: look again at the next rescan
   }
   bool Connected() const { return mOut != nullptr; }
-  bool PopKnob(uint8_t &, uint8_t &, uint8_t &) { return false; }   // knobs come through the track on Windows
-  bool KnobsDirect() const { return false; }
+  bool PopKnob(uint8_t &s, uint8_t &d1, uint8_t &d2) { uint32_t v; if (!mKnobs.pop(v)) return false; s = (uint8_t)(v >> 16); d1 = (uint8_t)(v >> 8); d2 = (uint8_t)v; return true; }
+  bool KnobsDirect() const { return mIn != nullptr && mInOk.load(std::memory_order_relaxed); }
 
   // Which controller is plugged in (same rules as on the Mac), from the MIDI inputs Windows lists.
   static int FindController()
@@ -242,6 +246,41 @@ private:
   }
   void Close() { if (mOut) { midiOutReset(mOut); midiOutClose(mOut); mOut = nullptr; } }
   HMIDIOUT mOut = nullptr;
+  // ---- controller input (straight to the plugin) ----
+  HMIDIIN mIn = nullptr; int mInDev = -1; KnobQueue mKnobs; std::atomic<bool> mInOk{false};
+  void CloseIn() { if (mIn) { mInOk.store(false); midiInStop(mIn); midiInReset(mIn); midiInClose(mIn); mIn = nullptr; mInDev = -1; } }
+  void RescanInput()
+  {
+    // the controller, by the same names as FindController (the hardware versions first)
+    int best = -1, bestK = 0;
+    const UINT n = midiInGetNumDevs();
+    for (UINT i = 0; i < n; i++)
+    {
+      MIDIINCAPSA caps;
+      if (midiInGetDevCapsA(i, &caps, sizeof(caps)) != MMSYSERR_NOERROR) continue;
+      int k = 0;
+      if (Has(caps.szPname, "ksoloti")) k = 2;
+      else if (Has(caps.szPname, "teensy") || Has(caps.szPname, "twenty engine")) k = 3;
+      else if (Has(caps.szPname, "ms-20")) k = 1;
+      if (k > bestK) { bestK = k; best = (int)i; }
+    }
+    if (best == mInDev && mIn) return;
+    CloseIn();
+    if (best < 0) return;
+    if (midiInOpen(&mIn, (UINT)best, (DWORD_PTR)&LedPort::InProc, (DWORD_PTR)this, CALLBACK_FUNCTION) != MMSYSERR_NOERROR) { mIn = nullptr; return; }
+    if (midiInStart(mIn) != MMSYSERR_NOERROR) { midiInClose(mIn); mIn = nullptr; return; }
+    mInDev = best; mInOk.store(true);
+  }
+  // WinMM's thread: channel messages arrive whole (dwParam1 = status | data1 << 8 | data2 << 16)
+  static void CALLBACK InProc(HMIDIIN, UINT msg, DWORD_PTR inst, DWORD_PTR p1, DWORD_PTR)
+  {
+    if (msg != MIM_DATA) return;
+    LedPort *self = (LedPort *)inst;
+    const uint8_t s = (uint8_t)(p1 & 0xFF), d1 = (uint8_t)((p1 >> 8) & 0x7F), d2 = (uint8_t)((p1 >> 16) & 0x7F);
+    if (s < 0x80 || s >= 0xF0) return;
+    const bool one = (s & 0xF0) == 0xC0 || (s & 0xF0) == 0xD0;
+    self->mKnobs.push(((uint32_t)s << 16) | ((uint32_t)d1 << 8) | (one ? 0 : d2));
+  }
   char mBuf[64];
 };
 
