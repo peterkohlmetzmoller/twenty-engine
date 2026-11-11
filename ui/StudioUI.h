@@ -238,7 +238,7 @@ public:
     Arrow(g, {{RX(1180), RY(870)}, {RX(1240), RY(870)}});
     Arrow(g, {{RX(1300), RY(185)}, {RX(1370), RY(185)}});
     // volume print
-    Txt(g, RX(1210), RY(280) - 6.6f * S + 0.7f * S, "VOLUME", 2.0f);
+    Txt(g, RX(1210), RY(280) - 7.4f * S, "VOLUME", 2.0f);   // above the scale marks (they reach 6.3 units up)
     Txt(g, RX(1210), RY(280) + 7.3f * S + 0.6f * S, "POWER OFF", 1.6f);
     // LEDs (power on; the others are not driven yet)
     auto led = [&](float x, float y, bool on, const char* lab, char anchor) {
@@ -283,9 +283,10 @@ public:
     if (mLook)   // the PW knob: the sticker's morph wave for the selected waveform, and what it is called
     {
       const Look lk = mLook(); mInfo = lk.info;
-      const float top = mCY + mR * 1.5f + 0.5f * S, ww = 9.f * S, hh = 1.5f * S;
+      // the wave sits between the two lowest scale marks (there is no mark straight below), the name right under it
+      const float top = mCY + mR * 1.12f, ww = 9.f * S, hh = 1.5f * S;
       Morph(g, lk.morph, mCX - ww / 2, top, ww, hh);
-      Txt(g, mCX, top + hh + 1.9f * S, lk.label.c_str(), 1.72f);
+      Txt(g, mCX, top + hh + 1.7f * S, lk.label.c_str(), 1.72f);
     }
     else if (!mLabel.empty() && !mAbove) Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, mLabel.c_str(), 1.72f);
     // the knob's current job (ESP layers), as on the ESP sticker: orange italic above
