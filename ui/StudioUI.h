@@ -181,31 +181,32 @@ static void SetInfo(const std::string& s) { HoverInfo().text = s; HoverInfo().ag
 static float LedX(int i)
 {
   static const float COLX5 = 69.8f, COLX6 = 82.2f;
-  switch (i) { case 0: return X(COLX5 - 1.5f); case 1: return X(COLX6 + 3.2f); case 2: return RX(1120); case 3: return RX(1385); default: return RX(1210); }
+  switch (i) { case 0: return X(COLX5); case 1: return X(COLX6 + 3.2f); case 2: return RX(1120); case 3: return RX(1385); default: return RX(1210); }
 }
 static float LedY(int i)
 {
   switch (i) { case 0: return Yd(47.0f); case 1: return Yd(36.6f); case 2: case 3: return RY(800); default: return RY(105); }
 }
-class LedLights : public IControl
+// one LED: repaints only when its own state changes (the state is taken in IsDirty, so a redraw of some other
+// part of the window, which clips this control, can never mark a change as shown)
+class LedLight : public IControl
 {
 public:
-  LedLights(PatchHost* h) : IControl(IRECT(0, 0, (float)kW, (float)kH)), mHost(h) { mIgnoreMouse = true; }
+  LedLight(PatchHost* h, int i) : IControl(IRECT(LedX(i) - 1.2f * S, LedY(i) - 1.2f * S, LedX(i) + 1.2f * S, LedY(i) + 1.2f * S)), mHost(h), mI(i) { mIgnoreMouse = true; }
   void Draw(IGraphics& g) override
   {
-    const int m = mHost ? mHost->Leds() : 0x10;
-    for (int i = 0; i < 5; i++)
-    {
-      const bool on = (m >> i) & 1;
-      g.FillCircle(on ? kLed : kPaper, LedX(i), LedY(i), 0.7f * S);
-      g.DrawCircle(kInk, LedX(i), LedY(i), 0.7f * S, nullptr, 1.5f);
-    }
-    mShown = m;
+    g.FillCircle(mOn ? kLed : kPaper, LedX(mI), LedY(mI), 0.7f * S);
+    g.DrawCircle(kInk, LedX(mI), LedY(mI), 0.7f * S, nullptr, 1.5f);
   }
-  bool IsDirty() override { return (mHost ? mHost->Leds() : 0x10) != mShown || IControl::IsDirty(); }
+  bool IsDirty() override
+  {
+    const bool on = ((mHost ? mHost->Leds() : 0x10) >> mI) & 1;
+    if (on != mOn) { mOn = on; return true; }
+    return IControl::IsDirty();
+  }
   bool IsHit(float, float) const override { return false; }
 private:
-  PatchHost* mHost; int mShown = -1;
+  PatchHost* mHost; int mI; bool mOn = false;
 };
 
 class PanelArt : public IControl
@@ -273,7 +274,7 @@ public:
     // volume print
     Txt(g, RX(1210), RY(280) - 8.4f * S, "VOLUME", 2.0f);   // above the scale marks (they reach 6.3 units up)
     Txt(g, RX(1210), RY(280) + 7.3f * S + 0.6f * S, "POWER OFF", 1.6f);
-    // LED labels (the lights themselves: LedLights, driven by the engine)
+    // LED labels (the lights themselves: LedLight, driven by the engine)
     Txt(g, LedX(0), LedY(0) - (0.7f + 0.9f) * S, "RATE", 1.7f);
     Txt(g, LedX(2) - 1.6f * S, LedY(2) + 0.7f * S, "PEAK", 1.9f, kInk, 'r');
     Txt(g, LedX(3) - 1.6f * S, LedY(3) + 0.7f * S, "TRIG", 1.9f, kInk, 'r');
@@ -688,7 +689,7 @@ private:
 inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller, std::function<void(char*, int)> diag)
 {
   g->AttachControl(new PanelArt());
-  g->AttachControl(new LedLights(ph));
+  for (int i = 0; i < 5; i++) g->AttachControl(new LedLight(ph, i));
   static const float COLX[8] = {7.5f, 20.0f, 32.6f, 45.0f, 57.4f, 69.8f, 82.2f, 94.0f};
   const float RA = 18.f, RB = 35.f, RC = 51.f, RD = 71.f, MA = 58.5f, MB = 71.f;
   const float EGR[5] = {17.f, 31.f, 45.f, 58.5f, 71.f};
