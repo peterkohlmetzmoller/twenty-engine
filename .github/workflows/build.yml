@@ -26,6 +26,9 @@ jobs:
         run: |
           git clone -q https://github.com/iPlug2/iPlug2.git iPlug2
           cd iPlug2 && git checkout -q $IPLUG2_COMMIT
+          # VST3 delivers MIDI CC as 0..1; iPlug2 truncates value*127 (29 can become 28): round instead
+          perl -pi -e 's/mData2 = \(int\) \(value \* 127\.0\);/mData2 = (int) (value * 127.0 + 0.5);/' IPlug/IPlugMidi.h
+          grep -q 'value \* 127.0 + 0.5' IPlug/IPlugMidi.h || { echo '::error::IPlugMidi.h rounding patch did not apply'; exit 1; }
           cd Dependencies/IPlug && rm -rf VST3_SDK
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake
@@ -256,6 +259,9 @@ jobs:
         run: |
           git clone -q https://github.com/iPlug2/iPlug2.git iPlug2
           cd iPlug2 && git checkout -q $IPLUG2_COMMIT
+          # VST3 delivers MIDI CC as 0..1; iPlug2 truncates value*127 (29 can become 28): round instead
+          perl -pi -e 's/mData2 = \(int\) \(value \* 127\.0\);/mData2 = (int) (value * 127.0 + 0.5);/' IPlug/IPlugMidi.h
+          grep -q 'value \* 127.0 + 0.5' IPlug/IPlugMidi.h || { echo '::error::IPlugMidi.h rounding patch did not apply'; exit 1; }
           cd Dependencies/IPlug && rm -rf VST3_SDK
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake vstgui4

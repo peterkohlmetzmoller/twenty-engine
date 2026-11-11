@@ -24,11 +24,15 @@ endif()
 # Minimal window: name + connection status (Logic shows the parameters in its own controls view).
 # Windows: no IGraphics (its OpenGL window crashed with some drivers, e.g. in virtual machines); the plugin
 # draws the same status window itself with GDI (TwentyEngine.cpp).
+set(TWENTY_DEFS "")
 if(WIN32)
-  set(TWENTY_UI UI NONE DEFINES NO_IGRAPHICS)
+  set(TWENTY_UI UI NONE)
+  list(APPEND TWENTY_DEFS NO_IGRAPHICS)
 else()
   set(TWENTY_UI "")
 endif()
+# TWENTY_VARIANT_DEFS (set by tools/make_variant.py for Automation): build-wide, so iPlug2's own wrapper sources see them
+list(APPEND TWENTY_DEFS ${TWENTY_VARIANT_DEFS})
 iplug_add_plugin(${PROJECT_NAME}
   SOURCES
     TwentyEngine.cpp
@@ -42,6 +46,7 @@ iplug_add_plugin(${PROJECT_NAME}
     resources/font_data.h
   FORMATS ${TWENTY_FORMATS}
   ${TWENTY_UI}
+  DEFINES ${TWENTY_DEFS}
 )
 
 # The LED port and controller detection use Core MIDI on the Mac (every plugin format), WinMM on Windows

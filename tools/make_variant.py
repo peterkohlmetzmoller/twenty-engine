@@ -43,12 +43,12 @@ def edit(rel, pairs):
         s = s.replace(a, b)
     open(p, 'w', encoding='utf-8').write(s)
 
-edit('CMakeLists.txt', [('project(TwentyEngine VERSION', 'project(TwentyEngineAutomation VERSION')])
+edit('CMakeLists.txt', [('project(TwentyEngine VERSION', 'project(TwentyEngineAutomation VERSION'),
+    # VST3: MIDI CCs reach the plugin on all 16 channels (the sound in the region uses channels 15 and 16);
+    # build-wide, because iPlug2's VST3 wrapper sources do not read config.h
+    ('list(APPEND TWENTY_DEFS ${TWENTY_VARIANT_DEFS})', 'list(APPEND TWENTY_DEFS VST3_NUM_MIDI_IN_CHANS=16 VST3_NUM_CC_CHANS=16)')])
 edit('config.h', [
-    ('#define PLUG_NAME "Twenty Engine Instrument"', '#define TWENTY_STUDIO 1\n'
-     '// VST3: MIDI CCs reach the plugin on all 16 channels (the sound in the region uses channels 15 and 16)\n'
-     '#define VST3_NUM_MIDI_IN_CHANS 16\n#define VST3_NUM_CC_CHANS 16\n'
-     '#define PLUG_NAME "Twenty Engine Automation"'),
+    ('#define PLUG_NAME "Twenty Engine Instrument"', '#define TWENTY_STUDIO 1\n#define PLUG_NAME "Twenty Engine Automation"'),
     ("#define PLUG_UNIQUE_ID 'Tw20'", "#define PLUG_UNIQUE_ID 'Tw2S'"),
     ('#define BUNDLE_NAME "TwentyEngine"', '#define BUNDLE_NAME "TwentyEngineAutomation"'),
     ('#define SHARED_RESOURCES_SUBPATH "TwentyEngine"', '#define SHARED_RESOURCES_SUBPATH "TwentyEngineAutomation"'),
