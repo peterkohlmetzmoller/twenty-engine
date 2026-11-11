@@ -212,6 +212,7 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
   mPlay = std::make_unique<MS20Host>();
   mRecall.setEngines(mHost.get(), mPlay.get());
 #if TWENTY_STUDIO
+  mMem = std::make_unique<ms20::StreamMemory<kNumParams>>();
   mHost->setHook(nullptr); mPlay->setHook(nullptr);   // Automation: the playback engine plays the region's stream
   for (int i = 0; i < kNumParams; i++)
     mStream.kind[i] = !strncmp(kParamInfo[i].type, "frac32.s", 8) ? ms20::ParamStream<kNumParams>::BI
@@ -467,12 +468,15 @@ void TwentyEngine::OnReset()
 #if TWENTY_STUDIO
   // Automation: the plugin's values (and any DAW automation) go to the playback engine; the live engine keeps
   // the panel (the controller's last panel, panel_memory.h); with one engine it plays them too.
+  // Logic resets the plugin at every start: once regions have given the playback engine their sound, the
+  // plugin's stored values are old - the engine keeps its sound, and the start takes the region's (StreamMemory).
   for (int i = 0; i < kNumParams; i++)
   {
     const int32_t raw = ToRaw(i, GetParam(i)->Value());
-    mPlay->setParamRaw(i, raw);
-    if (!mLed.KnobsDirect()) mHost->setParamRaw(i, raw);
+    if (!mStreamEver.load()) mPlay->setParamRaw(i, raw);
+    if (!mLed.KnobsDirect() && !mStreamEver.load()) mHost->setParamRaw(i, raw);
   }
+  mStartReq.store(true);
 #else
   for (int i = 0; i < kNumParams; i++) mHost->setParamRaw(i, ToRaw(i, GetParam(i)->Value()));
 #endif
@@ -525,7 +529,30 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   if (direct) DrainController();
 #if TWENTY_STUDIO
   // Automation: the region's settings that arrived for this block, onto the engine that plays the track
-  mStream.flush([this](int slot, int32_t raw) { StreamApply(slot, raw); });
+  {
+    // a start or a jump: the sound remembered for this song position first (Logic neither resends the region's
+    // settings nor keeps the plugin's state across a start); the region's own data in this block still wins
+    ms20::MS20Host* e = mLed.KnobsDirect() ? mPlay.get() : mHost.get();
+    const double ppq = GetPPQPos(), bps = (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0;
+    const bool jumped = running && mWasRunPpq && fabs(ppq - mExpectPpq) > 1.0;   // (a live track's position wobbles a little)
+    if (running && (mStartReq.exchange(false) || !mRunBefore || jumped))
+    {
+      mMem->breakRun();
+      if (const int32_t* v = mMem->at(ppq, 0.25)) { for (int i = 0; i < kNumParams; i++) e->setParamQuiet(i, v[i]); mMemUsed++; }
+    }
+    mRunBefore = running; mWasRunPpq = running;
+    if (!running) mMem->breakRun();
+    mExpectPpq = ppq + nFrames * bps;
+    mStream.flush([this](int slot, int32_t raw) { StreamApply(slot, raw); });
+    if (mStream.lastApplied > 0) mStreamEver.store(true);
+    // a region's snapshot: remember it with its song position (its tail may arrive in the next blocks)
+    if (running && mStream.lastForeign) { mMemPend = 3; mMemPendPos = ppq; }
+    if (running && mMemPend > 0)
+    {
+      if (mStream.lastN > 0) { int32_t v[kNumParams]; for (int i = 0; i < kNumParams; i++) v[i] = e->getParamRaw(i); mMem->store(mMemPendPos, v); }
+      mMemPend--;
+    }
+  }
   if (running) mStream.runningBlock(); else mStream.stoppedBlock();
 #endif
   mClock += nFrames;
@@ -557,7 +584,12 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 #else
     const int sn = 0, ap = 0; const uint8_t ow = 0, fo = 0;
 #endif
-    mDbgBlkQ.push({mClock, GetPPQPos(), nFrames, sn, ap, mDbgResets.load(), mDbgHostSets.load(), ow, fo, (uint8_t)running, pk});
+#if TWENTY_STUDIO
+    const int mu = mMemUsed, mn = mMem ? mMem->n : 0;
+#else
+    const int mu = 0, mn = 0;
+#endif
+    mDbgBlkQ.push({mClock, GetPPQPos(), nFrames, sn, ap, mDbgResets.load(), mDbgHostSets.load(), ow, fo, (uint8_t)running, pk, mu, mn});
   }
 }
 
@@ -607,8 +639,8 @@ void TwentyEngine::OnIdle()
     DbgMidi m; while (mDbgMidiQ.pop(m)) { const char* k = (m.s & 0xF0) == 0x90 ? (m.d2 ? "NOTE ON " : "NOTE ON v0") : (m.s & 0xF0) == 0x80 ? "NOTE OFF" : (m.s & 0xF0) == 0xD0 ? "PRESSURE" : (m.s & 0xF0) == 0xA0 ? "POLY AT " : "OTHER   ";
       Dbg("MIDI in %s  status %02X  data %3d %3d  (offset %d, clk %lld)", k, m.s, m.d1, m.d2, m.off, (long long)m.clk); }
     { const int64_t f = FocusCell()->load(); if (f != mDbgFocus) { Dbg("FOCUS: id %lld plays from the controller (this copy: %lld)%s", (long long)f, (long long)mFocusId, f == mFocusId ? "  <- THIS ONE" : ""); mDbgFocus = f; } }
-    DbgBlk bk; while (mDbgBlkQ.pop(bk)) Dbg("BLOCK clk %lld ppq %.3f frames %d %s  stream msgs %d applied %d%s%s  resets %d  host param sets %d  peak %.3f",
-      (long long)bk.clk, bk.ppq, bk.frames, bk.running ? "RUN " : "STOP", bk.streamN, bk.applied, bk.own ? " OWN-snapshot" : "", bk.foreign ? " REGION-snapshot" : "", bk.resets, bk.hostSets, bk.peak);
+    DbgBlk bk; while (mDbgBlkQ.pop(bk)) Dbg("BLOCK clk %lld ppq %.3f frames %d %s  stream msgs %d applied %d%s%s  resets %d  host param sets %d  peak %.3f  memory used %d (holds %d)",
+      (long long)bk.clk, bk.ppq, bk.frames, bk.running ? "RUN " : "STOP", bk.streamN, bk.applied, bk.own ? " OWN-snapshot" : "", bk.foreign ? " REGION-snapshot" : "", bk.resets, bk.hostSets, bk.peak, bk.memUsed, bk.memN);
     DbgEv e; while (mDbgQ.pop(e)) Dbg("HOST sets param %d '%s' = %.2f  (source %d)", e.idx, kParamInfo[e.idx].label, e.raw / 2097152.0, e.src); }
 #if TWENTY_STUDIO
   // 1a. Automation: the transport has started: the whole panel through the port, behind a new snapshot number.
@@ -771,7 +803,7 @@ void TwentyEngine::StudioDiag(char* out, int n) const
 {
 #if IPLUG_DSP
   if (!PanelPort::Get().Ok()) snprintf(out, n, "No MIDI port: the region's knob CCs play (as a MIDI instrument)");
-  else snprintf(out, n, "Sound in the region \xC2\xB7 sent %d \xC2\xB7 from the region since play: %d", mStreamSent.load(), mStreamApplied.load());
+  else snprintf(out, n, "Sound in the region \xC2\xB7 sent %d \xC2\xB7 from the region since play: %d \xC2\xB7 remembered %d", mStreamSent.load(), mStreamApplied.load(), mMem ? mMem->n : 0);
 #else
   if (n > 0) out[0] = 0;
 #endif

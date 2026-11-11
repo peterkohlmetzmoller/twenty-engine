@@ -6,8 +6,9 @@
 //  - a recording track with input "All" records the controller AND the plugin's own port; with count-in the
 //    recording (and the region) starts at the count-in;
 //  - while the transport runs, the track's live input also reaches the plugin a little later (echo);
-//  - playback starting inside a region first resends the last value of every controller before that point
-//    (chase), in no particular order, then plays the region.
+//  - Logic resets the plugin at every start and does NOT resend the region's controllers when playback starts
+//    inside a region (no chase; seen in the plugin's log, 2026-11-11). The plugin keeps the region's
+//    snapshots by song position (StreamMemory) and sets the playback engine from them at a start or jump.
 // The plugin is wired as in TwentyEngine.cpp (TWENTY_STUDIO): live engine = controller; the panel goes out
 // through the port (whole panel at transport start, then every change); the track's stream sets the playback
 // engine; the MS-20ic's channel-1 knob CCs on the track are ignored.
@@ -42,6 +43,7 @@ struct Sim {
   MS20Host live, play; PanelMemory pm; ParamStream<NPARAMS> ps;
   bool wasRunning = false, snapReq = false, mono = false, tap = false; int blocks = 0; int64_t lastSnap = 0;
   int sent = 0, applied = 0;
+  StreamMemory<NPARAMS> mem; bool starting = false; int pend = 0; double pendPos = 0;
   std::map<int64_t, std::vector<int32_t>> liveAt;     // live settings at each idle while recording (by song position)
   Sim() {
     live.reset(SR); play.reset(SR);
@@ -103,7 +105,14 @@ struct Sim {
     for (auto it = thru.begin(); it != thru.end();) { if (it->t < pos + BLK) { due.push_back(*it); it = thru.erase(it); } else ++it; }
     std::stable_sort(due.begin(), due.end(), [](const Ev &a, const Ev &b) { return a.t < b.t; });
     for (auto &e : due) trackMsg(e);
+    const double songPos = (double)pos / SR;
+    // as the plugin: at a start, the remembered sound for this song position first
+    if (running && starting) { mem.breakRun(); if (const int32_t *v = mem.at(songPos, 0.125)) for (int i = 0; i < NPARAMS; i++) play.setParamQuiet(i, v[i]); }
+    starting = false;
     ps.flush([&](int slot, int32_t raw) { applyStream(slot, raw); });
+    // a region's snapshot: remember it with its song position (its tail may come in the next blocks)
+    if (running && ps.lastForeign) { pend = 3; pendPos = songPos; }
+    if (running && pend > 0) { if (ps.lastN > 0) { int32_t v[NPARAMS]; for (int i = 0; i < NPARAMS; i++) v[i] = play.getParamRaw(i); mem.store(pendPos, v); } pend--; }
     // the controller, straight to the plugin (and recorded by Logic)
     for (auto &e : controller) { pm.onMessage(e.s, e.d1, e.d2); live.midi(0, e.s, e.d1, e.d2); if (recording) region.push_back({pos, e.s, e.d1, e.d2}); }
     controller.clear();
@@ -122,14 +131,14 @@ struct Sim {
   void startPlay(double at, unsigned seed) {
     pos = (int64_t)(at * SR); running = true; recording = false;
     std::sort(region.begin(), region.end(), [](const Ev &a, const Ev &b) { return a.t < b.t; });
-    std::map<int, Ev> last;                                     // chase: the last value of every controller before the start
-    for (auto &e : region) if (e.t < pos && (e.s & 0xF0) == 0xB0) last[(e.s << 8) | e.d1] = e;
-    std::vector<Ev> chase; for (auto &kv : last) { Ev c = kv.second; c.t = pos; chase.push_back(c); }
-    std::shuffle(chase.begin(), chase.end(), std::mt19937(seed));
-    toPlugin = chase;
+    play.reset(SR);                                             // Logic resets the plugin at every start
+    toPlugin.clear();                                           // and does not chase the region's controllers
     for (auto &e : region) if (e.t >= pos) toPlugin.push_back(e);
+    starting = true; (void)seed;
   }
-  void stop() { running = recording = false; toPlugin.clear(); run(0.2); }
+  // a jump while playing (playhead moved): no reset, no chase
+  void jump(double at) { pos = (int64_t)(at * SR); toPlugin.clear(); for (auto &e : region) if (e.t >= pos) toPlugin.push_back(e); starting = true; }
+  void stop() { running = recording = false; toPlugin.clear(); mem.breakRun(); run(0.2); }
   std::vector<int32_t> liveAtSong(double t) { auto it = liveAt.upper_bound((int64_t)(t * SR)); --it; return it->second; }
   int compare(const std::vector<int32_t> &want, const char *what, bool print = true) {
     int bad = 0;
@@ -180,13 +189,21 @@ int main() {
   check(liveB == 0, "meanwhile the panel (live engine) keeps sound B");
   S.stop();
 
-  // ---- playback starting inside take 1, after the sweep: chase gives the state at that point
-  for (unsigned seed = 1; seed <= 5; seed++) {
-    S.startPlay(4.6, seed); S.run(0.3);
-    char what[64]; snprintf(what, sizeof(what), "start inside take 1 (chase order %u)", seed);
-    check(S.compare(S.liveAtSong(4.6), what) == 0, what);
-    S.stop();
-  }
+  // ---- playback starting inside take 1 (played before), after the sweep: right from the first block
+  //      (the playback engine had take 1's end, or another take, and Logic reset it)
+  S.startPlay(10.0, 9); S.run(0.6); S.stop();                     // the engine last played take 2 (sound B)
+  S.startPlay(4.6, 1);
+  S.run(0.02);
+  check(S.compare(S.liveAtSong(4.6), "start inside take 1") == 0, "start inside take 1: its sound from the first moment (no chase needed)");
+  S.stop();
+  S.startPlay(1.2, 2); S.run(0.02);
+  check(S.compare(S.liveAtSong(1.2), "start inside take 1 before the sweep") == 0, "start inside take 1 before its sweep: sound A at once");
+  // ---- jumping while playing, from take 1 into take 2 and back
+  S.jump(11.0); S.run(0.02);
+  check(S.compare(S.liveAtSong(10.9), "jump into take 2") == 0, "jump into take 2 while playing: sound B at once");
+  S.jump(2.0); S.run(0.02);
+  check(S.compare(S.liveAtSong(2.0), "jump back into take 1") == 0, "jump back into take 1: sound A at once");
+  S.stop();
   // ---- take 2: sound B, then the mono cable
   S.startPlay(10.0, 9); S.run(0.6);
   check(S.compare(S.liveAtSong(10.5), "take 2") == 0, "take 2 plays with sound B");
@@ -214,6 +231,10 @@ int main() {
     S.region.insert(S.region.end(), moved.begin(), moved.end());
     S.startPlay(29.0, 6); S.run(2.5);
     check(S.compare(S.liveAtSong(5.9), "split piece") == 0, "a split piece of take 1, moved after take 2, plays with take 1's sound");
+    S.stop();
+    // (before the piece's first snapshot - in its first second - it cannot be known: as when playing into it)
+    S.startPlay(31.2, 7); S.run(0.02);
+    check(S.compare(S.liveAtSong(5.7), "inside the moved piece") == 0, "once played, a start inside the moved piece has its sound at once");
     S.stop(); }
 
   // ---- encoding round trip for every setting

@@ -89,6 +89,9 @@ private:
   // Automation (engine/paramstream.h): the panel goes out through the plugin's own port and is recorded into the
   // region; the region's stream sets the playback engine
   ms20::ParamStream<kNumParams> mStream;
+  std::unique_ptr<ms20::StreamMemory<kNumParams>> mMem;   // the regions' sound by song position (audio thread)
+  std::atomic<bool> mStartReq{false}, mStreamEver{false};
+  bool mRunBefore = false, mWasRunPpq = false; double mExpectPpq = 0.0; int mMemPend = 0; double mMemPendPos = 0.0; int mMemUsed = 0;
   std::atomic<bool> mSnapReq{false};
   bool mStreamMono = false, mStreamTap = false;
   int64_t mLastSnapMs = 0;
@@ -108,7 +111,7 @@ private:
   std::atomic<int> mDbgResets { 0 };
   struct DbgMidi { uint8_t s, d1, d2; int off; int64_t clk = 0; };
   // diagnostics: the audio blocks right after the transport starts (or the host resets the plugin)
-  struct DbgBlk { int64_t clk; double ppq; int frames, streamN, applied, resets, hostSets; uint8_t own, foreign, running; float peak; };
+  struct DbgBlk { int64_t clk; double ppq; int frames, streamN, applied, resets, hostSets; uint8_t own, foreign, running; float peak; int memUsed, memN; };
   ms20::SpscQueue<DbgBlk, 1024> mDbgBlkQ;
   int mDbgBlocksLeft = 0, mDbgResetsAudio = 0; int64_t mDbgFocus = -1;
   std::atomic<int> mDbgHostSets{0};

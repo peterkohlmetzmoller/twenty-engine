@@ -26,6 +26,7 @@
 // before it reports that it runs).
 #pragma once
 #include <stdint.h>
+#include <string.h>
 #include <atomic>
 #include <chrono>
 
@@ -38,7 +39,8 @@ struct ParamStream {
   static const uint8_t CH_HI = 15, CH_LO = 14;      // MIDI channels 16 and 15 (0-based)
   static const int ECHO_MS = 150;
   static const int MARK_CC = 50;                    // the snapshot number (14 bits, same two channels)
-  static const int SNAP_EVERY_MS = 1000;            // while the transport runs, the whole panel again every second,
+  static const int SNAP_EVERY_MS = 1000;
+  static const int SNAP_MSGS = 2 * NP + 2;          // the values in one whole-panel snapshot (after its number)            // while the transport runs, the whole panel again every second,
                                                     // so every piece of a split region carries its sound
 
   enum Kind : uint8_t { UNI, BI, INTV };
@@ -126,11 +128,22 @@ struct ParamStream {
       if (n == myMark.load() || n == prevMark.load()) own = true; else foreign = true;
     }
     markLo = mlo; lastOwn = own; lastForeign = foreign;
+    // our own snapshot coming back (echo): the whole burst is ignored - also the part of it that the host
+    // delivers in the next block(s), where its number is not; a region's snapshot in the same block wins
+    int ownSkip = 0;
+    if (own && !foreign) {
+      int first = 0; while (first < nq && q[first].cc != MARK_CC) first++;
+      ownLeft = SNAP_MSGS; for (int k = first; k < nq; k++) if (q[k].cc != MARK_CC) ownLeft--;
+      if (ownLeft < 0) ownLeft = 0;
+      nq = 0; return;
+    }
+    if (!own && !foreign && ownLeft > 0) { ownSkip = ownLeft < nq ? ownLeft : nq; ownLeft -= ownSkip; }
+    if (foreign) ownLeft = 0;
     // 2. the values: low bytes before high bytes (a high byte completes a setting); with a foreign snapshot in
     //    the block, values equal to ours go first and the others (the region's) last, so the region wins
     for (int pass = 0; pass < 4; pass++) {
       const bool wantHi = pass & 1, wantMine = pass < 2;
-      for (int k = 0; k < nq; k++) {
+      for (int k = ownSkip; k < nq; k++) {
         const Msg &m = q[k];
         if (m.cc == MARK_CC || (m.ch == CH_HI) != wantHi) continue;
         const int slot = SlotOf(m.cc);
@@ -140,7 +153,6 @@ struct ParamStream {
         if (mine != wantMine) continue;
         bool use;
         if (foreign) use = true;                                     // a recorded snapshot: everything applies
-        else if (own) use = !mine;                                   // our own snapshot coming back
         else use = !(mine && (m.ch == CH_HI ? gotHi[slot] : gotLo[slot]));   // single changes: the echo rule
         if (!use) continue;
         lastApplied++;
@@ -153,10 +165,10 @@ struct ParamStream {
     }
     nq = 0;
   }
-  void resetDecoder() { for (int s = 0; s < NSLOT; s++) { hi[s] = -1; lo[s] = 0; } resetRun(); }
+  void resetDecoder() { for (int s = 0; s < NSLOT; s++) { hi[s] = -1; lo[s] = 0; } ownLeft = 0; resetRun(); }
   // audio thread, once per block while the transport is stopped: a new playback starts fresh
   // (skipped in a block that delivered stream data: that may be the chase of the coming start)
-  void stoppedBlock() { if (!sawData) resetRun(); sawData = false; }   // after flush()
+  void stoppedBlock() { if (!sawData) { resetRun(); ownLeft = 0; } sawData = false; }   // after flush()
   void runningBlock() { sawData = false; }
   void resetRun() { for (int s = 0; s < NSLOT; s++) { gotHi[s] = gotLo[s] = false; } }
 
@@ -173,13 +185,50 @@ struct ParamStream {
 private:
   int hi[NSLOT], lo[NSLOT];
   bool gotHi[NSLOT] = {}, gotLo[NSLOT] = {}, sawData = false;
-  int markLo = 0;
+  int markLo = 0, ownLeft = 0;
   struct Msg { uint8_t ch, cc, val; };
   static const int QCAP = 1024;
   Msg q[QCAP]; int nq = 0;
   std::atomic<int> myMark{-1}, prevMark{-1}; uint32_t markSeq = 0;
   std::atomic<int> sentHi[NSLOT], sentLo[NSLOT];
   std::atomic<int64_t> sentHiT[NSLOT], sentLoT[NSLOT];
+};
+
+// StreamMemory: the region's sound by song position, as heard while the regions played.
+// The host neither resends the stream when playback starts inside a region (no chase in Logic) nor keeps the
+// plugin's state across a start (it resets the plugin). So every whole-panel snapshot from a region is kept
+// with its song position; starting or jumping somewhere, the playback engine takes the snapshot that belongs
+// there at once. Played through again, what lay between two snapshots is renewed (a region moved or edited).
+template <int NV>
+struct StreamMemory {
+  static const int CAP = 1024;
+  static constexpr double SAME = 0.02;               // the same snapshot position (song position units)
+  struct Snap { double pos; int32_t v[NV]; };
+  Snap s[CAP]; int n = 0;
+  double last = 0.0; bool cont = false;
+
+  // a region's snapshot heard at song position pos (the transport running since the previous one: anything
+  // remembered between the two is gone)
+  void store(double pos, const int32_t *v) {
+    if (cont && pos > last + SAME) {
+      int w = 0;
+      for (int r = 0; r < n; r++) if (!(s[r].pos > last + SAME && s[r].pos < pos - SAME)) { if (w != r) s[w] = s[r]; w++; }
+      n = w;
+    }
+    int k = 0; while (k < n && s[k].pos < pos - SAME) k++;
+    if (k < n && s[k].pos <= pos + SAME) { s[k].pos = pos; memcpy(s[k].v, v, sizeof(s[k].v)); }
+    else if (n < CAP) { for (int r = n; r > k; r--) s[r] = s[r - 1]; s[k].pos = pos; memcpy(s[k].v, v, sizeof(s[k].v)); n++; }
+    last = pos; cont = true;
+  }
+  void breakRun() { cont = false; }                  // stopped or jumped: the next snapshot starts a new stretch
+  // the sound at song position pos: a snapshot just after it (within ahead: a take recorded without count-in
+  // has its first snapshot a moment after its first notes), else the last one before it; null if none
+  const int32_t *at(double pos, double ahead) const {
+    const Snap *best = nullptr;
+    for (int k = 0; k < n; k++) { if (s[k].pos <= pos + ahead) best = &s[k]; else break; }
+    return best ? best->v : nullptr;
+  }
+  void clear() { n = 0; cont = false; }
 };
 
 }  // namespace ms20
