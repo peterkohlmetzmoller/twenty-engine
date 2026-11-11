@@ -209,7 +209,11 @@ private:
       {
         q.sysex = false;
         uint32_t v;
-        if (Kind() == CTRL_MK && MkNativeMsg(q.sx, q.nsx, v)) { mMkG.store((int)(v >> 24)); mNative.push(v); }
+        if (Kind() == CTRL_MK && MkNativeMsg(q.sx, q.nsx, v))
+        {
+          mMkG.store((int)(v >> 24)); mNative.push(v);
+          if (((v >> 16) & 0xFF) == 0x40) mNoteSrc.store(-1);   // native mode in/out: the keys may move to another port
+        }
         return;
       }
       if (!(b & 0x80)) return;
