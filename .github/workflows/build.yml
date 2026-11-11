@@ -172,7 +172,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: TwentyEngineUI-Mac
-          path: TwentyEngineUI-AU.zip
+          path: |
+            TwentyEngineUI-AU.zip
             TwentyEngine-AAX-Mac-unsigned.zip
 
   # ---------------- Apple Silicon: validate the arm64 half of the same AU ----------------
