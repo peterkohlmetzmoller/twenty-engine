@@ -112,8 +112,10 @@ struct ParamStream {
     if (nq < QCAP) q[nq++] = {ch, cc, val};
     return true;
   }
+  int lastN = 0, lastApplied = 0; bool lastOwn = false, lastForeign = false;   // diagnostics: the last flush
   template <class F> void flush(F apply) {
     sawData = nq > 0;
+    lastN = nq; lastApplied = 0; lastOwn = lastForeign = false;
     if (!nq) return;
     const int64_t now = NowMs();
     // 1. snapshot numbers in this block: whose snapshot is it?
@@ -123,7 +125,7 @@ struct ParamStream {
       const int n = (q[k].val << 7) | mlo;
       if (n == myMark.load() || n == prevMark.load()) own = true; else foreign = true;
     }
-    markLo = mlo;
+    markLo = mlo; lastOwn = own; lastForeign = foreign;
     // 2. the values: low bytes before high bytes (a high byte completes a setting); with a foreign snapshot in
     //    the block, values equal to ours go first and the others (the region's) last, so the region wins
     for (int pass = 0; pass < 4; pass++) {
@@ -141,6 +143,7 @@ struct ParamStream {
         else if (own) use = !mine;                                   // our own snapshot coming back
         else use = !(mine && (m.ch == CH_HI ? gotHi[slot] : gotLo[slot]));   // single changes: the echo rule
         if (!use) continue;
+        lastApplied++;
         if (m.ch == CH_LO) { gotLo[slot] = true; lo[slot] = m.val; if (hi[slot] >= 0) apply(slot, raw(slot, (hi[slot] << 7) | lo[slot])); }
         else {
           gotHi[slot] = true; hi[slot] = m.val;

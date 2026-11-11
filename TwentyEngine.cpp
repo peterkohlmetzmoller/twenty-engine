@@ -203,7 +203,10 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       MakeDir(parent); MakeDir(dir);
       mHost->loadMemories(dir);
       snprintf(mPanelPath, sizeof(mPanelPath), "%sMS20PANEL.BIN", dir);
-      /* beta diagnostics log (off): char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug.txt", dir); mDbg = fopen(lp, "w"); */
+#if TWENTY_STUDIO
+      // test build: diagnostics log, one file per copy of the plugin (TwentyEngine-debug-1.txt, -2, ...)
+      { char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug-%d.txt", dir, mId); mDbg = fopen(lp, "w"); }
+#endif
     }
 #endif
   }
@@ -411,13 +414,14 @@ double TwentyEngine::FromRaw(int idx, int32_t raw)
 
 void TwentyEngine::Dbg(const char* fmt, ...)
 {
-  if (!mDbg || mDbgLines > 4000) return;
+  if (!mDbg || mDbgLines > 20000) return;
   va_list a; va_start(a, fmt); vfprintf(mDbg, fmt, a); va_end(a); fputc('\n', mDbg); fflush(mDbg); mDbgLines++;
 }
 
 void TwentyEngine::OnReset()
 {
   mDbgResets++;
+  mDbgBlocksLeft = 40;   // diagnostics: watch the blocks after a reset too
   mHost->reset(GetSampleRate());
   mPlay->reset(GetSampleRate());
   mRecall.resetAudio();
@@ -439,7 +443,7 @@ void TwentyEngine::OnReset()
 void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
 {
   // everything goes to the engine: notes, CCs (knobs, rotaries, patch bay NRPN), channel pressure (button)
-  if (msg.mStatus < 0xF0 && (msg.mStatus & 0xF0) != 0xB0) mDbgMidiQ.push({msg.mStatus, msg.mData1, msg.mData2, msg.mOffset});   // beta diagnostics: notes, pressure (not the many knob CCs)
+  if (msg.mStatus < 0xF0 && (msg.mStatus & 0xF0) != 0xB0) mDbgMidiQ.push({msg.mStatus, msg.mData1, msg.mData2, msg.mOffset, mClock});   // beta diagnostics: notes, pressure (not the many knob CCs)
   // performance recall (engine/recall.h): the track plays the notes, the switch and the mod wheel; knob and
   // cable CCs on the track are ignored when the knobs reach the plugin straight from the controller
 #if TWENTY_STUDIO
@@ -471,6 +475,7 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   const double sr = GetSampleRate(), tempo = GetTempo();
   const bool direct = mLed.KnobsDirect();
   const bool running = GetTransportIsRunning();
+  if (running && !mWasRunning) mDbgBlocksLeft = 60;   // diagnostics: about the first half second
   if (running && !mWasRunning) { mDiagHost.store(0); mDiagHostBits.store(0); mStreamApplied.store(0); mSnapReq.store(true); }   // Automation: the whole panel goes out at every start
   mWasRunning = running; mRunningA.store(running);
   mRecall.setEnabled(TWENTY_STUDIO ? false : direct);   // Automation keeps the performance in the host's automation
@@ -505,11 +510,23 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
     }
     done += n;
   }
+  if (mDbg && mDbgBlocksLeft > 0)
+  {
+    mDbgBlocksLeft--;
+    float pk = 0.f; for (int i = 0; i < nFrames; i++) { const float a = fabsf((float)outputs[0][i]); if (a > pk) pk = a; }
+#if TWENTY_STUDIO
+    const int sn = mStream.lastN, ap = mStream.lastApplied; const uint8_t ow = mStream.lastOwn, fo = mStream.lastForeign;
+#else
+    const int sn = 0, ap = 0; const uint8_t ow = 0, fo = 0;
+#endif
+    mDbgBlkQ.push({mClock, GetPPQPos(), nFrames, sn, ap, mDbgResets.load(), mDbgHostSets.load(), ow, fo, (uint8_t)running, pk});
+  }
 }
 
 void TwentyEngine::OnParamChange(int paramIdx, EParamSource source, int sampleOffset)
 {
   if (!mFromEngine) mDbgQ.push({paramIdx, (int)source, ToRaw(paramIdx, GetParam(paramIdx)->Value())});
+  if (!mFromEngine) mDbgHostSets++;
   if (!mFromEngine && source == kHost && mRunningA.load()) { mDiagHost++; mDiagHostBits.fetch_or(1ull << (paramIdx & 63)); }
   if (mFromEngine) return;   // the engine already has this value (it made the change)
   const int32_t raw = ToRaw(paramIdx, GetParam(paramIdx)->Value());
@@ -550,7 +567,9 @@ void TwentyEngine::OnIdle()
       mHost->getParamRaw(PARAM_INDEX_Filter__Macro_lpfcut) / 2097152.0, (int)mHost->getParamRaw(PARAM_INDEX_MS20__Voices_vco1wave), mHost->getParamRaw(PARAM_INDEX_MS20__Voices_pw) / 2097152.0); mDbgSlot = slot; }
     int r = mDbgResets.load(); if (r != mDbgResetsSeen) { Dbg("RESET from the host (%d so far)", r); mDbgResetsSeen = r; }
     DbgMidi m; while (mDbgMidiQ.pop(m)) { const char* k = (m.s & 0xF0) == 0x90 ? (m.d2 ? "NOTE ON " : "NOTE ON v0") : (m.s & 0xF0) == 0x80 ? "NOTE OFF" : (m.s & 0xF0) == 0xD0 ? "PRESSURE" : (m.s & 0xF0) == 0xA0 ? "POLY AT " : "OTHER   ";
-      Dbg("MIDI in %s  status %02X  data %3d %3d  (offset %d)", k, m.s, m.d1, m.d2, m.off); }
+      Dbg("MIDI in %s  status %02X  data %3d %3d  (offset %d, clk %lld)", k, m.s, m.d1, m.d2, m.off, (long long)m.clk); }
+    DbgBlk bk; while (mDbgBlkQ.pop(bk)) Dbg("BLOCK clk %lld ppq %.3f frames %d %s  stream msgs %d applied %d%s%s  resets %d  host param sets %d  peak %.3f",
+      (long long)bk.clk, bk.ppq, bk.frames, bk.running ? "RUN " : "STOP", bk.streamN, bk.applied, bk.own ? " OWN-snapshot" : "", bk.foreign ? " REGION-snapshot" : "", bk.resets, bk.hostSets, bk.peak);
     DbgEv e; while (mDbgQ.pop(e)) Dbg("HOST sets param %d '%s' = %.2f  (source %d)", e.idx, kParamInfo[e.idx].label, e.raw / 2097152.0, e.src); }
 #if TWENTY_STUDIO
   // 1a. Automation: the transport has started: the whole panel through the port, behind a new snapshot number.

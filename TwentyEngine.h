@@ -105,7 +105,12 @@ private:
   struct DbgEv { int idx; int src; int32_t raw; };
   ms20::SpscQueue<DbgEv, 2048> mDbgQ;
   std::atomic<int> mDbgResets { 0 };
-  struct DbgMidi { uint8_t s, d1, d2; int off; };
+  struct DbgMidi { uint8_t s, d1, d2; int off; int64_t clk = 0; };
+  // diagnostics: the audio blocks right after the transport starts (or the host resets the plugin)
+  struct DbgBlk { int64_t clk; double ppq; int frames, streamN, applied, resets, hostSets; uint8_t own, foreign, running; float peak; };
+  ms20::SpscQueue<DbgBlk, 1024> mDbgBlkQ;
+  int mDbgBlocksLeft = 0, mDbgResetsAudio = 0;
+  std::atomic<int> mDbgHostSets{0};
   ms20::SpscQueue<DbgMidi, 2048> mDbgMidiQ;
   FILE* mDbg = nullptr; int mDbgLines = 0; int mDbgSlot = -2; int mDbgResetsSeen = 0; int mDbgEngine = 0;
   void Dbg(const char* fmt, ...);
