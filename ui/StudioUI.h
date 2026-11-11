@@ -271,7 +271,7 @@ public:
     Arrow(g, {{RX(1180), RY(870)}, {RX(1240), RY(870)}}, kGrey);
     Arrow(g, {{RX(1300), RY(185)}, {RX(1370), RY(185)}});
     // volume print
-    Txt(g, RX(1210), RY(280) - 7.4f * S, "VOLUME", 2.0f);   // above the scale marks (they reach 6.3 units up)
+    Txt(g, RX(1210), RY(280) - 8.4f * S, "VOLUME", 2.0f);   // above the scale marks (they reach 6.3 units up)
     Txt(g, RX(1210), RY(280) + 7.3f * S + 0.6f * S, "POWER OFF", 1.6f);
     // LED labels (the lights themselves: LedLights, driven by the engine)
     Txt(g, LedX(0), LedY(0) - (0.7f + 0.9f) * S, "RATE", 1.7f);
@@ -352,6 +352,7 @@ public:
       const float mx = mCX + mR * 1.75f * std::cos(a), my = mCY - mR * 1.75f * std::sin(a);
       const IColor c = (i == Sel()) ? kAccent : kInk;
       if (mMarks[i].rfind("w:", 0) == 0) Wave(g, mMarks[i].c_str() + 2, mx, my, mR * 0.52f, c, 1.3f);
+      else if (mMarks[i].rfind("s:", 0) == 0) Txt(g, mx, my + mR * 0.13f, mMarks[i].c_str() + 2, mR * 0.34f / S, c);   // small word
       else Txt(g, mx, my + mR * 0.18f, mMarks[i].c_str(), mR * 0.48f / S, c);
     }
     g.FillCircle(kPaper, mCX, mCY, mR);
@@ -662,7 +663,10 @@ public:
     if (mSwitch) g.FillRect(kAccent, SwitchB());
     g.DrawRect(mSwitch ? kAccent : kInk, SwitchB(), nullptr, 1.5f);
     g.DrawText(IText(12.f, mSwitch ? kPaper : kInk, kF, EAlign::Center, EVAlign::Middle), "SWITCH", SwitchB());   // black while held
-    g.DrawText(IText(17.f, kInk, kFB, EAlign::Far, EVAlign::Middle), "TWENTY ENGINE", IRECT(mRECT.R - 260.f, mRECT.T, mRECT.R - 16.f, mRECT.B));
+    g.DrawText(IText(17.f, kInk, kFB, EAlign::Far, EVAlign::Middle), "TWENTY ENGINE", IRECT(mRECT.R - 278.f, mRECT.T, mRECT.R - 34.f, mRECT.B));
+    // resize grip in the corner: drag it to scale the window
+    for (int i = 1; i <= 4; i++)
+      g.DrawLine(i == 4 ? kInk : kGrey, mRECT.R - 3.f, mRECT.B - 3.f - i * 4.5f, mRECT.R - 3.f - i * 4.5f, mRECT.B - 3.f, nullptr, 1.6f);
   }
 
   void OnMouseDown(float x, float y, const IMouseMod&) override
@@ -707,7 +711,7 @@ inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller,
   }
   g->AttachControl(new PRotary(X(COLX[0]), Yd(RC), PARAM_INDEX_MS20__Voices_vco1oct, "SCALE", "VCO 1 SCALE", {"32'", "16'", "8'", "4'"}));
   knob(0, RD, PARAM_INDEX_MS20__Voices_portamento, "TIME", "PORTAMENTO  \xC2\xB7  Multibend glide in poly");
-  g->AttachControl(new PRotary(X(COLX[1]), Yd(RA), PARAM_INDEX_MS20__Voices_vco2wave, "WAVEFORM", "VCO 2 WAVEFORM", {"w:tri", "w:saw", "w:sq", "w:ring"}));
+  g->AttachControl(new PRotary(X(COLX[1]), Yd(RA), PARAM_INDEX_MS20__Voices_vco2wave, "WAVEFORM", "VCO 2 WAVEFORM", {"w:tri", "w:saw", "w:sq", "s:RING"}));
   knob(1, RB, PARAM_INDEX_MS20__Voices_vco2semi, "PITCH", "VCO 2 PITCH");
   g->AttachControl(new PRotary(X(COLX[1]), Yd(RC), PARAM_INDEX_MS20__Voices_vco2oct, "SCALE", "VCO 2 SCALE", {"16'", "8'", "4'", "2'"}));
   knob(1, RD, PARAM_INDEX_MS20__Master__Tune_tune, "", "MASTER TUNE");
