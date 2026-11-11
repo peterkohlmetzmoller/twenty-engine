@@ -2,6 +2,8 @@
 #include <chrono>
 #ifndef _WIN32
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 #else
 #include <process.h>
 #define getpid _getpid
@@ -159,22 +161,51 @@ static const NiceName *Nice(int i)
 }
 
 // which copy of the plugin plays from the controller (shared by all copies in the host's process; 0 = none yet)
-static std::atomic<int> gFocus{0}, gNextId{1};
+// Which copy plays from the controller, shared by every copy of the plugin - also when the host runs them in
+// separate processes (Logic can): a small file mapped into memory by each. Each copy has an id unique across
+// processes (process id and a counter); 0 = no copy yet. Where the file cannot be made: shared in this process only.
+static std::atomic<int> gNextId{1};
+static std::atomic<int64_t>* FocusCell()
+{
+  static std::atomic<int64_t> local{0};
+  static std::atomic<int64_t>* cell = []() -> std::atomic<int64_t>* {
+#ifdef __APPLE__
+    const char *home = getenv("HOME");
+    if (home)
+    {
+      char p[1100];
+      snprintf(p, sizeof(p), "%s/Library/Application Support", home); mkdir(p, 0755);
+      snprintf(p, sizeof(p), "%s/Library/Application Support/Twenty Engine", home); mkdir(p, 0755);
+      snprintf(p, sizeof(p), "%s/Library/Application Support/Twenty Engine/focus.bin", home);
+      const int fd = open(p, O_RDWR | O_CREAT, 0644);
+      if (fd >= 0)
+      {
+        void *m = (ftruncate(fd, 64) == 0) ? mmap(nullptr, 64, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0) : MAP_FAILED;
+        close(fd);
+        if (m != MAP_FAILED) return (std::atomic<int64_t> *)m;
+      }
+    }
+#endif
+    return &local;
+  }();
+  return cell;
+}
 static int64_t WallMs() { return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
-bool TwentyEngine::HasFocus() const { return gFocus.load(std::memory_order_relaxed) == mId; }
+bool TwentyEngine::HasFocus() const { return FocusCell()->load(std::memory_order_relaxed) == mFocusId; }
 
 TwentyEngine::~TwentyEngine()
 {
-  int me = mId;
-  gFocus.compare_exchange_strong(me, 0);   // the next track played on takes over
+  int64_t me = mFocusId;
+  FocusCell()->compare_exchange_strong(me, 0);   // the next track played on takes over
 }
 
 TwentyEngine::TwentyEngine(const InstanceInfo& info)
 : iplug::Plugin(info, MakeConfig(kNumParams, kNumPresets))
 {
   mId = gNextId.fetch_add(1);
-  gFocus.store(mId);                       // a new track with the plugin is the selected one
+  mFocusId = ((int64_t)getpid() << 20) | mId;
+  FocusCell()->store(mFocusId);                       // a new track with the plugin is the selected one
   mHadFocus = true;
 #if IPLUG_DSP
   mHost = std::make_unique<MS20Host>();
@@ -211,8 +242,8 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       snprintf(mPanelPath, sizeof(mPanelPath), "%sMS20PANEL.BIN", dir);
 #if TWENTY_STUDIO
       // test build: diagnostics log, one file per copy of the plugin (TwentyEngine-debug-1.txt, -2, ...)
-      { char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug-%d.txt", dir, mId); mDbg = fopen(lp, "w");
-        Dbg("COPY %d of the plugin  (process %d, shared focus at %p, focus now %d)", mId, (int)getpid(), (void*)&gFocus, gFocus.load()); }
+      { char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug-%d-%d.txt", dir, (int)getpid(), mId); mDbg = fopen(lp, "w");
+        Dbg("COPY %d of the plugin  (process %d, id %lld, focus now %lld)", mId, (int)getpid(), (long long)mFocusId, (long long)FocusCell()->load()); }
 #endif
     }
 #endif
@@ -575,7 +606,7 @@ void TwentyEngine::OnIdle()
     int r = mDbgResets.load(); if (r != mDbgResetsSeen) { Dbg("RESET from the host (%d so far)", r); mDbgResetsSeen = r; }
     DbgMidi m; while (mDbgMidiQ.pop(m)) { const char* k = (m.s & 0xF0) == 0x90 ? (m.d2 ? "NOTE ON " : "NOTE ON v0") : (m.s & 0xF0) == 0x80 ? "NOTE OFF" : (m.s & 0xF0) == 0xD0 ? "PRESSURE" : (m.s & 0xF0) == 0xA0 ? "POLY AT " : "OTHER   ";
       Dbg("MIDI in %s  status %02X  data %3d %3d  (offset %d, clk %lld)", k, m.s, m.d1, m.d2, m.off, (long long)m.clk); }
-    { const int f = gFocus.load(); if (f != mDbgFocus) { Dbg("FOCUS: copy %d plays from the controller (this is copy %d)%s", f, mId, f == mId ? "  <- THIS ONE" : ""); mDbgFocus = f; } }
+    { const int64_t f = FocusCell()->load(); if (f != mDbgFocus) { Dbg("FOCUS: id %lld plays from the controller (this copy: %lld)%s", (long long)f, (long long)mFocusId, f == mFocusId ? "  <- THIS ONE" : ""); mDbgFocus = f; } }
     DbgBlk bk; while (mDbgBlkQ.pop(bk)) Dbg("BLOCK clk %lld ppq %.3f frames %d %s  stream msgs %d applied %d%s%s  resets %d  host param sets %d  peak %.3f",
       (long long)bk.clk, bk.ppq, bk.frames, bk.running ? "RUN " : "STOP", bk.streamN, bk.applied, bk.own ? " OWN-snapshot" : "", bk.foreign ? " REGION-snapshot" : "", bk.resets, bk.hostSets, bk.peak);
     DbgEv e; while (mDbgQ.pop(e)) Dbg("HOST sets param %d '%s' = %.2f  (source %d)", e.idx, kParamInfo[e.idx].label, e.raw / 2097152.0, e.src); }
@@ -727,7 +758,7 @@ bool TwentyEngine::HeardKey(uint8_t key) const
 void TwentyEngine::Claim(const IMidiMsg& msg)
 {
 #if IPLUG_DSP
-  gFocus.store(mId);
+  FocusCell()->store(mFocusId);
   mHadFocus = true;
   for (Heard &h : mHeard) h.ms = 0;
   mRecall.directMsg(msg.mStatus, msg.mData1, msg.mData2);
