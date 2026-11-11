@@ -1,5 +1,11 @@
 #include "TwentyEngine.h"
 #include <chrono>
+#ifndef _WIN32
+#include <unistd.h>
+#else
+#include <process.h>
+#define getpid _getpid
+#endif
 #include "IPlug_include_in_plug_src.h"
 #if IPLUG_EDITOR && !defined(NO_IGRAPHICS)
 #include "IControls.h"
@@ -205,7 +211,8 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       snprintf(mPanelPath, sizeof(mPanelPath), "%sMS20PANEL.BIN", dir);
 #if TWENTY_STUDIO
       // test build: diagnostics log, one file per copy of the plugin (TwentyEngine-debug-1.txt, -2, ...)
-      { char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug-%d.txt", dir, mId); mDbg = fopen(lp, "w"); }
+      { char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug-%d.txt", dir, mId); mDbg = fopen(lp, "w");
+        Dbg("COPY %d of the plugin  (process %d, shared focus at %p, focus now %d)", mId, (int)getpid(), (void*)&gFocus, gFocus.load()); }
 #endif
     }
 #endif
@@ -568,6 +575,7 @@ void TwentyEngine::OnIdle()
     int r = mDbgResets.load(); if (r != mDbgResetsSeen) { Dbg("RESET from the host (%d so far)", r); mDbgResetsSeen = r; }
     DbgMidi m; while (mDbgMidiQ.pop(m)) { const char* k = (m.s & 0xF0) == 0x90 ? (m.d2 ? "NOTE ON " : "NOTE ON v0") : (m.s & 0xF0) == 0x80 ? "NOTE OFF" : (m.s & 0xF0) == 0xD0 ? "PRESSURE" : (m.s & 0xF0) == 0xA0 ? "POLY AT " : "OTHER   ";
       Dbg("MIDI in %s  status %02X  data %3d %3d  (offset %d, clk %lld)", k, m.s, m.d1, m.d2, m.off, (long long)m.clk); }
+    { const int f = gFocus.load(); if (f != mDbgFocus) { Dbg("FOCUS: copy %d plays from the controller (this is copy %d)%s", f, mId, f == mId ? "  <- THIS ONE" : ""); mDbgFocus = f; } }
     DbgBlk bk; while (mDbgBlkQ.pop(bk)) Dbg("BLOCK clk %lld ppq %.3f frames %d %s  stream msgs %d applied %d%s%s  resets %d  host param sets %d  peak %.3f",
       (long long)bk.clk, bk.ppq, bk.frames, bk.running ? "RUN " : "STOP", bk.streamN, bk.applied, bk.own ? " OWN-snapshot" : "", bk.foreign ? " REGION-snapshot" : "", bk.resets, bk.hostSets, bk.peak);
     DbgEv e; while (mDbgQ.pop(e)) Dbg("HOST sets param %d '%s' = %.2f  (source %d)", e.idx, kParamInfo[e.idx].label, e.raw / 2097152.0, e.src); }

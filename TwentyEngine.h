@@ -109,7 +109,7 @@ private:
   // diagnostics: the audio blocks right after the transport starts (or the host resets the plugin)
   struct DbgBlk { int64_t clk; double ppq; int frames, streamN, applied, resets, hostSets; uint8_t own, foreign, running; float peak; };
   ms20::SpscQueue<DbgBlk, 1024> mDbgBlkQ;
-  int mDbgBlocksLeft = 0, mDbgResetsAudio = 0;
+  int mDbgBlocksLeft = 0, mDbgResetsAudio = 0, mDbgFocus = -1;
   std::atomic<int> mDbgHostSets{0};
   ms20::SpscQueue<DbgMidi, 2048> mDbgMidiQ;
   FILE* mDbg = nullptr; int mDbgLines = 0; int mDbgSlot = -2; int mDbgResetsSeen = 0; int mDbgEngine = 0;
