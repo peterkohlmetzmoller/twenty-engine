@@ -49,7 +49,7 @@ public:
     g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE INSTRUMENT", in);
 #endif
 
-    static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy" };
+    static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy", "microKONTROL" };
     const bool on = mController > 0;
     const IRECT row = in.GetFromBottom(18.f);
     const float cx = row.L + 6.f, cy = row.MH();
@@ -76,7 +76,13 @@ public:
     g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), tk.Get(), TakesRect());
 
     // where the live sound's panel came from (engine/panel_memory.h): the controller's own dump, or the copy kept here
-    if (on)
+    if (on && mController == CTRL_MK)
+    {
+      const int st = mPlug ? mPlug->MkState() : 0;
+      g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), st == 2 ? "Native mode: encoders by page (< >), pads = memories" : "Waiting for the microKONTROL's native mode",
+                 IRECT(in.L, in.T + 48.f, in.R, in.T + 64.f));
+    }
+    else if (on)
     {
       const char* ptxt = mPanel == 2 ? "Panel read from the MS-20ic"
                        : mPanel == 1 ? "Panel from memory  \xC2\xB7  volume off/on reads the knobs"
@@ -93,6 +99,7 @@ private:
   int mController = -1;
   int mTakes = -1;
   int mPanel = -1;
+  int mMk = -1;
   int mFrames = 0;
 };
 #endif
@@ -154,6 +161,12 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
   mHost = std::make_unique<MS20Host>();
   mPlay = std::make_unique<MS20Host>();
   mRecall.setEngines(mHost.get(), mPlay.get());
+  {
+    static ms20::MicroKontrol<kNumParams>::Info mkInfo[kNumParams];
+    for (int i = 0; i < kNumParams; i++) mkInfo[i] = {kParamInfo[i].object, kParamInfo[i].name, kParamInfo[i].type, kParamInfo[i].hmax};
+    mMk = std::make_unique<ms20::MicroKontrol<kNumParams>>(mkInfo);
+    mMkSink.p = this;
+  }
 #if TWENTY_STUDIO
   mHost->setHook(nullptr); mPlay->setHook(nullptr);   // Automation: the playback engine plays the region's stream
   for (int i = 0; i < kNumParams; i++)
@@ -326,7 +339,7 @@ void TwentyEngine::PaintStatus(HDC wdc)
   DrawUtf8(dc, "TWENTY ENGINE INSTRUMENT", RECT{L, T - 4, R, T + 24}, DT_LEFT | DT_TOP | DT_SINGLELINE);
 #endif
 
-  static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy" };
+  static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy", "microKONTROL" };
   const int controller = LedPort::FindController();
   const bool on = controller > 0;
   // connection row at the bottom
@@ -352,7 +365,12 @@ void TwentyEngine::PaintStatus(HDC wdc)
 #endif
   SelectObject(dc, fSmall); SetTextColor(dc, dim);
   DrawUtf8(dc, tk, RECT{L, T + 30, R, T + 46}, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-  if (on)
+  if (on && controller == CTRL_MK)
+  {
+    DrawUtf8(dc, MkState() == 2 ? "Native mode: encoders by page (< >), pads = memories" : "Waiting for the microKONTROL's native mode",
+             RECT{L, T + 48, R, T + 64}, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+  }
+  else if (on)
   {
     const int ps = PanelSource();
     const char* ptxt = ps == 2 ? "Panel read from the MS-20ic"
@@ -452,9 +470,10 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   const bool twoEngines = direct;
   // the controller has just connected (or the plugin just started with it): play the last panel into the live
   // engine as a start-up dump - the sound matches the knobs and the start-up light show runs
-  if (direct && !mWasDirect) mPanelMem.replay([this](uint8_t st, uint8_t d1, uint8_t d2) { mHost->midi(0, st, d1, d2); });
+  if (direct && !mWasDirect && mLed.Kind() != CTRL_MK) mPanelMem.replay([this](uint8_t st, uint8_t d1, uint8_t d2) { mHost->midi(0, st, d1, d2); });
   mWasDirect = direct;
   if (direct) DrainController();
+  MkBlock();
 #if TWENTY_STUDIO
   // Automation: the region's settings that arrived for this block, onto the engine that plays the track
   mStream.flush([this](int slot, int32_t raw) { StreamApply(slot, raw); });
@@ -590,7 +609,11 @@ void TwentyEngine::OnIdle()
   // 3. LEDs on the iC
   if (--mRescan <= 0) { mLed.Rescan(); mRescan = 100; }   // every ~2 s: finds the iC when it is plugged in later
   LedMsg m;
-  while (mHost->popLed(m)) mLed.Send(m.b, m.len);
+  const bool mk = mLed.Kind() == CTRL_MK;
+  while (mHost->popLed(m)) if (!mk) mLed.Send(m.b, m.len);   // the MS-20ic's LEDs (not for the microKONTROL)
+  // 4. the microKONTROL: native mode, displays and pad lights
+  MkOut o;
+  while (mMkOut.pop(o)) mLed.Send(o.b, o.len);
 }
 #endif
 
@@ -627,6 +650,35 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
 }
 
 
+// The microKONTROL (engine/mk_control.h), audio thread, before the engines run: its native messages turn the
+// live engine's settings and play the memories; native mode is switched on when it is found (and again if it
+// sends plain CCs, e.g. after it was switched off and on).
+void TwentyEngine::MkBlock()
+{
+#if IPLUG_DSP
+  const bool active = mLed.MkActive();
+  const double sr = GetSampleRate();
+  const int64_t ms = sr > 0.0 ? (int64_t)((double)mClock * 1000.0 / sr) : 0;
+  if (!active)
+  {
+    uint8_t g, c, a, b; while (mLed.PopNative(g, c, a, b)) {}
+    mMkOn = false; mMkState.store(0);
+    return;
+  }
+  const int cc = mLed.MkPlainCC();
+  if (!mMkOn || (cc != mMkCCSeen && ms - mMkStartMs >= 2000))
+  {
+    mMk->start(mMkSink);
+    mMkOn = true; mMkCCSeen = cc; mMkStartMs = ms;
+  }
+  mMk->hardware(mLed.MkBend(), mLed.MkMod());
+  uint8_t g, c, a, b;
+  while (mLed.PopNative(g, c, a, b)) { mMk->setGlobal(g); mMk->native(c, a, b, mMkSink, (uint32_t)ms); }
+  mMk->tick(mMkSink, (uint32_t)ms);
+  mMkState.store(mMk->nativeOn() ? 2 : 1);
+#endif
+}
+
 // Everything the controller sends, straight from it (Mac): it plays the live engine, like the hardware,
 // and tells recall what is played live. The Ksoloti and Teensy editions send the memory keys to the
 // computer as CC 102 (down) / 103 (up) with the key as value: here they are keys again.
@@ -636,7 +688,7 @@ void TwentyEngine::DrainController()
   uint8_t s, d1, d2;
   while (mLed.PopKnob(s, d1, d2))
   {
-    mPanelMem.onMessage(s, d1, d2);                    // keep the panel (MS20PANEL.BIN)
+    if (mLed.Kind() != CTRL_MK) mPanelMem.onMessage(s, d1, d2);   // keep the panel (MS20PANEL.BIN)
     if ((s & 0xF0) == 0xB0 && (d1 == 102 || d1 == 103)) { s = (uint8_t)((d1 == 102 ? 0x90 : 0x80) | (s & 0x0F)); d1 = d2; d2 = (s & 0xF0) == 0x90 ? 100 : 0; }
     const bool late = mRecall.directMsg(s, d1, d2);   // the host's copy of this key came first
     if (late) mPlay->midi(0, (uint8_t)(0x80 | (s & 0x0F)), d1, 0);   // silence the host's copy on the playback engine

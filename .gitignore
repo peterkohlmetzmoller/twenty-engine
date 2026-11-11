@@ -10,3 +10,6 @@ tests/memtest/
 tests/mem_test
 tests/recall_test
 /studio/
+tests/mk_test
+tests/panel_test
+tests/region_test

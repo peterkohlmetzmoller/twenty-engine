@@ -18,6 +18,7 @@ const int kNumParams = ms20::NPARAMS;   // every parameter of the Ksoloti patch
 #include "engine/recall.h"
 #include "engine/paramstream.h"
 #include "engine/panel_memory.h"
+#include "engine/mk_control.h"
 #include <memory>
 #include <atomic>
 #include <cstdio>
@@ -48,6 +49,7 @@ public:
   void StudioDiag(char* out, int n) const;                   // Studio test build: what Logic does with the knobs
   void RecallClear() { mRecall.clear(); }                    // UI: forget them
   int PanelSource() const { return mPanelSrc.load(); }       // UI: 0 unknown, 1 from memory (MS20PANEL.BIN), 2 read from the controller
+  int MkState() const { return mMkState.load(); }            // UI: microKONTROL 0 not used, 1 waiting for native mode, 2 native mode on
 #if IPLUG_EDITOR && defined(_WIN32)
   // Windows: the window is drawn with plain GDI instead of OpenGL (some graphics drivers, e.g. in virtual
   // machines, crashed the OpenGL window)
@@ -88,6 +90,23 @@ private:
   std::atomic<int> mPanelSrc{0};
   uint32_t mPanelSeenVer = 0, mPanelSavedVer = 0, mPanelPons = 0; int mPanelQuiet = 0;
   std::atomic<int> mDiagHost{0}; std::atomic<uint64_t> mDiagHostBits{0};
+  // the Korg microKONTROL as the controller (engine/mk_control.h): runs on the audio thread with the live engine;
+  // what it writes to the controller (displays, LEDs, native mode) goes out from OnIdle
+  struct MkOut { uint8_t b[20]; int len; };
+  struct MkSinkImpl : ms20::MkSink {
+    TwentyEngine *p = nullptr;
+    int32_t get(int i) override { return p->mHost->getParamRaw(i); }
+    void set(int i, int32_t raw) override { p->mHost->setParamNow(i, raw); }
+    void midi(uint8_t s, uint8_t d1, uint8_t d2) override { p->mHost->midi(0, s, d1, d2); }
+    int memSlot() override { return p->mHost->memSlot(); }
+    void sysex(const uint8_t *b, int n) override { MkOut m; m.len = n > 20 ? 20 : n; memcpy(m.b, b, m.len); p->mMkOut.push(m); }
+  };
+  std::unique_ptr<ms20::MicroKontrol<kNumParams>> mMk;
+  MkSinkImpl mMkSink;
+  ms20::SpscQueue<MkOut, 1024> mMkOut;
+  bool mMkOn = false; int mMkCCSeen = 0; int64_t mMkStartMs = 0;
+  std::atomic<int> mMkState{0};
+  void MkBlock();                               // audio thread, once per block
   // ---- beta diagnostics: what touches the parameters around a memory recall
   struct DbgEv { int idx; int src; int32_t raw; };
   ms20::SpscQueue<DbgEv, 2048> mDbgQ;
