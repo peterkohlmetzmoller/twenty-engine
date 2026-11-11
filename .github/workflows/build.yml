@@ -393,6 +393,32 @@ jobs:
           [ "${{ steps.pv.outcome }}" = success ] && [ "${{ steps.reaper.outcome }}" = success ]
 
   # ---------------- Teensy 4.1 firmware (.hex for the Teensy Loader) ----------------
+  # ---------------- Daisy Patch SM firmware (beta) ----------------
+  build-daisy:
+    if: ${{ !inputs.artifacts_run }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: ARM toolchain and libDaisy
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc-arm-none-eabi > /dev/null
+          arm-none-eabi-gcc --version | head -1
+          git clone -q --depth 1 --recurse-submodules --shallow-submodules https://github.com/electro-smith/libDaisy.git ../libDaisy
+          echo "libDaisy $(git -C ../libDaisy log -1 --format='%h %ad' --date=short)"
+          make -C ../libDaisy -j4 -s > libdaisy.log 2>&1 || { tail -30 libdaisy.log; exit 1; }
+      - name: Build
+        run: |
+          cd daisy/TwentyEngineDaisy
+          make -j4 LIBDAISY_DIR=$GITHUB_WORKSPACE/../libDaisy > build.log 2>&1 || { grep -E "error" build.log | head -30; exit 1; }
+          arm-none-eabi-size build/TwentyEngineDaisy.elf
+          mkdir -p $GITHUB_WORKSPACE/dout && cp build/TwentyEngineDaisy.bin $GITHUB_WORKSPACE/dout/
+          cp ../../../libDaisy/core/dsy_bootloader_v6_4-intdfu-2000ms.bin $GITHUB_WORKSPACE/dout/
+          sha256sum $GITHUB_WORKSPACE/dout/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TwentyEngine-Daisy
+          path: dout/*
+
   build-teensy:
     if: ${{ !inputs.artifacts_run }}
     runs-on: ubuntu-24.04
