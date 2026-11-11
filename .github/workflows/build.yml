@@ -17,7 +17,7 @@ env:
 jobs:
   # ---------------- Mac: AU + VST3, universal (Apple Silicon + Intel) ----------------
   build-mac:
-    if: ${{ !inputs.artifacts_run }}
+    if: ${{ !inputs.artifacts_run && github.ref_name != 'linux' }}
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
@@ -183,7 +183,7 @@ jobs:
   # ---------------- the plugins in other hosts: pluginval and REAPER (Mac) ----------------
   daw-test-mac:
     needs: build-mac
-    if: ${{ !cancelled() && github.ref_name != 'ui' && (needs.build-mac.result == 'success' || inputs.artifacts_run) }}
+    if: ${{ !cancelled() && github.ref_name != 'ui' && github.ref_name != 'linux' && (needs.build-mac.result == 'success' || inputs.artifacts_run) }}
     runs-on: macos-15-intel
     timeout-minutes: 45
     steps:
@@ -263,7 +263,7 @@ jobs:
 
   # ---------------- Windows: VST3 (64-bit), checked with Steinberg's validator ----------------
   build-windows:
-    if: ${{ !inputs.artifacts_run && github.ref_name != 'ui' }}
+    if: ${{ !inputs.artifacts_run && github.ref_name != 'ui' && github.ref_name != 'linux' }}
     runs-on: windows-2022
     defaults:
       run:
@@ -376,7 +376,7 @@ jobs:
   # ---------------- the plugins in other hosts: pluginval and REAPER (Windows) ----------------
   daw-test-windows:
     needs: build-windows
-    if: ${{ !cancelled() && github.ref_name != 'ui' && (needs.build-windows.result == 'success' || inputs.artifacts_run) }}
+    if: ${{ !cancelled() && github.ref_name != 'ui' && github.ref_name != 'linux' && (needs.build-windows.result == 'success' || inputs.artifacts_run) }}
     runs-on: windows-2022
     timeout-minutes: 45
     defaults:
@@ -439,7 +439,7 @@ jobs:
   # ---------------- Teensy 4.1 firmware (.hex for the Teensy Loader) ----------------
   # ---------------- Daisy Patch SM firmware (beta) ----------------
   build-daisy:
-    if: ${{ !inputs.artifacts_run && github.ref_name != 'ui' }}
+    if: ${{ !inputs.artifacts_run && github.ref_name != 'ui' && github.ref_name != 'linux' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -464,7 +464,7 @@ jobs:
           path: dout/*
 
   build-teensy:
-    if: ${{ !inputs.artifacts_run && github.ref_name != 'ui' }}
+    if: ${{ !inputs.artifacts_run && github.ref_name != 'ui' && github.ref_name != 'linux' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -494,3 +494,62 @@ jobs:
         with:
           name: TwentyEngine-Teensy
           path: out/*.hex
+
+  # ---------------- Linux: the standalone app with the panel window (DPF), Intel/AMD and ARM ----------------
+  build-linux:
+    if: ${{ !inputs.artifacts_run && github.ref_name != 'ui' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04,     arch: x86_64 }
+          - { os: ubuntu-22.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential cmake pkg-config libasound2-dev libjack-jackd2-dev libgl-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libdbus-1-dev > /dev/null
+      - name: Build
+        run: |
+          cmake -S linux -B build-linux -DCMAKE_BUILD_TYPE=Release > cfg.log 2>&1 || { tail -30 cfg.log; exit 1; }
+          cmake --build build-linux -j4 > build.log 2>&1 || { grep -E "error" build.log | head -40; exit 1; }
+          ls -la build-linux/bin
+          ldd build-linux/bin/TwentyEngine | grep -v "linux-vdso" | awk '{print $1}' | tr '\n' ' '; echo
+          objdump -T build-linux/bin/TwentyEngine | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1
+      - name: Test the controller port (ALSA sequencer, pretend MS-20ic)
+        run: |
+          g++ -std=c++17 -O2 -Wall -DTWENTY_ALSA -I. -o alsa_test tests/alsa_test.cpp -lasound -lpthread
+          sudo apt-get install -y -qq linux-modules-extra-$(uname -r) > /dev/null 2>&1 || true
+          sudo modprobe snd-seq 2>/dev/null || true
+          ls -la /dev/snd 2>/dev/null || echo "no /dev/snd"
+          sudo chmod a+rw /dev/snd/* 2>/dev/null || true
+          ./alsa_test
+      - name: Start the app (dummy audio, virtual screen) and take a picture
+        run: |
+          sudo apt-get install -y -qq jackd2 xvfb imagemagick > /dev/null
+          jackd -d dummy -r 48000 -p 256 > jack.log 2>&1 &
+          sleep 2
+          Xvfb :91 -screen 0 1400x800x24 > /dev/null 2>&1 &
+          sleep 1
+          (DISPLAY=:91 timeout 15 build-linux/bin/TwentyEngine > app.log 2>&1 || true) &
+          sleep 8
+          DISPLAY=:91 import -window root linux_window_${{ matrix.arch }}.png
+          sleep 8
+          grep -v "^ALSA lib" app.log | head -20
+      - name: Package
+        run: |
+          d=TwentyEngine-Linux-${{ matrix.arch }}
+          mkdir -p $d
+          cp build-linux/bin/TwentyEngine $d/
+          cp linux/README.md $d/README.md
+          cp LICENSE LICENSE-EXCEPTIONS.md $d/
+          tar czf $d.tar.gz $d
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TwentyEngine-Linux-${{ matrix.arch }}
+          path: |
+            TwentyEngine-Linux-${{ matrix.arch }}.tar.gz
+            linux_window_${{ matrix.arch }}.png

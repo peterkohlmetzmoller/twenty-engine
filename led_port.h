@@ -329,6 +329,198 @@ private:
   }
 };
 
+#elif defined(__linux__) && defined(TWENTY_ALSA)
+// Linux (the standalone app): the ALSA sequencer, which every Linux audio setup has (also under JACK or PipeWire).
+// One client "Twenty Engine" with an input port that is connected to the controller (knobs, cables, keys: the
+// live engine, like the hardware) and to every other MIDI keyboard (keys only), and an output port for the LEDs.
+// Two handles: the reader thread owns the input one; the output one (sending, connecting) is used by one other
+// thread only (the app's idle thread).
+#include <alsa/asoundlib.h>
+#include <poll.h>
+#include <string.h>
+#include <ctype.h>
+#include <string>
+#include <thread>
+#include <vector>
+
+class LedPort
+{
+public:
+  LedPort()
+  {
+    if (snd_seq_open(&mOut, "default", SND_SEQ_OPEN_OUTPUT, 0) < 0) { mOut = nullptr; return; }
+    if (snd_seq_open(&mIn, "default", SND_SEQ_OPEN_INPUT, 0) < 0) { mIn = nullptr; return; }
+    // named like the Mac's own port: never taken for a Twenty Engine controller (Teensy, Ksoloti)
+    snd_seq_set_client_name(mOut, "Twenty Engine Panel");
+    snd_seq_set_client_name(mIn, "Twenty Engine Panel (in)");
+    mOutPort = snd_seq_create_simple_port(mOut, "LEDs out", SND_SEQ_PORT_CAP_READ, SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION);
+    mInPort = snd_seq_create_simple_port(mIn, "Keys and knobs in", SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE, SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION);
+    mOutClient = snd_seq_client_id(mOut); mInClient = snd_seq_client_id(mIn);
+    snd_midi_event_new(256, &mEnc);
+    mRun.store(true);
+    mThread = std::thread([this] { Reader(); });
+  }
+  ~LedPort()
+  {
+    mRun.store(false);
+    if (mThread.joinable()) mThread.join();
+    if (mEnc) snd_midi_event_free(mEnc);
+    if (mIn) snd_seq_close(mIn);
+    if (mOut) snd_seq_close(mOut);
+  }
+  bool PopKnob(uint8_t &s, uint8_t &d1, uint8_t &d2) { uint32_t v; if (!mKnobs.pop(v)) return false; s = v >> 16; d1 = v >> 8; d2 = v; return true; }
+  bool PopKey(uint8_t &s, uint8_t &d1, uint8_t &d2) { uint32_t v; if (!mKeys.pop(v)) return false; s = v >> 16; d1 = v >> 8; d2 = v; return true; }
+  bool KnobsDirect() const { return mDirect.load(std::memory_order_relaxed); }
+  bool Connected() const { return mDest.client >= 0; }
+
+  // the controller (best match by name), connected both ways; every other keyboard into the input
+  void Rescan()
+  {
+    if (!mOut || !mIn) return;
+    std::vector<Port> ports; List(mOut, ports, mOutClient, mInClient);
+    Port best; int bestK = 0;
+    for (const Port &p : ports) if (p.kind > bestK && p.readable) { bestK = p.kind; best = p; }
+    const int src = bestK ? best.client : -1, sport = bestK ? best.port : -1;
+    if (src != mSrc.client || sport != mSrc.port)
+    {
+      if (mSrc.client >= 0) Unsubscribe(mSrc.client, mSrc.port, mInClient, mInPort);
+      if (mDest.client >= 0) Unsubscribe(mOutClient, mOutPort, mDest.client, mDest.port);
+      mSrc = {-1, -1}; mDest = {-1, -1};
+      if (src >= 0 && Subscribe(src, sport, mInClient, mInPort)) mSrc = {src, sport};
+      // the LEDs go to the controller's writable port (the same port on USB MIDI devices)
+      for (const Port &p : ports)
+        if (p.client == src && p.writable && Subscribe(mOutClient, mOutPort, p.client, p.port)) { mDest = {p.client, p.port}; break; }
+      mCtlClient.store(mSrc.client);
+    }
+    mDirect.store(mSrc.client >= 0);
+    // keyboards: every other hardware port that sends MIDI (connecting twice is refused by ALSA, harmless)
+    for (const Port &p : ports)
+      if (p.kind == 0 && p.readable && p.hardware && p.client != mSrc.client) Subscribe(p.client, p.port, mInClient, mInPort);
+  }
+  void Send(const uint8_t* bytes, int len)
+  {
+    if (!mOut || mDest.client < 0 || len <= 0 || len > 64) return;
+    snd_seq_event_t ev; snd_seq_ev_clear(&ev);
+    if (bytes[0] == 0xF0) snd_seq_ev_set_sysex(&ev, (unsigned)len, (void*)bytes);
+    else { snd_midi_event_reset_encode(mEnc); if (snd_midi_event_encode(mEnc, bytes, len, &ev) <= 0 || ev.type == SND_SEQ_EVENT_NONE) return; }
+    snd_seq_ev_set_source(&ev, mOutPort);
+    snd_seq_ev_set_dest(&ev, mDest.client, mDest.port);
+    snd_seq_ev_set_direct(&ev);
+    snd_seq_event_output_direct(mOut, &ev);
+  }
+
+  // Which controller is plugged in: 0 none, 1 stock MS-20 iC, 2 Ksoloti, 3 Teensy (same rules as Mac and Windows)
+  static int FindController()
+  {
+    snd_seq_t* h = nullptr;
+    if (snd_seq_open(&h, "default", SND_SEQ_OPEN_OUTPUT, 0) < 0) return 0;
+    std::vector<Port> ports; List(h, ports, snd_seq_client_id(h), -1);
+    snd_seq_close(h);
+    int found = 0; for (const Port &p : ports) if (p.readable && p.kind > found) found = p.kind;
+    return found;
+  }
+
+private:
+  struct Addr { int client, port; };
+  struct Port { int client = -1, port = -1, kind = 0; bool readable = false, writable = false, hardware = false; };
+  static bool Has(const std::string& s, const char* lowerNeedle)
+  {
+    std::string low(s); for (char& c : low) c = (char)tolower((unsigned char)c);
+    return low.find(lowerNeedle) != std::string::npos;
+  }
+  static void List(snd_seq_t* h, std::vector<Port>& out, int self1, int self2)
+  {
+    snd_seq_client_info_t* ci; snd_seq_port_info_t* pi;
+    snd_seq_client_info_alloca(&ci); snd_seq_port_info_alloca(&pi);
+    snd_seq_client_info_set_client(ci, -1);
+    while (snd_seq_query_next_client(h, ci) >= 0)
+    {
+      const int c = snd_seq_client_info_get_client(ci);
+      if (c == 0 || c == self1 || c == self2) continue;   // System; this app
+      const std::string cname = snd_seq_client_info_get_name(ci);
+      if (Has(cname, "midi through")) continue;
+      snd_seq_port_info_set_client(pi, c); snd_seq_port_info_set_port(pi, -1);
+      while (snd_seq_query_next_port(h, pi) >= 0)
+      {
+        const unsigned cap = snd_seq_port_info_get_capability(pi), type = snd_seq_port_info_get_type(pi);
+        if (cap & SND_SEQ_PORT_CAP_NO_EXPORT) continue;
+        const std::string name = cname + " " + snd_seq_port_info_get_name(pi);
+        Port p; p.client = c; p.port = snd_seq_port_info_get_port(pi);
+        p.readable = (cap & (SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ)) == (SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ);
+        p.writable = (cap & (SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE)) == (SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE);
+        p.hardware = (type & (SND_SEQ_PORT_TYPE_HARDWARE | SND_SEQ_PORT_TYPE_PORT)) != 0;
+        if (Has(name, "twenty engine panel")) p.kind = 0;
+        else if (Has(name, "ksoloti")) p.kind = 2;
+        else if (Has(name, "teensy") || Has(name, "twenty engine")) p.kind = 3;
+        else if (Has(name, "ms-20") || Has(name, "ms20")) p.kind = 1;
+        out.push_back(p);
+      }
+    }
+  }
+  bool Subscribe(int sc, int sp, int dc, int dp)
+  {
+    snd_seq_port_subscribe_t* sub; snd_seq_port_subscribe_alloca(&sub);
+    snd_seq_addr_t s{(unsigned char)sc, (unsigned char)sp}, d{(unsigned char)dc, (unsigned char)dp};
+    snd_seq_port_subscribe_set_sender(sub, &s); snd_seq_port_subscribe_set_dest(sub, &d);
+    const int r = snd_seq_subscribe_port(mOut, sub);
+    return r >= 0 || r == -EBUSY;   // EBUSY: already connected
+  }
+  void Unsubscribe(int sc, int sp, int dc, int dp)
+  {
+    snd_seq_port_subscribe_t* sub; snd_seq_port_subscribe_alloca(&sub);
+    snd_seq_addr_t s{(unsigned char)sc, (unsigned char)sp}, d{(unsigned char)dc, (unsigned char)dp};
+    snd_seq_port_subscribe_set_sender(sub, &s); snd_seq_port_subscribe_set_dest(sub, &d);
+    snd_seq_unsubscribe_port(mOut, sub);
+  }
+  // reader thread: events into raw messages; the controller's go to the knob queue, other keyboards' to the keys
+  void Reader()
+  {
+    const int n = snd_seq_poll_descriptors_count(mIn, POLLIN);
+    std::vector<pollfd> fds((size_t)(n > 0 ? n : 1));
+    snd_seq_poll_descriptors(mIn, fds.data(), (unsigned)fds.size(), POLLIN);
+    while (mRun.load())
+    {
+      if (poll(fds.data(), fds.size(), 100) <= 0) continue;
+      snd_seq_event_t* ev = nullptr;
+      while (snd_seq_event_input(mIn, &ev) >= 0 && ev)
+      {
+        const bool ctl = ev->source.client == mCtlClient.load();
+        KnobQueue& q = ctl ? mKnobs : mKeys;
+        const uint8_t ch = (uint8_t)(ev->data.control.channel & 15);
+        auto put = [&](uint8_t s, uint8_t a, uint8_t b) { q.push(((uint32_t)s << 16) | ((uint32_t)(a & 0x7F) << 8) | (b & 0x7F)); };
+        switch (ev->type)
+        {
+          case SND_SEQ_EVENT_NOTEON:     put(0x90 | ev->data.note.channel, ev->data.note.note, ev->data.note.velocity); break;
+          case SND_SEQ_EVENT_NOTEOFF:    put(0x80 | ev->data.note.channel, ev->data.note.note, ev->data.note.velocity); break;
+          case SND_SEQ_EVENT_KEYPRESS:   put(0xA0 | ev->data.note.channel, ev->data.note.note, ev->data.note.velocity); break;
+          case SND_SEQ_EVENT_CONTROLLER: put(0xB0 | ch, (uint8_t)ev->data.control.param, (uint8_t)ev->data.control.value); break;
+          case SND_SEQ_EVENT_PGMCHANGE:  put(0xC0 | ch, (uint8_t)ev->data.control.value, 0); break;
+          case SND_SEQ_EVENT_CHANPRESS:  put(0xD0 | ch, (uint8_t)ev->data.control.value, 0); break;
+          case SND_SEQ_EVENT_PITCHBEND:  { const int v = ev->data.control.value + 8192; put(0xE0 | ch, (uint8_t)(v & 0x7F), (uint8_t)(v >> 7)); break; }
+          case SND_SEQ_EVENT_CONTROL14:  { const int v = ev->data.control.value; put(0xB0 | ch, (uint8_t)ev->data.control.param, (uint8_t)(v >> 7)); if (ev->data.control.param < 32) put(0xB0 | ch, (uint8_t)(ev->data.control.param + 32), (uint8_t)v); break; }
+          case SND_SEQ_EVENT_NONREGPARAM: case SND_SEQ_EVENT_REGPARAM:
+          {
+            // ALSA joined CC 99/98/6 (or 101/100/6): split again, the engine reads the MS-20ic's cable messages as CCs
+            const bool nrpn = ev->type == SND_SEQ_EVENT_NONREGPARAM; const int prm = ev->data.control.param, v = ev->data.control.value;
+            put(0xB0 | ch, nrpn ? 99 : 101, (uint8_t)(prm >> 7)); put(0xB0 | ch, nrpn ? 98 : 100, (uint8_t)prm);
+            put(0xB0 | ch, 6, (uint8_t)(v >> 7)); if (v & 0x7F) put(0xB0 | ch, 38, (uint8_t)v);
+            break;
+          }
+          default: break;
+        }
+      }
+    }
+  }
+  snd_seq_t *mOut = nullptr, *mIn = nullptr;
+  int mOutPort = -1, mInPort = -1, mOutClient = -1, mInClient = -1;
+  snd_midi_event_t* mEnc = nullptr;
+  Addr mSrc{-1, -1}, mDest{-1, -1};
+  std::atomic<int> mCtlClient{-1};
+  std::atomic<bool> mDirect{false}, mRun{false};
+  KnobQueue mKnobs, mKeys;
+  std::thread mThread;
+};
+
 #else
 class LedPort
 {
