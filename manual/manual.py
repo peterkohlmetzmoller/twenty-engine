@@ -487,7 +487,7 @@ story.append(cards([
     ('Teensy 4.1', 'Inside the MS-20ic, with the PJRC audio shield. Open <font name="CondB">TwentyEngineTeensy.hex</font> in the Teensy Loader (included in the download) and press the button on the Teensy. '
      'Sounds are saved in its own flash; no SD card needed. Oscillators run at 96 kHz and each voice drifts slightly, for an extra analog feel. Very low latency.'),
     ('AU / VST3 plugin', 'On your computer, played from a stock MS-20ic over USB. Mac (macOS 10.13 or newer, Intel and Apple Silicon) and Windows. '
-     'The installer adds Twenty Engine Instrument, which records your playing like audio (p. 10). No graphics on purpose: the MS-20ic is the interface.'),
+     'In Logic each region keeps its own sound (p. 10). No graphics on purpose: the MS-20ic is the interface.'),
 ], 3, 40 * mm))
 story.append(Spacer(1, 3))
 story.append(side(
@@ -515,31 +515,29 @@ story.append(PageBreak())
 
 # ---------------- 9. recording with the plugin
 story += [H1('Recording with the plugin')]
-story.append(p('<b>Twenty Engine Instrument</b> records your playing like audio: every take plays back exactly as you played it, '
-               'knob moves included, from the sound it started with. Your panel stays yours the whole time.', 'lead'))
+story.append(p('In Logic the sound is recorded <b>with every region</b>: cut, move, copy or loop a region and it keeps its own sound, '
+               'whatever you do with the knobs afterwards. Your panel stays yours the whole time.', 'lead'))
 story.append(side(
-    stack(p('<b>Record it like audio</b>', 'h2'),
-          gtable([['1', 'Put Twenty Engine Instrument on an instrument track and select the MS-20ic as its MIDI input.'],
-                  ['2', 'Record as usual. The region gets your notes; the plugin itself records every knob move, switch and sound recall that belongs to them.'],
-                  ['3', 'Play it back: you hear the take exactly as you played it, knob moves included, from the sound you started with.'],
-                  ['4', 'Meanwhile the panel stays yours. Play along live on top: the live sound follows the knobs as they are now.']],
+    stack(p('<b>Record as usual</b>', 'h2'),
+          gtable([['1', 'Put Twenty Engine on an instrument track. Leave its MIDI input on <b>All</b> (Logic sets it so).'],
+                  ['2', 'Record. With your notes the region gets the sound: the whole panel when you start, then every knob move, switch, cable and sound recall.'],
+                  ['3', 'Play it back: each region plays with its own sound. Play along live on top: the live sound follows the knobs as they are now.'],
+                  ['4', 'A new sound for the next take: just dial it in and record. Earlier regions keep theirs.']],
                  [7 * mm, None], ('', 'How')),
           Spacer(1, 3),
-          p('Takes are saved with the project. The plugin window counts them: <font name="CondB">Recorded performances: 12</font>; '
-            'double-click that line to forget them all.', 'small')),
+          p('The window says <font name="CondB">The sound is recorded with the regions</font>. '
+            'A region without a recorded sound plays the panel\'s sound, like any synth.', 'small')),
     stack(p('<b>Good to know</b>', 'h2'),
-          p('<b>A new sound for the next take:</b> just dial it in and record. Nothing to switch, no modes: '
-            'earlier takes keep their own sound, whatever you do with the knobs afterwards.', 'small'),
-          p('<b>Start anywhere.</b> Start playback in the middle of a take and it picks up at the next note. Copy, loop or move a region and the take goes with its notes. '
-            'Change the notes and the region plays with the panel instead, like a new part.', 'small'),
-          p('<b>A take is a recording, like audio.</b> Its knob moves are not edited with the mouse: to change a part, play it again. '
-            'Several parts with different sounds can share one track.', 'small'),
-          p('<b>Your knob moves also land in the region as MIDI CC.</b> While the MS-20ic is connected the plugin ignores them: '
-            'the take it recorded itself is what plays.', 'small')), FULLW * 0.5))
+          p('<b>Start anywhere.</b> Once a part has played, starting or jumping inside it gives its sound at once. '
+            'In a part not played since you opened the project, the sound arrives within a second.', 'small'),
+          p('<b>Several tracks.</b> The selected (or armed) track plays from the MS-20ic; the others play their regions. '
+            'Select another track and play a note: it takes over.', 'small'),
+          p('<b>Where the sound lives.</b> As MIDI controllers on channels 15 and 16 in the region. Leave them in: '
+            'delete them and the region plays the panel\'s sound. The MS-20ic\'s own knob CCs (channel 1) are in the region too; the plugin ignores them.', 'small')), FULLW * 0.5))
 story.append(Spacer(1, 4))
-story.append(p('<b>Windows.</b> To keep a take and the panel apart, the plugin opens the MS-20ic next to your DAW. Windows 11 with Windows MIDI Services allows that. '
-               'On older Windows the plugin says so in its window and works like a normal MIDI instrument: knob moves go into the region as MIDI CC and play back from there. '
-               'For the panel LEDs, don\'t enable the MS-20ic as a MIDI output in your DAW.', 'small'))
+story.append(p('<b>Other DAWs and Windows.</b> Tested in Logic; REAPER should work the same way. In Ableton Live and other DAWs, and on Windows, '
+               'the plugin plays like any synth: from the track, with the panel\'s sound. To keep a part\'s sound there, freeze or bounce the track. '
+               'Windows: add it to an instrument track with the MS-20ic as its MIDI input, and for the panel LEDs don\'t enable the MS-20ic as a MIDI output in your DAW.', 'small'))
 
 doc = BaseDocTemplate(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'TwentyEngine_Manual.pdf'), pagesize=PAGE,
                       leftMargin=M, rightMargin=M, topMargin=14 * mm, bottomMargin=14 * mm,

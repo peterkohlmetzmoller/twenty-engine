@@ -9,7 +9,7 @@ DefaultDirName={commoncf64}\VST3
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 Uninstallable=yes
-UninstallDisplayName=Twenty Engine Instrument (VST3)
+UninstallDisplayName=Twenty Engine (VST3)
 LicenseFile=resources\license.txt
 InfoBeforeFile=resources\welcome_win.txt
 OutputDir=..
@@ -33,4 +33,4 @@ Type: filesandordirs; Name: "{commoncf64}\VST3\TwentyEngine.vst3"
 Type: filesandordirs; Name: "{commoncf64}\VST3\TwentyEngineAutomation.vst3"
 
 [Messages]
-FinishedLabel=Twenty Engine Instrument is installed. Rescan plugins in your music software (or restart it), then add it to an instrument track with the MS-20ic as its MIDI input.
+FinishedLabel=Twenty Engine is installed. Rescan plugins in your music software (or restart it), then add it to an instrument track with the MS-20ic as its MIDI input.
