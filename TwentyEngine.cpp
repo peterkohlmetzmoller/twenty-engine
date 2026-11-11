@@ -1,4 +1,5 @@
 #include "TwentyEngine.h"
+#include <chrono>
 #include "IPlug_include_in_plug_src.h"
 #if IPLUG_EDITOR && !defined(NO_IGRAPHICS)
 #include "IControls.h"
@@ -27,7 +28,7 @@ public:
 
   bool IsDirty() override
   {
-    if (++mFrames >= 30) { mFrames = 0; bool d = Scan(); const int t = Takes(); if (t != mTakes) { mTakes = t; d = true; } const int ps = mPlug ? mPlug->PanelSource() : 0; if (ps != mPanel) { mPanel = ps; d = true; } if (TWENTY_STUDIO) d = true; if (d) return true; }   // about twice a second
+    if (++mFrames >= 30) { mFrames = 0; bool d = Scan(); const int t = Takes(); if (t != mTakes) { mTakes = t; d = true; } const int ps = mPlug ? mPlug->PanelSource() : 0; if (ps != mPanel) { mPanel = ps; d = true; } const int fc = (mPlug && mPlug->DirectNow() && !mPlug->HasFocus()) ? 0 : 1; if (fc != mFocus) { mFocus = fc; d = true; } if (TWENTY_STUDIO) d = true; if (d) return true; }   // about twice a second
     return IControl::IsDirty();
   }
 
@@ -76,7 +77,10 @@ public:
     g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), tk.Get(), TakesRect());
 
     // where the live sound's panel came from (engine/panel_memory.h): the controller's own dump, or the copy kept here
-    if (on)
+    if (on && mFocus == 0)
+      g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), "Another track plays from the controller  \xC2\xB7  select this one and play",
+                 IRECT(in.L, in.T + 48.f, in.R, in.T + 64.f));
+    else if (on)
     {
       const char* ptxt = mPanel == 2 ? "Panel read from the MS-20ic"
                        : mPanel == 1 ? "Panel from memory  \xC2\xB7  volume off/on reads the knobs"
@@ -93,6 +97,7 @@ private:
   int mController = -1;
   int mTakes = -1;
   int mPanel = -1;
+  int mFocus = -1;
   int mFrames = 0;
 };
 #endif
@@ -147,9 +152,24 @@ static const NiceName *Nice(int i)
   return nullptr;
 }
 
+// which copy of the plugin plays from the controller (shared by all copies in the host's process; 0 = none yet)
+static std::atomic<int> gFocus{0}, gNextId{1};
+static int64_t WallMs() { return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+
+bool TwentyEngine::HasFocus() const { return gFocus.load(std::memory_order_relaxed) == mId; }
+
+TwentyEngine::~TwentyEngine()
+{
+  int me = mId;
+  gFocus.compare_exchange_strong(me, 0);   // the next track played on takes over
+}
+
 TwentyEngine::TwentyEngine(const InstanceInfo& info)
 : iplug::Plugin(info, MakeConfig(kNumParams, kNumPresets))
 {
+  mId = gNextId.fetch_add(1);
+  gFocus.store(mId);                       // a new track with the plugin is the selected one
+  mHadFocus = true;
 #if IPLUG_DSP
   mHost = std::make_unique<MS20Host>();
   mPlay = std::make_unique<MS20Host>();
@@ -352,7 +372,9 @@ void TwentyEngine::PaintStatus(HDC wdc)
 #endif
   SelectObject(dc, fSmall); SetTextColor(dc, dim);
   DrawUtf8(dc, tk, RECT{L, T + 30, R, T + 46}, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-  if (on)
+  if (on && DirectNow() && !HasFocus())
+    DrawUtf8(dc, "Another track plays from the controller  \xC2\xB7  select this one and play", RECT{L, T + 48, R, T + 64}, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+  else if (on)
   {
     const int ps = PanelSource();
     const char* ptxt = ps == 2 ? "Panel read from the MS-20ic"
@@ -428,6 +450,9 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   if (!mLed.KnobsDirect()) { mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2); return; }   // Windows: the track plays the live engine
   DrainController();                                                  // what the controller sent first: tells live from region
   const int type = msg.mStatus & 0xF0;
+  // this track receives a key the controller just played, while another copy has the controller: the host
+  // sends the live playing here now (this track was selected) - take the controller over
+  if (!HasFocus() && type == 0x90 && msg.mData2 > 0 && HeardKey(msg.mData1)) { Claim(msg); return; }
 #if TWENTY_STUDIO
   // Automation without its own port (Windows for now): the region's knob CCs play the playback engine, like any
   // MIDI instrument. With the port, the region's stream carries the sound and the MS-20ic's CCs are ignored.
@@ -452,7 +477,7 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   const bool twoEngines = direct;
   // the controller has just connected (or the plugin just started with it): play the last panel into the live
   // engine as a start-up dump - the sound matches the knobs and the start-up light show runs
-  if (direct && !mWasDirect) mPanelMem.replay([this](uint8_t st, uint8_t d1, uint8_t d2) { mHost->midi(0, st, d1, d2); });
+  if (direct && !mWasDirect && HasFocus()) mPanelMem.replay([this](uint8_t st, uint8_t d1, uint8_t d2) { mHost->midi(0, st, d1, d2); });
   mWasDirect = direct;
   if (direct) DrainController();
 #if TWENTY_STUDIO
@@ -533,7 +558,8 @@ void TwentyEngine::OnIdle()
   const bool port = PanelPort::Get().Ok();
   const int64_t nowMs = ms20::ParamStream<kNumParams>::NowMs();
   const bool again = mRunningA.load() && nowMs - mLastSnapMs >= ms20::ParamStream<kNumParams>::SNAP_EVERY_MS;
-  if ((mSnapReq.exchange(false) || again) && port)
+  const bool focus = HasFocus() || !mLed.KnobsDirect();   // only the copy that plays from the controller sends its panel
+  if ((mSnapReq.exchange(false) || again) && port && focus)
   {
     mLastSnapMs = nowMs;
     mStream.encodeMark([](uint8_t st, uint8_t d1, uint8_t d2) { const uint8_t m[3] = {st, d1, d2}; PanelPort::Get().Send(m, 3); });
@@ -550,7 +576,7 @@ void TwentyEngine::OnIdle()
     if (p.idx < 0 || p.idx >= kNumParams) continue;
 #if TWENTY_STUDIO
     // Automation: the panel changed: out through the port (a recording track records it)
-    if (port) StreamSend(p.idx, p.raw);
+    if (port && focus) StreamSend(p.idx, p.raw);
 #else
     mFromEngine = true;
     GetParam(p.idx)->Set(FromRaw(p.idx, p.raw));   // keep the plugin's copy in step (saved with the project); no automation gestures to the host
@@ -564,7 +590,7 @@ void TwentyEngine::OnIdle()
     else if (v != mPanelSavedVer && ++mPanelQuiet >= 50 && mPanelPath[0]) { if (mPanelMem.save(mPanelPath)) mPanelSavedVer = v; mPanelQuiet = 0; } }
 #if TWENTY_STUDIO
   // 1d. Automation: the mono and tap cables (cable events, not settings) from the controller's panel
-  if (port)
+  if (port && focus)
   {
     ms20::PanelMemory::State st;
     if (mPanelMem.snapshot(st))
@@ -590,7 +616,8 @@ void TwentyEngine::OnIdle()
   // 3. LEDs on the iC
   if (--mRescan <= 0) { mLed.Rescan(); mRescan = 100; }   // every ~2 s: finds the iC when it is plugged in later
   LedMsg m;
-  while (mHost->popLed(m)) mLed.Send(m.b, m.len);
+  const bool ledsHere = HasFocus() || !mLed.KnobsDirect();   // the LEDs follow the copy that plays from the controller
+  while (mHost->popLed(m)) if (ledsHere) mLed.Send(m.b, m.len);
 }
 #endif
 
@@ -633,15 +660,52 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
 void TwentyEngine::DrainController()
 {
 #if IPLUG_DSP
+  const bool focus = HasFocus();
+  if (mHadFocus && !focus)
+  {
+    // another track took the controller over: let go of what this one still holds
+    for (int k = 0; k < 128; k++) if (mHeldDirect[k]) { mHost->midi(0, (uint8_t)(0x80 | (mHeldDirect[k] - 1)), (uint8_t)k, 0); mHeldDirect[k] = 0; }
+    mHost->midi(0, 0xD0, 0, 0);                       // the switch is up
+  }
+  mHadFocus = focus;
   uint8_t s, d1, d2;
   while (mLed.PopKnob(s, d1, d2))
   {
     mPanelMem.onMessage(s, d1, d2);                    // keep the panel (MS20PANEL.BIN)
     if ((s & 0xF0) == 0xB0 && (d1 == 102 || d1 == 103)) { s = (uint8_t)((d1 == 102 ? 0x90 : 0x80) | (s & 0x0F)); d1 = d2; d2 = (s & 0xF0) == 0x90 ? 100 : 0; }
+    const bool on = (s & 0xF0) == 0x90 && d2 > 0, off = (s & 0xF0) == 0x80 || ((s & 0xF0) == 0x90 && d2 == 0);
+    if (!focus)
+    {
+      // another track plays from the controller: only remember the keys (this track's echo of one = selected)
+      if (on) { mHeard[mHeardHead] = {d1, WallMs()}; mHeardHead = (mHeardHead + 1) % 16; }
+      continue;
+    }
+    if (on) mHeldDirect[d1] = (uint8_t)((s & 0x0F) + 1); else if (off) mHeldDirect[d1] = 0;
     const bool late = mRecall.directMsg(s, d1, d2);   // the host's copy of this key came first
     if (late) mPlay->midi(0, (uint8_t)(0x80 | (s & 0x0F)), d1, 0);   // silence the host's copy on the playback engine
     mHost->midi(0, s, d1, d2);
   }
+#endif
+}
+
+bool TwentyEngine::HeardKey(uint8_t key) const
+{
+  const int64_t now = WallMs();
+  for (const Heard &h : mHeard) if (h.ms > 0 && h.key == key && now - h.ms <= 500) return true;
+  return false;
+}
+
+// audio thread: this track's copy of a key the controller just played - from now on this copy plays from the
+// controller; the key itself is live, so it plays the live engine (its note-off comes from the controller)
+void TwentyEngine::Claim(const IMidiMsg& msg)
+{
+#if IPLUG_DSP
+  gFocus.store(mId);
+  mHadFocus = true;
+  for (Heard &h : mHeard) h.ms = 0;
+  mRecall.directMsg(msg.mStatus, msg.mData1, msg.mData2);
+  mHeldDirect[msg.mData1] = (uint8_t)((msg.mStatus & 0x0F) + 1);
+  mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);
 #endif
 }
 

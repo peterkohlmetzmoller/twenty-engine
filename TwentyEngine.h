@@ -33,6 +33,7 @@ class TwentyEngine final : public Plugin
 {
 public:
   TwentyEngine(const InstanceInfo& info);
+  ~TwentyEngine();
 
 #if IPLUG_DSP
   void ProcessBlock(sample** inputs, sample** outputs, int nFrames) override;
@@ -47,6 +48,11 @@ public:
   void DrainController();                                    // audio thread: everything straight from the controller
   void StudioDiag(char* out, int n) const;                   // Studio test build: what Logic does with the knobs
   void RecallClear() { mRecall.clear(); }                    // UI: forget them
+  // Several tracks with the plugin: only one copy plays from the controller at a time - the one on the track
+  // the host sends the live playing to (the selected / armed track). It shows itself by receiving, through its
+  // track, the notes the controller just sent; the other copies play only their regions.
+  bool HasFocus() const;
+  bool DirectNow() const { return mLed.KnobsDirect(); }
   int PanelSource() const { return mPanelSrc.load(); }       // UI: 0 unknown, 1 from memory (MS20PANEL.BIN), 2 read from the controller
 #if IPLUG_EDITOR && defined(_WIN32)
   // Windows: the window is drawn with plain GDI instead of OpenGL (some graphics drivers, e.g. in virtual
@@ -59,6 +65,13 @@ public:
 #endif
 
 private:
+  int mId = 0;
+  bool mHadFocus = false;
+  struct Heard { uint8_t key; int64_t ms; };
+  Heard mHeard[16] = {}; int mHeardHead = 0;     // controller note-ons while another track has the controller
+  uint8_t mHeldDirect[128] = {};                 // keys held on the live engine (channel + 1), released on hand-over
+  void Claim(const IMidiMsg& msg);
+  bool HeardKey(uint8_t key) const;
   static int32_t ToRaw(int idx, double value);     // plugin parameter value -> engine (Ksoloti) units
   static double FromRaw(int idx, int32_t raw);     // engine units -> plugin parameter value
 
