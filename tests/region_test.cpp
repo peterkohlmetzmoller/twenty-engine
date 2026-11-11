@@ -44,6 +44,8 @@ struct Sim {
   bool wasRunning = false, snapReq = false, mono = false, tap = false; int blocks = 0; int64_t lastSnap = 0;
   int sent = 0, applied = 0;
   StreamMemory<NPARAMS> mem; bool starting = false; int pend = 0; double pendPos = 0;
+  bool recordPort = true;                             // false: the track does not record the plugin's port
+  bool streamEver = false, following = false; int64_t clk = 0, lastStream = -1000000000; double aheadPos = -1e9; int32_t seen[NPARAMS] = {};
   std::map<int64_t, std::vector<int32_t>> liveAt;     // live settings at each idle while recording (by song position)
   Sim() {
     live.reset(SR); play.reset(SR);
@@ -56,8 +58,8 @@ struct Sim {
   }
   void portSend(uint8_t s, uint8_t d1, uint8_t d2) {
     sent++;
-    if (recording) region.push_back({pos, s, d1, d2});
-    if (running) thru.push_back({pos + THRU * BLK, s, d1, d2});
+    if (recording && recordPort) region.push_back({pos, s, d1, d2});
+    if (running && recordPort) thru.push_back({pos + THRU * BLK, s, d1, d2});
   }
   void applyStream(int slot, int32_t raw) {
     applied++;
@@ -107,9 +109,16 @@ struct Sim {
     for (auto &e : due) trackMsg(e);
     const double songPos = (double)pos / SR;
     // as the plugin: at a start, the remembered sound for this song position first
-    if (running && starting) { mem.breakRun(); if (const int32_t *v = mem.at(songPos, 0.125)) for (int i = 0; i < NPARAMS; i++) play.setParamQuiet(i, v[i]); }
+    if (running && starting) { mem.breakRun(); if (const int32_t *v = mem.at(songPos, 0.125)) { for (int i = 0; i < NPARAMS; i++) play.setParamQuiet(i, v[i]); lastStream = clk; } }
     starting = false;
+    // as the plugin: no region data for a while (or never): follow the panel; a remembered snapshot just ahead wins
+    if (running && streamEver && clk - lastStream > SR / 2)
+      if (auto *a = mem.within(songPos, songPos + 0.125)) if (a->pos != aheadPos) { for (int i = 0; i < NPARAMS; i++) play.setParamQuiet(i, a->v[i]); aheadPos = a->pos; lastStream = clk; }
+    const bool follow = !streamEver || (running && clk - lastStream > SR * 3 / 2);
+    if (follow) for (int i = 0; i < NPARAMS; i++) { const int32_t v = live.getParamRaw(i); if (!following || v != seen[i]) { play.setParamQuiet(i, v); seen[i] = v; } }
+    following = follow;
     ps.flush([&](int slot, int32_t raw) { applyStream(slot, raw); });
+    if (ps.lastApplied > 0) { streamEver = true; lastStream = clk; }
     // a region's snapshot: remember it with its song position (its tail may come in the next blocks)
     if (running && ps.lastForeign) { pend = 3; pendPos = songPos; }
     if (running && pend > 0) { if (ps.lastN > 0) { int32_t v[NPARAMS]; for (int i = 0; i < NPARAMS; i++) v[i] = play.getParamRaw(i); mem.store(pendPos, v); } pend--; }
@@ -122,6 +131,7 @@ struct Sim {
     float L[BLK], R[BLK]; live.process(L, R, BLK); play.process(L, R, BLK);
     if (++blocks % IDLE == 0) idle();
     if (running) pos += BLK;
+    clk += BLK;
   }
   void run(double secs) { for (int k = 0; k < (int)(secs * SR / BLK); k++) block(); }
   void knob(uint8_t cc, uint8_t v) { controller.push_back({0, 0xB0, cc, v}); }
@@ -236,6 +246,22 @@ int main() {
     S.startPlay(31.2, 7); S.run(0.02);
     check(S.compare(S.liveAtSong(5.7), "inside the moved piece") == 0, "once played, a start inside the moved piece has its sound at once");
     S.stop(); }
+
+  // ---- a take recorded without the plugin's port (track input not "All"; Ableton): it plays with the panel's
+  //      sound, like any synth - not with the sound of whatever region came before
+  dial(S, 11);
+  S.recordPort = false;
+  S.startRecord(40.0); S.run(0.3); S.note(67, true); S.run(1.5); S.note(67, false); S.run(0.3); S.stop();
+  S.recordPort = true;
+  dial(S, 13);
+  std::vector<int32_t> soundD(NPARAMS); for (int i = 0; i < NPARAMS; i++) soundD[i] = S.live.getParamRaw(i);
+  S.startPlay(40.0, 8); S.run(1.8);
+  check(S.compare(soundD, "region without sound") == 0, "a region without recorded sound plays with the panel's sound");
+  S.stop();
+  // and the regions with sound still play their own (following the panel never kicks in inside them)
+  S.startPlay(0.0, 9); S.run(4.5);
+  check(S.compare(S.liveAtSong(4.4), "take 1 after the panel-following region") == 0, "take 1 still plays its own sound afterwards");
+  S.stop();
 
   // ---- encoding round trip for every setting
   int rt = 0;

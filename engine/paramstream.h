@@ -228,6 +228,12 @@ struct StreamMemory {
     for (int k = 0; k < n; k++) { if (s[k].pos <= pos + ahead) best = &s[k]; else break; }
     return best ? best->v : nullptr;
   }
+  // a snapshot with its position in (a, b], or null (entering a region whose first snapshot comes a moment
+  // after its first notes)
+  const Snap *within(double a, double b) const {
+    for (int k = 0; k < n; k++) { if (s[k].pos > b) break; if (s[k].pos > a) return &s[k]; }
+    return nullptr;
+  }
   void clear() { n = 0; cont = false; }
 };
 

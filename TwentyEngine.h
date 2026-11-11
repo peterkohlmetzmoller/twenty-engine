@@ -1,9 +1,9 @@
 #pragma once
 
 #include "IPlug_include_in_plug_hdr.h"
-// Two plugins from one source: Twenty Engine (the instrument: plays like the hardware, keeps every take
-// exactly as played) and Twenty Engine Studio (TWENTY_STUDIO 1, set in the Studio build's config.h:
-// the knobs are automatable, so a performance becomes editable Logic automation).
+// Twenty Engine: the live engine plays from the MS-20ic; the sound is recorded into the region as MIDI
+// (engine/paramstream.h) and a second engine plays the regions with it (TWENTY_STUDIO 1, config.h).
+// TWENTY_STUDIO 0 is the older "Instrument" (performance recall), kept for reference.
 #ifndef TWENTY_STUDIO
 #define TWENTY_STUDIO 0
 #endif
@@ -90,7 +90,8 @@ private:
   // region; the region's stream sets the playback engine
   ms20::ParamStream<kNumParams> mStream;
   std::unique_ptr<ms20::StreamMemory<kNumParams>> mMem;   // the regions' sound by song position (audio thread)
-  std::atomic<bool> mStartReq{false}, mStreamEver{false};
+  std::atomic<bool> mStartReq{false}, mStreamEver{false}, mFollowA{false};
+  int64_t mLastStreamClk = -1000000000; double mAheadPos = -1e9; bool mFollowing = false; int32_t mFollowSeen[kNumParams] = {};
   bool mRunBefore = false, mWasRunPpq = false; double mExpectPpq = 0.0; int mMemPend = 0; double mMemPendPos = 0.0; int mMemUsed = 0;
   std::atomic<bool> mSnapReq{false};
   bool mStreamMono = false, mStreamTap = false;

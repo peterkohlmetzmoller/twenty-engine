@@ -53,7 +53,7 @@ public:
     g.DrawRect(ink, mRECT.GetPadded(-6.f), nullptr, 1.5f);
     const IRECT in = mRECT.GetPadded(-22.f);
 #if TWENTY_STUDIO
-    g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE AUTOMATION", in);
+    g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE", in);
 #else
     g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE INSTRUMENT", in);
 #endif
@@ -71,7 +71,7 @@ public:
 
     WDL_String tk;
 #if TWENTY_STUDIO
-    { char d[160]; d[0] = 0; if (mPlug) mPlug->StudioDiag(d, sizeof(d)); tk.Set(d); }   // test build: does the host report recording?
+    { char d[160]; d[0] = 0; if (mPlug) mPlug->StudioDiag(d, sizeof(d)); tk.Set(d); }   // where the sound is kept
 #else
     if (mPlug && !mPlug->RecallOn())
 #ifdef _WIN32
@@ -241,11 +241,8 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       MakeDir(parent); MakeDir(dir);
       mHost->loadMemories(dir);
       snprintf(mPanelPath, sizeof(mPanelPath), "%sMS20PANEL.BIN", dir);
-#if TWENTY_STUDIO
-      // test build: diagnostics log, one file per copy of the plugin (TwentyEngine-debug-1.txt, -2, ...)
-      { char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug-%d-%d.txt", dir, (int)getpid(), mId); mDbg = fopen(lp, "w");
-        Dbg("COPY %d of the plugin  (process %d, id %lld, focus now %lld)", mId, (int)getpid(), (long long)mFocusId, (long long)FocusCell()->load()); }
-#endif
+      // diagnostics log (off in releases): TwentyEngine-debug-<process>-<copy>.txt
+      // { char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug-%d-%d.txt", dir, (int)getpid(), mId); mDbg = fopen(lp, "w"); }
     }
 #endif
   }
@@ -285,7 +282,12 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 
 #if IPLUG_EDITOR && !defined(NO_IGRAPHICS)
   mMakeGraphicsFunc = [&]() -> IGraphics* {
-    return MakeGraphics(*this, PLUG_WIDTH, PLUG_HEIGHT, PLUG_FPS, GetScaleForScreen(PLUG_WIDTH, PLUG_HEIGHT));
+#if defined(AU_API)
+    const float auScale = 1.75f;   // the AU window (Logic) larger; the VST3 keeps its size
+#else
+    const float auScale = 1.f;
+#endif
+    return MakeGraphics(*this, PLUG_WIDTH, PLUG_HEIGHT, PLUG_FPS, GetScaleForScreen(PLUG_WIDTH, PLUG_HEIGHT) * auScale);
   };
   mLayoutFunc = [&](IGraphics* pGraphics) {
     pGraphics->LoadFont("Roboto-Regular", (void*)kRobotoTTF, (int)sizeof(kRobotoTTF));
@@ -383,7 +385,7 @@ void TwentyEngine::PaintStatus(HDC wdc)
   HGDIOBJ oldF = SelectObject(dc, fTitle);
   SetTextColor(dc, ink);
 #if TWENTY_STUDIO
-  DrawUtf8(dc, "TWENTY ENGINE AUTOMATION", RECT{L, T - 4, R, T + 24}, DT_LEFT | DT_TOP | DT_SINGLELINE);
+  DrawUtf8(dc, "TWENTY ENGINE", RECT{L, T - 4, R, T + 24}, DT_LEFT | DT_TOP | DT_SINGLELINE);
 #else
   DrawUtf8(dc, "TWENTY ENGINE INSTRUMENT", RECT{L, T - 4, R, T + 24}, DT_LEFT | DT_TOP | DT_SINGLELINE);
 #endif
@@ -402,7 +404,7 @@ void TwentyEngine::PaintStatus(HDC wdc)
   SelectObject(dc, fRow); SetTextColor(dc, on ? ink : dim);
   DrawUtf8(dc, txt, RECT{L + 20, B - 18, R, B}, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-  // takes line (Instrument) or the test line (Automation)
+  // takes line (Instrument) or where the sound is kept
   char tk[192];
 #if TWENTY_STUDIO
   tk[0] = 0; StudioDiag(tk, sizeof(tk));
@@ -538,13 +540,30 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
     if (running && (mStartReq.exchange(false) || !mRunBefore || jumped))
     {
       mMem->breakRun();
-      if (const int32_t* v = mMem->at(ppq, 0.25)) { for (int i = 0; i < kNumParams; i++) e->setParamQuiet(i, v[i]); mMemUsed++; }
+      if (const int32_t* v = mMem->at(ppq, 0.25)) { for (int i = 0; i < kNumParams; i++) e->setParamQuiet(i, v[i]); mMemUsed++; mLastStreamClk = mClock; }
     }
     mRunBefore = running; mWasRunPpq = running;
     if (!running) mMem->breakRun();
     mExpectPpq = ppq + nFrames * bps;
+    // no region data for a while (or never): the playback engine follows the panel, like any synth - a region
+    // without recorded sound (Ableton, a track input other than All) plays with the panel's sound. Entering a
+    // region whose remembered snapshot is just ahead takes that one instead.
+    if (mLed.KnobsDirect())
+    {
+      if (running && mStreamEver.load() && mClock - mLastStreamClk > (int64_t)(sr * 0.5))
+        if (const auto* ahead = mMem->within(ppq, ppq + 0.25))
+          if (ahead->pos != mAheadPos) { for (int i = 0; i < kNumParams; i++) e->setParamQuiet(i, ahead->v[i]); mAheadPos = ahead->pos; mLastStreamClk = mClock; }
+      const bool follow = !mStreamEver.load() || (running && mClock - mLastStreamClk > (int64_t)(sr * 1.5));
+      if (follow)
+        for (int i = 0; i < kNumParams; i++)
+        {
+          const int32_t v = mHost->getParamRaw(i);
+          if (!mFollowing || v != mFollowSeen[i]) { e->setParamQuiet(i, v); mFollowSeen[i] = v; }
+        }
+      mFollowing = follow; mFollowA.store(follow && running);
+    }
     mStream.flush([this](int slot, int32_t raw) { StreamApply(slot, raw); });
-    if (mStream.lastApplied > 0) mStreamEver.store(true);
+    if (mStream.lastApplied > 0) { mStreamEver.store(true); mLastStreamClk = mClock; }
     // a region's snapshot: remember it with its song position (its tail may arrive in the next blocks)
     if (running && mStream.lastForeign) { mMemPend = 3; mMemPendPos = ppq; }
     if (running && mMemPend > 0)
@@ -665,8 +684,12 @@ void TwentyEngine::OnIdle()
     mDbgEngine++;
     if (p.idx < 0 || p.idx >= kNumParams) continue;
 #if TWENTY_STUDIO
-    // Automation: the panel changed: out through the port (a recording track records it)
+    // the panel changed: out through the port (a recording track records it), and into the plugin's own
+    // parameters (saved with the project; no automation gestures to the host)
     if (port && focus) StreamSend(p.idx, p.raw);
+    mFromEngine = true;
+    GetParam(p.idx)->Set(FromRaw(p.idx, p.raw));
+    mFromEngine = false;
 #else
     mFromEngine = true;
     GetParam(p.idx)->Set(FromRaw(p.idx, p.raw));   // keep the plugin's copy in step (saved with the project); no automation gestures to the host
@@ -802,8 +825,9 @@ void TwentyEngine::Claim(const IMidiMsg& msg)
 void TwentyEngine::StudioDiag(char* out, int n) const
 {
 #if IPLUG_DSP
-  if (!PanelPort::Get().Ok()) snprintf(out, n, "No MIDI port: the region's knob CCs play (as a MIDI instrument)");
-  else snprintf(out, n, "Sound in the region \xC2\xB7 sent %d \xC2\xB7 from the region since play: %d \xC2\xB7 remembered %d", mStreamSent.load(), mStreamApplied.load(), mMem ? mMem->n : 0);
+  if (!PanelPort::Get().Ok()) snprintf(out, n, "Plays the panel's sound (keeping it in the regions needs a Mac)");
+  else if (mFollowA.load()) snprintf(out, n, "No sound recorded here yet \xC2\xB7 plays the panel (track input: All)");
+  else snprintf(out, n, "The sound is recorded with the regions");
 #else
   if (n > 0) out[0] = 0;
 #endif

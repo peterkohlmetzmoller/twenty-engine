@@ -31,8 +31,8 @@ if(WIN32)
 else()
   set(TWENTY_UI "")
 endif()
-# TWENTY_VARIANT_DEFS (set by tools/make_variant.py for Automation): build-wide, so iPlug2's own wrapper sources see them
-list(APPEND TWENTY_DEFS ${TWENTY_VARIANT_DEFS})
+# VST3: MIDI CCs reach the plugin on all 16 channels (the sound in the region uses channels 15 and 16)
+list(APPEND TWENTY_DEFS VST3_NUM_MIDI_IN_CHANS=16 VST3_NUM_CC_CHANS=16)
 iplug_add_plugin(${PROJECT_NAME}
   SOURCES
     TwentyEngine.cpp

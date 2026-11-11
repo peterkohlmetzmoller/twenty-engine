@@ -97,7 +97,7 @@ local function run()
     if name:find("Twenty Engine") then
       L("FOUND", name, "|", ident)
       local kind = name:match("^(%w+)i?:") or "?"
-      plugs[#plugs + 1] = {name = name, studio = name:find("Automation") ~= nil, kind = name:match("^AU") and "AU" or "VST3"}
+      plugs[#plugs + 1] = {name = name, studio = true, kind = name:match("^AU") and "AU" or "VST3"}   -- one plugin: the region-stream engine
     end
     i = i + 1
   end
