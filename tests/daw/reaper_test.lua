@@ -104,7 +104,7 @@ local function run()
   L("PLUGINS", #plugs)
 
   for _, P in ipairs(plugs) do
-    local tag = (P.studio and "studio" or "inst") .. "_" .. P.kind:lower()
+    local tag = (P.name:find("Twenty Engine UI") and "studioui" or (P.studio and "studio" or "inst")) .. "_" .. P.kind:lower()
     -- 1. notes only
     clear()
     local tr, fx = newTrack(P.name)
@@ -187,6 +187,23 @@ local function run()
     render("both_vst3")
   end
   clear()
+  -- Twenty Engine UI: its panel window, left open for a screenshot (two cables patched, VCO2 ARP play mode)
+  if os.getenv("TE_UISHOT") then
+    for _, P in ipairs(plugs) do
+      if P.name:find("Twenty Engine UI") and P.kind == "VST3" then
+        clear()
+        local tr, fx = newTrack(P.name)
+        local function patch(name, v) local p = findParam(tr, fx, name) if p >= 0 then reaper.TrackFX_SetParamNormalized(tr, fx, p, v / 13) end end
+        patch("Patch LPF Cutoff", 1)   -- MG TRI -> LPF
+        patch("Patch TOTAL", 3)        -- EG 1 -> TOTAL
+        local pm = findParam(tr, fx, "Play Mode")
+        if pm >= 0 then reaper.TrackFX_SetParamNormalized(tr, fx, pm, 30 / 64) end
+        reaper.TrackFX_Show(tr, fx, 3)
+        L("WINDOW", P.name)
+        break
+      end
+    end
+  end
   L("DONE")
 end
 

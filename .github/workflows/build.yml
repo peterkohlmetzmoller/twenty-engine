@@ -76,6 +76,17 @@ jobs:
           grep -E -A6 "Undefined symbols|duplicate symbol" build.log | head -30 | sed 's/^/::error::/'
           exit $st
 
+      - name: Build Twenty Engine UI (AU + VST3, test plugin with the MS-20 panel window)
+        run: |
+          python3 tools/make_ui_variant.py build-ui-src
+          cmake -S build-ui-src -B build-ui -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DIPLUG_DEPLOY_PLUGINS=OFF -DIPLUG2_DIR="$PWD/iPlug2" > ui-cfg.log 2>&1 || { tail -40 ui-cfg.log; exit 1; }
+          set +e
+          cmake --build build-ui --config Release --target TwentyEngineUI-au --target TwentyEngineUI-vst3 -- -quiet > ui.log 2>&1
+          st=$?
+          grep -E "error:|error G|fatal" ui.log | sort -u | head -25 | sed 's/^/::error::/'
+          grep -E -A6 "Undefined symbols|duplicate symbol" ui.log | head -30 | sed 's/^/::error::/'
+          exit $st
+
       - name: Sign (ad hoc) and validate the AU (Intel)
         run: |
           COMP=$(find build -name "TwentyEngine.component" -type d | head -1)
@@ -96,11 +107,24 @@ jobs:
           # below 10.14 the minimum sits in LC_VERSION_MIN_MACOSX ("version"), from 10.14 in LC_BUILD_VERSION ("minos")
           MINOS=$(vtool -arch x86_64 -show-build "$COMP/Contents/MacOS/"* | awk '/^ *(minos|version) /{print $2; exit}')
           [ "$MINOS" = "10.13" ] || { echo "::error::Intel AU minimum macOS is $MINOS, expected 10.13"; exit 1; }
+          # Twenty Engine UI, validated next to Twenty Engine (both installed at once)
+          UCOMP=$(find build-ui -name "TwentyEngineUI.component" -type d | head -1)
+          UVST3=$(find build-ui -name "TwentyEngineUI.vst3" -type d | head -1)
+          echo "UI AU: $UCOMP  VST3: $UVST3"
+          codesign --force --deep -s - "$UCOMP"
+          codesign --force --deep -s - "$UVST3"
+          cp -R "$UCOMP" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 2
+          auval -v aumu Tw2U Pkmo
+          auval -v aumu Tw20 Pkmo > /dev/null && echo "both AUs validate side by side"
+          cp -R "$UCOMP" "$UVST3" out/
 
       - name: Package
         run: |
           cd out
           ditto -c -k --keepParent TwentyEngine.component ../TwentyEngine-AU.zip && ditto -c -k --keepParent TwentyEngine.vst3 ../TwentyEngine-VST3-Mac.zip
+          ditto -c -k --keepParent TwentyEngineUI.component ../TwentyEngineUI-AU.zip && ditto -c -k --keepParent TwentyEngineUI.vst3 ../TwentyEngineUI-VST3-Mac.zip
 
       - name: Build AAX (unsigned, only with the AAX SDK)
         if: env.HAVE_AAX == '1'
@@ -138,6 +162,12 @@ jobs:
             TwentyEngine-Installer.pkg
             TwentyEngine-AU.zip
             TwentyEngine-VST3-Mac.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TwentyEngineUI-Mac
+          path: |
+            TwentyEngineUI-AU.zip
+            TwentyEngineUI-VST3-Mac.zip
             TwentyEngine-AAX-Mac-unsigned.zip
 
   # ---------------- Apple Silicon: validate the arm64 half of the same AU ----------------
@@ -158,11 +188,17 @@ jobs:
           path: art
           run-id: ${{ inputs.artifacts_run || github.run_id }}
           github-token: ${{ github.token }}
-      - name: Install the plugin (AU + VST3)
+      - uses: actions/download-artifact@v4
+        with:
+          name: TwentyEngineUI-Mac
+          path: art
+          run-id: ${{ inputs.artifacts_run || github.run_id }}
+          github-token: ${{ github.token }}
+      - name: Install the plugins (AU + VST3; Twenty Engine and Twenty Engine UI)
         run: |
           mkdir -p ~/Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/VST3
-          for z in TwentyEngine-AU; do ditto -x -k art/$z.zip ~/Library/Audio/Plug-Ins/Components/; done
-          for z in TwentyEngine-VST3-Mac; do ditto -x -k art/$z.zip ~/Library/Audio/Plug-Ins/VST3/; done
+          for z in TwentyEngine-AU TwentyEngineUI-AU; do ditto -x -k art/$z.zip ~/Library/Audio/Plug-Ins/Components/; done
+          for z in TwentyEngine-VST3-Mac TwentyEngineUI-VST3-Mac; do ditto -x -k art/$z.zip ~/Library/Audio/Plug-Ins/VST3/; done
           killall -9 AudioComponentRegistrar || true
           ls ~/Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/VST3
       - name: pluginval (plugin stress test)
@@ -173,9 +209,10 @@ jobs:
           ditto -x -k pv.zip pv
           PV=$(find pv -path "*MacOS/pluginval" -type f | head -1)
           st=0
-          for p in VST3/TwentyEngine.vst3 Components/TwentyEngine.component; do
+          for p in VST3/TwentyEngine.vst3 Components/TwentyEngine.component VST3/TwentyEngineUI.vst3 Components/TwentyEngineUI.component; do
             P="$HOME/Library/Audio/Plug-Ins/$p"
-            "$PV" --strictness-level 5 --skip-gui-tests --timeout-ms 900000 --validate "$P" > pv.log 2>&1; r=$?
+            GUI="--skip-gui-tests"; case "$p" in *UI*) GUI="";; esac   # the panel window is opened and closed too
+            "$PV" --strictness-level 5 $GUI --timeout-ms 900000 --validate "$P" > pv.log 2>&1; r=$?
             echo "::group::pluginval $p (exit $r)"; cat pv.log | tail -120; echo "::endgroup::"
             if [ $r -eq 0 ]; then echo "PLUGINVAL PASS $p"; else echo "::error::pluginval failed: $p"; grep -E "FAILED|!!!|\*\*\*" pv.log | head -20; st=1; fi
           done
@@ -195,12 +232,13 @@ jobs:
           RES="$HOME/Library/Application Support/REAPER"
           mkdir -p "$RES/Scripts" daw
           cp tests/daw/reaper_test.lua "$RES/Scripts/__startup.lua"
-          export TE_OUT="$PWD/daw"
+          export TE_OUT="$PWD/daw" TE_UISHOT=1
           /Applications/REAPER.app/Contents/MacOS/REAPER -nosplash -new > daw/stdout.txt 2>&1 &
           RP=$!
           # a fresh REAPER asks about the audio device first: answer "No" until the test script has started
           ( set +e; for i in $(seq 1 40); do sleep 3; [ -f daw/reaper_log.txt ] && break; osascript -e 'tell application "System Events" to tell process "SecurityAgent" to click button "Cancel" of window 1' >> daw/dialogs.txt 2>&1 || true; osascript -e 'tell application "System Events" to tell process "REAPER" to click button "No" of window 1' >> daw/dialogs.txt 2>&1 || true; done ) &
           for i in $(seq 1 150); do grep -q DONE daw/reaper_log.txt 2>/dev/null && break; sleep 4; done
+          sleep 6; screencapture -x ui.png 2>/dev/null && sips -Z 1800 ui.png > /dev/null 2>&1 && { echo "UISHOT-BEGIN"; base64 -i ui.png | tr -d '\n'; echo; echo "UISHOT-END"; }
           screencapture -x shot.png 2>/dev/null && sips -Z 900 shot.png > /dev/null 2>&1 && { echo "SCREENSHOT-BEGIN"; base64 -i shot.png | tr -d '\n'; echo; echo "SCREENSHOT-END"; }
           echo "---- diagnostics"; sort daw/dialogs.txt 2>/dev/null | uniq -c | head; cat daw/stdout.txt | tail -20; ls -la "$RES" "$RES/Scripts"
           osascript -e 'tell application "System Events" to get name of every window of process "REAPER"' 2>&1 | head -3
