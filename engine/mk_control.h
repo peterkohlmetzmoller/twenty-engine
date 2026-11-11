@@ -190,14 +190,14 @@ private:
     if (engaged[n] && cur != lastSet[n]) engaged[n] = false;            // moved by something else (a memory, the DAW)
     if (!engaged[n]) {                                                   // soft takeover: pass the current value first
       const int64_t tol = ((int64_t)FULL - lo) / 40;
-      const bool near = (int64_t)target - cur < tol && (int64_t)cur - target < tol;
+      const bool atValue = (int64_t)target - cur < tol && (int64_t)cur - target < tol;
       bool crossed = false;
       if (lastSlider[n] >= 0) {
         const int32_t prev = (int32_t)(lo + ((int64_t)FULL - lo) * lastSlider[n] / 127);
         crossed = (prev <= cur && target >= cur) || (prev >= cur && target <= cur);
       }
       lastSlider[n] = val;
-      if (!near && !crossed) { showPickup(k, n, i, cur); return; }
+      if (!atValue && !crossed) { showPickup(k, n, i, cur); return; }
       engaged[n] = true;
     }
     lastSlider[n] = val;
