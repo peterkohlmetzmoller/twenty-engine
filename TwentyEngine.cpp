@@ -787,7 +787,15 @@ void TwentyEngine::OnIdle()
   if (--mRescan <= 0) { mLed.Rescan(); mRescan = 100; }   // every ~2 s: finds the iC when it is plugged in later
   LedMsg m;
   const bool ledsHere = HasFocus() || !mLed.KnobsDirect();   // the LEDs follow the copy that plays from the controller
-  while (mHost->popLed(m)) if (ledsHere) mLed.Send(m.b, m.len);
+  while (mHost->popLed(m))
+  {
+    if (ledsHere) mLed.Send(m.b, m.len);
+#if TWENTY_UI
+    // the window's LEDs: F0 42 40 6E 01 01 <led> <3F on / 1F off> F7
+    if (m.len >= 8 && m.b[0] == 0xF0 && m.b[5] == 0x01 && m.b[6] < 5)
+    { const int bit = 1 << m.b[6]; int v = mUiLeds.load(); v = (m.b[7] == 0x3F) ? (v | bit) : (v & ~bit); mUiLeds.store(v); }
+#endif
+  }
 }
 #endif
 

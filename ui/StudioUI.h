@@ -176,6 +176,38 @@ static Info& HoverInfo() { static Info i; return i; }
 static void SetInfo(const std::string& s) { HoverInfo().text = s; HoverInfo().age = 0; }
 
 // ---------------------------------------------------------------- the static panel print
+// the five LEDs, numbered as the engine drives them on the MS-20ic: 0 MG rate, 1 EG 1, 2 ESP PEAK (arp tempo),
+// 3 ESP TRIG (patch memory), 4 power (volume)
+static float LedX(int i)
+{
+  static const float COLX5 = 69.8f, COLX6 = 82.2f;
+  switch (i) { case 0: return X(COLX5 - 1.5f); case 1: return X(COLX6 + 3.2f); case 2: return RX(1120); case 3: return RX(1385); default: return RX(1210); }
+}
+static float LedY(int i)
+{
+  switch (i) { case 0: return Yd(47.0f); case 1: return Yd(36.6f); case 2: case 3: return RY(800); default: return RY(105); }
+}
+class LedLights : public IControl
+{
+public:
+  LedLights(PatchHost* h) : IControl(IRECT(0, 0, (float)kW, (float)kH)), mHost(h) { mIgnoreMouse = true; }
+  void Draw(IGraphics& g) override
+  {
+    const int m = mHost ? mHost->Leds() : 0x10;
+    for (int i = 0; i < 5; i++)
+    {
+      const bool on = (m >> i) & 1;
+      g.FillCircle(on ? kLed : kPaper, LedX(i), LedY(i), 0.7f * S);
+      g.DrawCircle(kInk, LedX(i), LedY(i), 0.7f * S, nullptr, 1.5f);
+    }
+    mShown = m;
+  }
+  bool IsDirty() override { return (mHost ? mHost->Leds() : 0x10) != mShown || IControl::IsDirty(); }
+  bool IsHit(float, float) const override { return false; }
+private:
+  PatchHost* mHost; int mShown = -1;
+};
+
 class PanelArt : public IControl
 {
 public:
@@ -228,29 +260,23 @@ public:
     Arrow(g, {{RX(725), RY(612)}, {RX(725), RY(692)}});
     // ESP
     // ESP block diagram: drawn 30 grid steps higher than on the MS-20ic photo, so the knobs' arp names have room
+    // (in grey: Twenty Engine uses the ESP's knobs for the delay and the arp, and SIGNAL IN, not the processor)
     Txt(g, RX(200), RY(795), "EXTERNAL SIGNAL PROCESSOR", 2.0f, kInk, 'l');
-    Box(g, RX(330), RY(895), RX(410), RY(845), "AMP", 1.6f);
-    Box(g, RX(555), RY(900), RX(680), RY(840), "BAND PASS\nFILTER", 1.55f);
-    Box(g, RX(790), RY(900), RX(910), RY(840), "F-V\nCONVERTER", 1.55f);
-    Box(g, RX(1060), RY(900), RX(1180), RY(840), "ENVELOPE\nFOLLOWER", 1.55f);
+    Box(g, RX(330), RY(895), RX(410), RY(845), "AMP", 1.6f, kGrey);
+    Box(g, RX(555), RY(900), RX(680), RY(840), "BAND PASS\nFILTER", 1.55f, kGrey);
+    Box(g, RX(790), RY(900), RX(910), RY(840), "F-V\nCONVERTER", 1.55f, kGrey);
+    Box(g, RX(1060), RY(900), RX(1180), RY(840), "ENVELOPE\nFOLLOWER", 1.55f, kGrey);
     const float ar[6][2] = {{272, 330}, {410, 468}, {512, 555}, {680, 708}, {752, 790}, {910, 943}};
-    for (auto& a : ar) Arrow(g, {{RX(a[0]), RY(870)}, {RX(a[1]), RY(870)}});
-    Arrow(g, {{RX(1180), RY(870)}, {RX(1240), RY(870)}});
+    for (auto& a : ar) Arrow(g, {{RX(a[0]), RY(870)}, {RX(a[1]), RY(870)}}, kGrey);
+    Arrow(g, {{RX(1180), RY(870)}, {RX(1240), RY(870)}}, kGrey);
     Arrow(g, {{RX(1300), RY(185)}, {RX(1370), RY(185)}});
     // volume print
     Txt(g, RX(1210), RY(280) - 7.4f * S, "VOLUME", 2.0f);   // above the scale marks (they reach 6.3 units up)
     Txt(g, RX(1210), RY(280) + 7.3f * S + 0.6f * S, "POWER OFF", 1.6f);
-    // LEDs (power on; the others are not driven yet)
-    auto led = [&](float x, float y, bool on, const char* lab, char anchor) {
-      g.FillCircle(on ? kLed : kPaper, x, y, 0.7f * S); g.DrawCircle(kInk, x, y, 0.7f * S, nullptr, 1.5f);
-      if (lab && anchor == 'a') Txt(g, x, y - (0.7f + 0.9f) * S, lab, 1.7f);
-      if (lab && anchor == 'r') Txt(g, x - 1.6f * S, y + 0.7f * S, lab, 1.9f, kInk, 'r');
-    };
-    led(X(COLX[5] - 1.5f), Yd(47.0f), false, "RATE", 'a');
-    led(X(COLX[6] + 3.2f), Yd(36.6f), false, nullptr, 'n');
-    led(RX(1120), RY(800), false, "PEAK", 'r');
-    led(RX(1385), RY(800), false, "TRIG", 'r');
-    led(RX(1210), RY(105), true, nullptr, 'n');
+    // LED labels (the lights themselves: LedLights, driven by the engine)
+    Txt(g, LedX(0), LedY(0) - (0.7f + 0.9f) * S, "RATE", 1.7f);
+    Txt(g, LedX(2) - 1.6f * S, LedY(2) + 0.7f * S, "PEAK", 1.9f, kInk, 'r');
+    Txt(g, LedX(3) - 1.6f * S, LedY(3) + 0.7f * S, "TRIG", 1.9f, kInk, 'r');
   }
 };
 
@@ -658,6 +684,7 @@ private:
 inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller, std::function<void(char*, int)> diag)
 {
   g->AttachControl(new PanelArt());
+  g->AttachControl(new LedLights(ph));
   static const float COLX[8] = {7.5f, 20.0f, 32.6f, 45.0f, 57.4f, 69.8f, 82.2f, 94.0f};
   const float RA = 18.f, RB = 35.f, RC = 51.f, RD = 71.f, MA = 58.5f, MB = 71.f;
   const float EGR[5] = {17.f, 31.f, 45.f, 58.5f, 71.f};

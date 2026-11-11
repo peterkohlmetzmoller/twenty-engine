@@ -9,5 +9,6 @@ struct PatchHost {
   virtual int NoisePick(int jackIndex) const = 0;        // which noise jack a noise cable comes from (0 pink, 1 white)
   virtual void SetNoisePick(int jackIndex, int pick) = 0;
   virtual void SwitchDown(bool down) = 0;               // the MS-20's momentary switch (tap tempo)
+  virtual int Leds() const { return 0x10; }             // the LEDs as the engine drives them (bit 0 MG rate, 1 EG 1, 2 PEAK, 3 TRIG, 4 power)
 };
 }

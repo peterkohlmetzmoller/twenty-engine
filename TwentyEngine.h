@@ -67,6 +67,7 @@ public:
   int NoisePick(int j) const override { return (j >= 0 && j < 35) ? mNoise[j] : 0; }
   void SetNoisePick(int j, int pick) override { if (j >= 0 && j < 35) mNoise[j] = (uint8_t)pick; }
   void SwitchDown(bool down) override { UiMidi(0xD0, down ? 127 : 0, 0); }
+  int Leds() const override { return mUiLeds.load(); }
 #endif
   int PanelSource() const { return mPanelSrc.load(); }       // UI: 0 unknown, 1 from memory (MS20PANEL.BIN), 2 read from the controller
 #if IPLUG_EDITOR && defined(_WIN32)
@@ -94,6 +95,7 @@ private:
   std::atomic<int64_t> mUiTouchMs[kNumParams] = {};
   int32_t mUiShown[kNumParams] = {};
   int64_t mHostSetMs[kNumParams] = {}, mUiClkSeen = -1;
+  std::atomic<int> mUiLeds{0x10};
 #endif
   int mId = 0;
   int64_t mFocusId = 0;
