@@ -247,7 +247,7 @@ amp=am;mode=am;outlet_mode=am;
 // ===== ARP (VCO2 mono) =====
 if(am==2){ledp+=2863311U;outlet_arpled=(ledp&0x80000000)?1:0;}else{outlet_arpled=(am==1)?1:0;}
 if(am<2&&nh==0){na=0;}if(am==1){na=nh;for(int i=0;i<nh;i++)a[i]=h[i];}
-float n=param_arprate*7.45e-9f;float n2=n*n;float hz=0.5f+n2*20.f+(n2*n2*n)*150.f;uint32_t aper=(uint32_t)(3000.f/hz);
+float n=param_arprate*7.45e-9f;if(n>0.6f)n=0.6f; /* arp rate: from 1 o'clock up it stays at full speed (about 19 steps/s) */float n2=n*n;float hz=0.5f+n2*20.f+(n2*n2*n)*150.f;uint32_t aper=(uint32_t)(3000.f/hz);
 int dtg=0;bool gt=false;acc++;
 if(am>0&&na>0){
  if(acc>=aper){
