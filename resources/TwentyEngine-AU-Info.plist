@@ -30,7 +30,7 @@
 	<key>CFBundleExecutable</key>
 	<string>TwentyEngine</string>
 	<key>CFBundleGetInfoString</key>
-	<string>TwentyEngine v1.0.0 Copyright 2026 Peter Kohlmetz Moller</string>
+	<string>TwentyEngine v1.0.1 Copyright 2026 Peter Kohlmetz Moller</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.peterkohlmetzmoller.audiounit.TwentyEngine</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -40,11 +40,11 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.0</string>
+	<string>1.0.1</string>
 	<key>CFBundleSignature</key>
 	<string>Tw20</string>
 	<key>CFBundleVersion</key>
-	<string>1.0.0</string>
+	<string>1.0.1</string>
 	<key>CSResourcesFileMapped</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>

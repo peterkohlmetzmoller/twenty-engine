@@ -187,6 +187,16 @@ jobs:
           gh release view ui-test -R ${{ github.repository }} > /dev/null 2>&1 || \
             gh release create ui-test -R ${{ github.repository }} --draft --title "Twenty Engine UI (test build)" --notes "Test build of the plugin with the panel window. Not for release." --target ui
           gh release upload ui-test TwentyEngineUI-AU.zip --clobber -R ${{ github.repository }}
+      - name: Release build on the draft release (plain downloads)
+        if: github.ref_name == 'main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=v$(grep -E '#define PLUG_VERSION_STR' config.h | sed -E 's/.*"(.*)".*/\1/')
+          gh release view $V -R ${{ github.repository }} > /dev/null 2>&1 || \
+            gh release create $V -R ${{ github.repository }} --draft --title "Twenty Engine $V" --notes "Release build (draft: only you can see it)." --target main
+          gh release upload $V TwentyEngine-Installer.pkg --clobber -R ${{ github.repository }}
 
   # ---------------- Apple Silicon: validate the arm64 half of the same AU ----------------
   # Apple Silicon runners are rarely available on GitHub (jobs sat in the queue and were cancelled), so the
@@ -384,6 +394,16 @@ jobs:
             TwentyEngine-Setup.exe
             TwentyEngine-VST3-Windows.zip
             TwentyEngine-AAX-Windows-unsigned.zip
+      - name: Release build on the draft release (plain downloads)
+        if: github.ref_name == 'main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=v$(grep -E '#define PLUG_VERSION_STR' config.h | sed -E 's/.*"(.*)".*/\1/')
+          gh release view $V -R ${{ github.repository }} > /dev/null 2>&1 || \
+            gh release create $V -R ${{ github.repository }} --draft --title "Twenty Engine $V" --notes "Release build (draft: only you can see it)." --target main
+          gh release upload $V TwentyEngine-Setup.exe --clobber -R ${{ github.repository }}
 
   # ---------------- the plugins in other hosts: pluginval and REAPER (Windows) ----------------
   daw-test-windows:
