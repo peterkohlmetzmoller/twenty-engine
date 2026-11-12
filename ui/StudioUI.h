@@ -311,7 +311,7 @@ public:
     {
       const Look lk = mLook(); mInfo = lk.info;
       // the wave sits between the two lowest scale marks (there is no mark straight below), the name right under it
-      const float top = mCY + mR * 1.12f, ww = 9.f * S, hh = 1.5f * S;
+      const float top = mCY + mR * 1.5f, ww = 9.f * S, hh = 1.5f * S;   // below the lowest scale marks
       Morph(g, lk.morph, mCX - ww / 2, top, ww, hh);
       Txt(g, mCX, top + hh + 1.7f * S, lk.label.c_str(), 1.72f);
     }
@@ -391,6 +391,7 @@ private:
 // LOW CUT, HIGH CUT and CV ADJUST run the arp (RATE, OCTAVES, ORDER). Holding SWITCH brings the delay back, and
 // THRESHOLD stays DELAY AMOUNT (the BBD tone is held in the middle). Only the name under the knob changes; nothing else is shown.
 static bool& SwitchHeld() { static bool b = false; return b; }
+static bool& DelayLatch() { static bool b = false; return b; }   // the window's DELAY latch: as if SWITCH were held (knobs only)
 static int ArpZone(IEditorDelegate* d)   // engine zones of SIGNAL LEVEL: < 18 poly, < 42 VCO2 arp, else latch
 {
   if (!d) return 0;
@@ -411,7 +412,7 @@ public:
     if (mJob[0].param == PARAM_INDEX_MS20__Voices_arpmode)   // the label follows the knob's own zone
     { const int z = ArpZone(GetDelegate()); if (z != mZoneShown) { mZoneShown = z; SetDirty(false); } }
     int j = 0;
-    if (SwitchHeld()) j = mJob[2].param >= 0 ? 2 : 0;
+    if (SwitchHeld() || DelayLatch()) j = mJob[2].param >= 0 ? 2 : 0;
     else if (ArpZone(GetDelegate()) > 0 && mJob[1].param >= 0) j = 1;
     if (j != mActive)
     {
@@ -634,6 +635,43 @@ private:
 };
 
 // ---------------------------------------------------------------- status bar: controller, modes, switch, where the sound is kept
+// DELAY latch (the window only): in VCO2 arp / latch the ESP knobs run the arp; this latch brings the delay to them,
+// as holding SWITCH does on the MS-20ic, without silencing the keys. Greyed out in poly (the knobs are the delay there).
+class DelayLatchButton : public IControl
+{
+public:
+  DelayLatchButton(float cx, float cy) : IControl(IRECT(cx - 5.2f * S, cy - 2.4f * S, cx + 5.2f * S, cy + 2.4f * S)), mCX(cx), mCY(cy) {}
+  void Draw(IGraphics& g) override
+  {
+    const bool active = ArpZone(GetDelegate()) > 0, on = active && DelayLatch();
+    const IColor c = active ? kInk : kGrey;
+    if (on) g.FillRect(kInk, mRECT);
+    g.DrawRect(c, mRECT, nullptr, 0.38f * S);
+    Txt(g, mCX, mCY + 0.62f * S, "DELAY", 1.6f, on ? kPaper : c);
+    Txt(g, mCX, mCY + 2.4f * S + 2.2f * S, "KNOBS", 1.72f, c);
+  }
+  bool IsDirty() override
+  {
+    const int st = (ArpZone(GetDelegate()) > 0 ? 2 : 0) | (DelayLatch() ? 1 : 0);
+    if (st != mShown) { mShown = st; SetDirty(false); }
+    return IControl::IsDirty();
+  }
+  void OnMouseDown(float, float, const IMouseMod&) override
+  {
+    if (ArpZone(GetDelegate()) == 0) return;
+    DelayLatch() = !DelayLatch();
+    Info(); SetDirty(false);
+  }
+  void OnMouseOver(float, float, const IMouseMod&) override { Info(); }
+private:
+  void Info()
+  {
+    if (ArpZone(GetDelegate()) == 0) SetInfo("DELAY  \xC2\xB7  in poly the ESP knobs already set the delay");
+    else SetInfo(DelayLatch() ? "DELAY  \xC2\xB7  on: the ESP knobs set the delay (click for the arp)" : "DELAY  \xC2\xB7  click: the ESP knobs set the delay while the arp runs (as holding SWITCH)");
+  }
+  float mCX, mCY; int mShown = -1;
+};
+
 // SWITCH is the MS-20's momentary switch (tap tempo with a cable SWITCH -> ESP SIGNAL IN).
 class StatusBar : public IControl
 {
@@ -752,6 +790,7 @@ inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller,
   g->AttachControl(new EspKnob(RX(640), ey, "HIGH CUT FREQ", {PARAM_INDEX_BBD__Delay_feedback, "FEEDBACK"}, {PARAM_INDEX_MS20__Voices_arpoct, "OCTAVES"}, none));
   g->AttachControl(new EspKnob(RX(820), ey, "CV ADJUST", {PARAM_INDEX_BBD__Delay_wowflutter, "WOW / FLUTTER"}, {PARAM_INDEX_MS20__Voices_arporder, "ORDER"}, none));
   g->AttachControl(new EspKnob(RX(1000), ey, "THRESHOLD LEVEL", {PARAM_INDEX_BBD__Delay_drywet, "DELAY AMOUNT"}, none, none));   // BBD tone: held in the middle
+  g->AttachControl(new DelayLatchButton(RX(1160), ey));
   // status bar
   g->AttachControl(new StatusBar(IRECT(0, Yd(PH) + 10.f, (float)kW, Yd(PH) + 10.f + BARH), ph, controller, diag));
   g->AttachCornerResizer(EUIResizerMode::Scale, false);
