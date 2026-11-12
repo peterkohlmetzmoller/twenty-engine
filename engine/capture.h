@@ -6,7 +6,10 @@
 //    silent for two seconds.
 //  - The transport stops: recording goes on until the sound has died away (release, delay), then the file is done.
 //  - A new recording replaces the last one - unless that one was dragged into a project: some DAWs use the file
-//    where it lies (REAPER, Ableton), so a dragged capture is never deleted.
+//    where it lies (REAPER, Ableton), so a dragged capture is kept.
+//  - The folder never grows beyond its limit (1 GB, about an hour): past it the oldest captures go first. The
+//    newest is always kept, and so is any file still being written (by this or another copy of the plugin).
+//  - What starts a recording is the plugin's business (TwentyEngine.cpp): keys played live, not a region's notes.
 //
 // Threads: the audio thread only writes samples and events into lock-free queues (block()); the main thread
 // writes the WAV file (idle(), every ~20 ms) and is the only one that touches files or the state it shows.
@@ -19,6 +22,15 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <algorithm>
+#include <fcntl.h>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <dirent.h>
+#include <unistd.h>
+#endif
 
 namespace ms20 {
 
@@ -66,7 +78,8 @@ public:
 
   // ---------------- main thread ----------------
   // the folder for the files (made if needed); call before the first idle()
-  void setFolder(const std::string& dir) { mDir = dir; }
+  // limit: the most the folder may hold (bytes); the oldest captures go first when it is over
+  void setFolder(const std::string& dir, uint64_t limit = 1024ull * 1024ull * 1024ull) { mDir = dir; mLimit = limit; mPruneDue = true; }
   // write what the audio thread recorded; handle its events in order
   void idle()
   {
@@ -80,10 +93,11 @@ public:
         case START:   Open(e.sr); break;
         case CONFIRM: if (mFile) { DropOld(); mShowing = 1; mPath = mCurPath; mDragged = false; mPeaks = mCurPeaks; } mConfirmed = true; break;
         case DISCARD: CloseFile(true); break;
-        case FINISH:  if (mConfirmed) { CloseFile(false); mShowing = 2; } else CloseFile(true); break;
+        case FINISH:  if (mConfirmed) { CloseFile(false); mShowing = 2; mPruneDue = true; } else CloseFile(true); break;
       }
     }
     Write(-1);   // everything else that is there
+    if (mPruneDue) { mPruneDue = false; Prune(); }
   }
   int state() const { return mShowing; }                 // 0 nothing, 1 recording, 2 ready to drag
   double seconds() const { return mShowSecs; }
@@ -152,9 +166,14 @@ private:
 #else
     localtime_r(&t, &lt);
 #endif
-    strftime(name, sizeof(name), "Twenty Engine %Y-%m-%d %H.%M.%S.wav", &lt);
-    mCurPath = mDir + name;
-    mFile = fopen(mCurPath.c_str(), "wb");
+    strftime(name, sizeof(name), "Twenty Engine %Y-%m-%d %H.%M.%S", &lt);
+    // a name of its own: another copy of the plugin may start a file in the same second
+    for (int i = 1; i <= 50 && !mFile; i++)
+    {
+      char suf[16] = ""; if (i > 1) snprintf(suf, sizeof(suf), " %d", i);
+      mCurPath = mDir + name + suf + ".wav";
+      mFile = CreateNew(mCurPath.c_str());
+    }
     mSr = sr; mFrames = 0; mConfirmed = false; mCurPeaks.clear(); mPeakPos = 0; mPeakMax = 0.f;
     if (mFile) Header(0);
   }
@@ -176,13 +195,56 @@ private:
     if (remove_) remove(mCurPath.c_str());
     mConfirmed = false;
   }
+  static FILE* CreateNew(const char* path)   // only if there is no such file yet
+  {
+#ifdef _WIN32
+    const int fd = _open(path, _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY, _S_IREAD | _S_IWRITE);
+    return fd >= 0 ? _fdopen(fd, "wb") : nullptr;
+#else
+    const int fd = open(path, O_CREAT | O_EXCL | O_WRONLY, 0644);
+    return fd >= 0 ? fdopen(fd, "wb") : nullptr;
+#endif
+  }
+  // keep the folder under its limit: the captures sorted by name are sorted by time; the oldest go first
+  void Prune()
+  {
+    struct F { std::string name; uint64_t size; time_t mtime; };
+    std::vector<F> fs; uint64_t total = 0;
+    auto mine = [](const std::string& n) { return n.size() > 18 && n.compare(0, 14, "Twenty Engine ") == 0 && n.compare(n.size() - 4, 4, ".wav") == 0; };
+#ifdef _WIN32
+    struct __finddata64_t fd; const intptr_t h = _findfirst64((mDir + "*.wav").c_str(), &fd);
+    if (h != -1) { do { if (!(fd.attrib & _A_SUBDIR) && mine(fd.name)) fs.push_back({fd.name, (uint64_t)fd.size, (time_t)fd.time_write}); } while (_findnext64(h, &fd) == 0); _findclose(h); }
+#else
+    if (DIR* d = opendir(mDir.c_str()))
+    {
+      while (struct dirent* e = readdir(d))
+      {
+        if (!mine(e->d_name)) continue;
+        struct stat st; if (stat((mDir + e->d_name).c_str(), &st) != 0 || !S_ISREG(st.st_mode)) continue;
+        fs.push_back({e->d_name, (uint64_t)st.st_size, st.st_mtime});
+      }
+      closedir(d);
+    }
+#endif
+    for (const F& f : fs) total += f.size;
+    if (total <= mLimit) return;
+    std::sort(fs.begin(), fs.end(), [](const F& a, const F& b) { return a.name < b.name; });
+    const time_t now = time(nullptr);
+    for (size_t i = 0; i + 1 < fs.size() && total > mLimit; i++)   // never the newest
+    {
+      const std::string p = mDir + fs[i].name;
+      if (p == mPath || p == mCurPath) continue;          // the one shown, the one being written
+      if (now - fs[i].mtime < 120) continue;                // still being written (another copy)
+      if (remove(p.c_str()) == 0) total -= fs[i].size;
+    }
+  }
   void DropOld() { if (!mPath.empty() && !mDragged && mPath != mCurPath) remove(mPath.c_str()); }
 
   // audio thread
   int mSt = IDLE; bool mWasRunning = false; int64_t mQuiet = 0, mTail = 0, mPos = 0, mLen = 0;
   Ring mRing; Q<Event, 64> mEvents;
   // main thread
-  std::string mDir, mCurPath, mPath;
+  std::string mDir, mCurPath, mPath; uint64_t mLimit = 0; bool mPruneDue = false;
   FILE* mFile = nullptr; double mSr = 0.0; int64_t mFrames = 0, mMainPos = 0;
   bool mConfirmed = false, mDragged = false;
   int mShowing = 0; double mShowSecs = 0.0;

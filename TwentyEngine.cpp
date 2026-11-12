@@ -542,7 +542,10 @@ void TwentyEngine::OnReset()
 void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
 {
   // everything goes to the engine: notes, CCs (knobs, rotaries, patch bay NRPN), channel pressure (button)
-  if ((msg.mStatus & 0xF0) == 0x90 && msg.mData2 > 0) mCapNote = true;   // the audio capture starts with a note
+  // the audio capture starts with a key played live: straight from the MS-20ic (DrainController), never a
+  // region's notes. Without the direct connection a note on the track only counts while the transport is
+  // stopped (jamming) - during playback it may be a region's.
+  if ((msg.mStatus & 0xF0) == 0x90 && msg.mData2 > 0 && !mLed.KnobsDirect() && !mRunningA.load()) mCapNote = true;
   if (msg.mStatus < 0xF0 && (msg.mStatus & 0xF0) != 0xB0) mDbgMidiQ.push({msg.mStatus, msg.mData1, msg.mData2, msg.mOffset, mClock});   // beta diagnostics: notes, pressure (not the many knob CCs)
   // performance recall (engine/recall.h): the track plays the notes, the switch and the mod wheel; knob and
   // cable CCs on the track are ignored when the knobs reach the plugin straight from the controller
