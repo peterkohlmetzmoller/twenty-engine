@@ -648,7 +648,7 @@ public:
     if (on) g.FillRect(kInk, mRECT);
     g.DrawRect(c, mRECT, nullptr, 0.38f * S);
     Txt(g, mCX, mCY + 0.62f * S, "DELAY", 1.6f, on ? kPaper : c);
-    Txt(g, mCX, mCY + 2.4f * S + 2.2f * S, "KNOBS", 1.72f, c);
+    Txt(g, mCX, mCY + (3.2f * 1.62f + 1.5f) * S + 0.4f * S, "KNOBS", 1.72f, c);   // on the ESP knobs' label line
   }
   bool IsDirty() override
   {
