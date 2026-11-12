@@ -9,6 +9,10 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: write
+  actions: read
+
 env:
   IPLUG2_COMMIT: d82b2e99b17c8f723d3f6e2a88ffd8b656f28e5d
   VST3_TAG: v3.8.0_build_66
@@ -139,6 +143,16 @@ jobs:
             TwentyEngine-AU.zip
             TwentyEngine-VST3-Mac.zip
             TwentyEngine-AAX-Mac-unsigned.zip
+      - name: Release build on the draft release (plain downloads)
+        if: github.ref_name == 'main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=v$(grep -E '#define PLUG_VERSION_STR' config.h | sed -E 's/.*"(.*)".*/\1/')
+          gh release view $V -R ${{ github.repository }} > /dev/null 2>&1 || \
+            gh release create $V -R ${{ github.repository }} --draft --title "Twenty Engine $V" --notes "Release build (draft: only you can see it)." --target main
+          gh release upload $V TwentyEngine-Installer.pkg --clobber -R ${{ github.repository }}
 
   # ---------------- Apple Silicon: validate the arm64 half of the same AU ----------------
   # Apple Silicon runners are rarely available on GitHub (jobs sat in the queue and were cancelled), so the
@@ -328,6 +342,16 @@ jobs:
             TwentyEngine-Setup.exe
             TwentyEngine-VST3-Windows.zip
             TwentyEngine-AAX-Windows-unsigned.zip
+      - name: Release build on the draft release (plain downloads)
+        if: github.ref_name == 'main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=v$(grep -E '#define PLUG_VERSION_STR' config.h | sed -E 's/.*"(.*)".*/\1/')
+          gh release view $V -R ${{ github.repository }} > /dev/null 2>&1 || \
+            gh release create $V -R ${{ github.repository }} --draft --title "Twenty Engine $V" --notes "Release build (draft: only you can see it)." --target main
+          gh release upload $V TwentyEngine-Setup.exe --clobber -R ${{ github.repository }}
 
   # ---------------- the plugins in other hosts: pluginval and REAPER (Windows) ----------------
   daw-test-windows:

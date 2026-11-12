@@ -197,18 +197,21 @@ private:
 #include <string.h>
 #include <ctype.h>
 #pragma comment(lib, "winmm.lib")
+#pragma comment(lib, "advapi32.lib")
 
 class LedPort
 {
 public:
   ~LedPort() { Close(); CloseIn(); }
   // look for an output whose name contains "MS-20"; keep it open while it works.
-  // Also open the controller's input for the plugin itself: Windows 11 with the new Windows MIDI Services
-  // lets several programs use one port (the DAW keeps it too). Older Windows: the DAW usually holds the
-  // port, opening fails, and the plugin works through the track as before.
+  // Also open the controller's input for the plugin itself, but only where Windows lets several programs
+  // share a MIDI port (Windows MIDI Services, its service "midisrv" running). Everywhere else (Windows 10, Windows
+  // 11 without it) a port belongs to one program: if the DAW let go of the iC for a moment (sleep, a change in
+  // its audio settings, a MIDI reset), the plugin took it and the DAW could not get it back. There the plugin
+  // never opens the input and plays the knobs through the track (as the DAW sends them).
   void Rescan()
   {
-    RescanInput();
+    if (SharedPorts()) RescanInput(); else CloseIn();
     if (mOut) return;
     const UINT n = midiOutGetNumDevs();
     for (UINT i = 0; i < n; i++)
@@ -292,6 +295,24 @@ private:
   static const int kSlots = 16;
   MIDIHDR mHdr[kSlots] = {}; char mBufs[kSlots][64] = {}; bool mBusy[kSlots] = {};
   HMIDIOUT mOut = nullptr;
+  // Windows MIDI Services running? (checked once: the service does not come and go while the DAW runs)
+  static bool SharedPorts()
+  {
+    static int known = -1;
+    if (known >= 0) return known == 1;
+    known = 0;
+    if (SC_HANDLE scm = OpenSCManagerA(nullptr, nullptr, SC_MANAGER_CONNECT))
+    {
+      if (SC_HANDLE sv = OpenServiceA(scm, "midisrv", SERVICE_QUERY_STATUS))
+      {
+        SERVICE_STATUS st;
+        if (QueryServiceStatus(sv, &st) && st.dwCurrentState == SERVICE_RUNNING) known = 1;
+        CloseServiceHandle(sv);
+      }
+      CloseServiceHandle(scm);
+    }
+    return known == 1;
+  }
   // ---- controller input (straight to the plugin) ----
   HMIDIIN mIn = nullptr; int mInDev = -1; KnobQueue mKnobs; std::atomic<bool> mInOk{false};
   void CloseIn() { if (mIn) { mInOk.store(false); midiInStop(mIn); midiInReset(mIn); midiInClose(mIn); mIn = nullptr; mInDev = -1; } }
