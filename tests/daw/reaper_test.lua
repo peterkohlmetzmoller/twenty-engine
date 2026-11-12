@@ -63,6 +63,33 @@ local function streamItem(tr)
   return item
 end
 
+-- switch + key memory recall, as the MS-20ic sends it: the switch is channel pressure (127 held, 0 up).
+-- A note, then switch + the lowest key (memory 1), then a note, then switch + top C (the panel), then a note.
+-- fast = the switch is let go at the same moment as the key (one block)
+local function recallItem(tr, fast)
+  local item = reaper.CreateNewMIDIItemInProj(tr, 0, LEN, false)
+  local take = reaper.GetActiveTake(item)
+  local function ppq(t) return reaper.MIDI_GetPPQPosFromProjTime(take, t) end
+  local function note(t0, t1, key) reaper.MIDI_InsertNote(take, false, false, ppq(t0), ppq(t1), 0, key, 100, true) end
+  local function sw(t, v) reaper.MIDI_InsertCC(take, false, false, ppq(t), 0xD0, 0, v, 0) end
+  note(0.5, 1.5, 60)
+  sw(2.0, 127) note(2.2, 2.5, 48) sw(fast and 2.5 or 2.8, 0)
+  note(3.5, 4.5, 60)
+  sw(5.5, 127) note(5.7, 6.0, 84) sw(fast and 6.0 or 6.3, 0)
+  note(7.0, 8.0, 60)
+  reaper.MIDI_Sort(take)
+  return item
+end
+
+local function paramDump(tr, fx)
+  local t = {}
+  for p = 0, math.min(reaper.TrackFX_GetNumParams(tr, fx), 80) - 1 do
+    local _, n = reaper.TrackFX_GetParamName(tr, fx, p, "")
+    t[#t + 1] = { n, reaper.TrackFX_GetParamNormalized(tr, fx, p) }
+  end
+  return t
+end
+
 local function findParam(tr, fx, wanted)
   for p = 0, reaper.TrackFX_GetNumParams(tr, fx) - 1 do
     local _, name = reaper.TrackFX_GetParamName(tr, fx, p, "")
@@ -154,6 +181,21 @@ local function run()
       tr, fx = newTrack(P.name)
       streamItem(tr)
       render(tag .. "_stream")
+    end
+
+    -- 3c. switch + key memory recall (Windows: everything comes through the track)
+    for _, fast in ipairs({false, true}) do
+      clear()
+      tr, fx = newTrack(P.name)
+      recallItem(tr, fast)
+      local before = paramDump(tr, fx)
+      render(tag .. (fast and "_recallfast" or "_recall"))
+      local after = paramDump(tr, fx)
+      local ch = {}
+      for k = 1, #after do
+        if math.abs(after[k][2] - before[k][2]) > 0.001 then ch[#ch + 1] = string.format("%s %.3f->%.3f", after[k][1], before[k][2], after[k][2]) end
+      end
+      L("RECALLPARAMS", tag, fast and "fast" or "slow", #ch, table.concat(ch, "; "))
     end
 
     -- 4. state: change two knobs, copy the track (save + load of the plugin's state), compare
