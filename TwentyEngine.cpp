@@ -626,6 +626,20 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   {
     const int n = (nFrames - done > 512) ? 512 : nFrames - done;
     mRecall.setChunkOffset(done);
+#if TWENTY_UI
+    {
+      // arp SYNC: steps on the DAW's beat divisions (free-running at the DAW tempo while it is stopped)
+      static const double kDiv[7] = { 0.0, 1.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125 };   // free, 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32
+      const int sy = mArpSync.load();
+      const double bps = (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0;
+      if (done == 0) { if (running) mArpPpq = GetPPQPos(); }
+      ms20::MS20Host::ArpClock c;
+      if (sy > 0 && sy < 7 && bps > 0.0) { c.ppq0 = mArpPpq; c.beatsPerSample = bps; c.beatsPerStep = kDiv[sy]; }
+      mHost->setArpClock(c);
+      if (twoEngines) mPlay->setArpClock(c);
+      mArpPpq += n * bps;
+    }
+#endif
     mHost->process(mScratchL, mScratchR, n);
     if (twoEngines)
     {
@@ -845,6 +859,8 @@ bool TwentyEngine::SerializeState(IByteChunk& chunk) const
   // the window's cable states (mono, tap tempo) and which noise jack each noise cable comes from
   const int32_t magic = 0x54455531, mono = mCableFlag[0].load(), tap = mCableFlag[1].load();   // 'TEU1'
   chunk.Put(&magic); chunk.Put(&mono); chunk.Put(&tap); chunk.PutBytes(mNoise, 35);
+  const int32_t magic2 = 0x54455532, sync = mArpSync.load();   // 'TEU2': arp sync
+  chunk.Put(&magic2); chunk.Put(&sync);
 #endif
   return true;
 }
@@ -886,6 +902,11 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
       if (q > 0) q = chunk.GetBytes(mNoise, 35, q);
       if (q > 0) { SetCableFlag(0, mono != 0); SetCableFlag(1, tap != 0); pos = q; }
     }
+  }
+  if (pos >= 0 && pos + 8 <= chunk.Size())
+  {
+    int32_t magic = 0, sync = 0; int q = chunk.Get(&magic, pos);
+    if (q > 0 && magic == 0x54455532 && chunk.Get(&sync, q) > 0) { mArpSync.store(sync >= 0 && sync < 7 ? sync : 0); pos = q + 4; }
   }
 #endif
   return pos;
