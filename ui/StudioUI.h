@@ -414,6 +414,7 @@ public:
     int j = 0;
     if (SwitchHeld() || DelayLatch()) j = mJob[2].param >= 0 ? 2 : 0;
     else if (ArpZone(GetDelegate()) > 0 && mJob[1].param >= 0) j = 1;
+    { const int sy = (mHost && mHost->ArpSync() > 0) ? 1 : 0; if (sy != mSyncShown) { mSyncShown = sy; SetDirty(false); } }
     if (j != mActive)
     {
       mActive = j;
@@ -440,7 +441,10 @@ public:
     // the name under the knob: what it does now (play mode: the mode itself). The same baseline for all five.
     static const char* kModes[3] = { "POLY", "VCO2 ARP", "LATCH" };
     const bool isMode = mJob[0].param == PARAM_INDEX_MS20__Voices_arpmode;
-    Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, isMode ? kModes[ArpZone(GetDelegate())] : mJob[mActive].name, 1.72f);
+    char rn[24] = "";
+    if (!isMode && mJob[mActive].param == PARAM_INDEX_MS20__Voices_arprate && mHost && mHost->ArpSync() > 0)
+      snprintf(rn, sizeof(rn), "RATE %s", kSyncName[SyncZone(GetValue())]);   // synced: the division
+    Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, isMode ? kModes[ArpZone(GetDelegate())] : (rn[0] ? rn : mJob[mActive].name), 1.72f);
     // play mode: a thin arc in three parts (poly, VCO2 arp, latch), the current one solid, the others dotted
     if (mJob[0].param == PARAM_INDEX_MS20__Voices_arpmode)
     {
@@ -472,7 +476,9 @@ private:
     SetInfo(b);
   }
   float mCX, mCY, mR; const char* mHw;
-  Job mJob[3]; int mActive = 0, mZoneShown = -1;
+  Job mJob[3]; int mActive = 0, mZoneShown = -1, mSyncShown = -1;
+public:
+  PatchHost* mHost = nullptr;   // the RATE knob shows the division while SYNC is on
 };
 
 // ---------------------------------------------------------------- patch panel (jacks at the photo-grid positions)
@@ -635,62 +641,6 @@ private:
 };
 
 // ---------------------------------------------------------------- status bar: controller, modes, switch, where the sound is kept
-// SYNC (the plugin only): the arp's steps on the DAW's beat (FREE = its own RATE knob). Seven positions.
-// Greyed out in poly, where there is no arp.
-class SyncKnob : public IControl
-{
-public:
-  SyncKnob(float cx, float cy, PatchHost* h) : IControl(IRECT(cx - 6.8f * S, cy - 3.2f * 2.4f * S, cx + 6.8f * S, cy + 3.2f * 1.62f * S + 6.f * S)), mCX(cx), mCY(cy), mR(3.2f * S), mHost(h) {}
-  void Draw(IGraphics& g) override
-  {
-    static const char* kName[7] = { "FREE", "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32" };
-    const bool active = ArpZone(GetDelegate()) > 0;
-    const IColor c = active ? kInk : kGrey;
-    const int v = Val();
-    for (int i = 0; i < 7; i++)   // one mark per position
-    {
-      const float a = Rad(240.f - 50.f * i);
-      g.DrawLine(c, mCX + mR * 1.12f * std::cos(a), mCY - mR * 1.12f * std::sin(a), mCX + mR * 1.5f * std::cos(a), mCY - mR * 1.5f * std::sin(a), nullptr, 0.3f * S);
-    }
-    g.FillCircle(kPaper, mCX, mCY, mR);
-    g.DrawCircle(c, mCX, mCY, mR, nullptr, 0.38f * S);
-    const float a = Rad(240.f - 50.f * v);
-    IStrokeOptions o; o.mCapOption = ELineCap::Round;
-    g.PathMoveTo(mCX + mR * 0.1f * std::cos(a), mCY - mR * 0.1f * std::sin(a));
-    g.PathLineTo(mCX + mR * 0.86f * std::cos(a), mCY - mR * 0.86f * std::sin(a));
-    g.PathStroke(IPattern(c), mR * 0.13f, o);
-    char lb[32]; snprintf(lb, sizeof(lb), "SYNC %s", kName[v]);
-    Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, lb, 1.72f, c);
-  }
-  bool IsDirty() override
-  {
-    const int st = (ArpZone(GetDelegate()) > 0 ? 16 : 0) | Val();
-    if (st != mShown) { mShown = st; SetDirty(false); }
-    return IControl::IsDirty();
-  }
-  void OnMouseDown(float, float, const IMouseMod&) override { mAcc = 0.f; }
-  void OnMouseDrag(float, float, float, float dY, const IMouseMod&) override
-  {
-    mAcc -= dY;
-    while (mAcc >= 10.f) { Set(Val() + 1); mAcc -= 10.f; }
-    while (mAcc <= -10.f) { Set(Val() - 1); mAcc += 10.f; }
-  }
-  void OnMouseWheel(float, float, const IMouseMod&, float d) override { Set(Val() + (d > 0 ? 1 : -1)); }
-  void OnMouseDblClick(float, float, const IMouseMod&) override { Set(0); }
-  void OnMouseOver(float, float, const IMouseMod&) override { Info(); }
-  bool IsHit(float x, float y) const override { return (x - mCX) * (x - mCX) + (y - mCY) * (y - mCY) <= mR * mR * 2.4f; }
-private:
-  int Val() const { const int v = mHost ? mHost->ArpSync() : 0; return v < 0 ? 0 : (v > 6 ? 6 : v); }
-  void Set(int v) { if (!mHost) return; mHost->SetArpSync(v < 0 ? 0 : (v > 6 ? 6 : v)); Info(); SetDirty(false); }
-  void Info()
-  {
-    static const char* kLong[7] = { "free: the RATE knob sets the speed", "quarter notes", "eighth notes", "eighth-note triplets", "sixteenth notes", "sixteenth-note triplets", "thirty-second notes" };
-    char b[160]; snprintf(b, sizeof(b), "ARP SYNC  \xC2\xB7  %s%s", kLong[Val()], Val() ? " on the DAW's beat" : "");
-    SetInfo(b);
-  }
-  float mCX, mCY, mR, mAcc = 0.f; PatchHost* mHost; int mShown = -1;
-};
-
 // DELAY latch (the window only): in VCO2 arp / latch the ESP knobs run the arp; this latch brings the delay to them,
 // as holding SWITCH does on the MS-20ic, without silencing the keys. Greyed out in poly (the knobs are the delay there).
 class DelayLatchButton : public IControl
@@ -726,6 +676,43 @@ private:
     else SetInfo(DelayLatch() ? "DELAY  \xC2\xB7  on: the ESP knobs set the delay (click for the arp)" : "DELAY  \xC2\xB7  click: the ESP knobs set the delay while the arp runs (as holding SWITCH)");
   }
   float mCX, mCY; int mShown = -1;
+};
+
+// SYNC switch (the plugin only): the arp steps on the DAW's beat and the RATE knob picks the division
+// (1/4 1/8 1/8T 1/16 1/16T 1/32); off = the RATE knob sets the speed. Greyed out in poly.
+class SyncButton : public IControl
+{
+public:
+  SyncButton(float cx, float cy, PatchHost* h) : IControl(IRECT(cx - 5.2f * S, cy - 2.4f * S, cx + 5.2f * S, cy + 2.4f * S)), mCX(cx), mCY(cy), mHost(h) {}
+  void Draw(IGraphics& g) override
+  {
+    const bool active = ArpZone(GetDelegate()) > 0, on = active && mHost->ArpSync() > 0;
+    const IColor c = active ? kInk : kGrey;
+    if (on) g.FillRect(kInk, mRECT);
+    g.DrawRect(c, mRECT, nullptr, 0.38f * S);
+    Txt(g, mCX, mCY + 0.62f * S, "SYNC", 1.6f, on ? kPaper : c);
+    Txt(g, mCX, mCY + (3.2f * 1.62f + 1.5f) * S + 0.4f * S, "DAW TEMPO", 1.72f, c);
+  }
+  bool IsDirty() override
+  {
+    const int st = (ArpZone(GetDelegate()) > 0 ? 2 : 0) | (mHost->ArpSync() > 0 ? 1 : 0);
+    if (st != mShown) { mShown = st; SetDirty(false); }
+    return IControl::IsDirty();
+  }
+  void OnMouseDown(float, float, const IMouseMod&) override
+  {
+    if (ArpZone(GetDelegate()) == 0) return;
+    mHost->SetArpSync(mHost->ArpSync() > 0 ? 0 : 1);
+    Info(); SetDirty(false);
+  }
+  void OnMouseOver(float, float, const IMouseMod&) override { Info(); }
+private:
+  void Info()
+  {
+    if (ArpZone(GetDelegate()) == 0) SetInfo("SYNC  \xC2\xB7  for the arp (VCO2 arp / latch)");
+    else SetInfo(mHost->ArpSync() > 0 ? "SYNC  \xC2\xB7  on: the arp follows the DAW's beat, RATE picks 1/4 to 1/32" : "SYNC  \xC2\xB7  click: the arp follows the DAW's beat (RATE picks the division)");
+  }
+  float mCX, mCY; PatchHost* mHost; int mShown = -1;
 };
 
 // SWITCH is the MS-20's momentary switch (tap tempo with a cable SWITCH -> ESP SIGNAL IN).
@@ -842,12 +829,13 @@ inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller,
   const float ey = RY(1010);
   const EspKnob::Job none = {-1, ""};
   g->AttachControl(new EspKnob(RX(270), ey, "SIGNAL LEVEL", {PARAM_INDEX_MS20__Voices_arpmode, "POLY"}, none, none));
-  g->AttachControl(new EspKnob(RX(460), ey, "LOW CUT FREQ", {PARAM_INDEX_BBD__Delay_time, "TIME"}, {PARAM_INDEX_MS20__Voices_arprate, "RATE"}, none));
+  { EspKnob* k = new EspKnob(RX(460), ey, "LOW CUT FREQ", {PARAM_INDEX_BBD__Delay_time, "TIME"}, {PARAM_INDEX_MS20__Voices_arprate, "RATE"}, none);
+    k->mHost = ph; g->AttachControl(k); }
   g->AttachControl(new EspKnob(RX(640), ey, "HIGH CUT FREQ", {PARAM_INDEX_BBD__Delay_feedback, "FEEDBACK"}, {PARAM_INDEX_MS20__Voices_arpoct, "OCTAVES"}, none));
   g->AttachControl(new EspKnob(RX(820), ey, "CV ADJUST", {PARAM_INDEX_BBD__Delay_wowflutter, "WOW / FLUTTER"}, {PARAM_INDEX_MS20__Voices_arporder, "ORDER"}, none));
   g->AttachControl(new EspKnob(RX(1000), ey, "THRESHOLD LEVEL", {PARAM_INDEX_BBD__Delay_drywet, "DELAY AMOUNT"}, none, none));   // BBD tone: held in the middle
   g->AttachControl(new DelayLatchButton(RX(1160), ey));
-  if (ph && ph->ArpSync() >= 0) g->AttachControl(new SyncKnob(RX(1340), ey, ph));   // only where there is a DAW clock
+  if (ph && ph->ArpSync() >= 0) g->AttachControl(new SyncButton(RX(1340), ey, ph));   // only where there is a DAW clock
   // status bar
   g->AttachControl(new StatusBar(IRECT(0, Yd(PH) + 10.f, (float)kW, Yd(PH) + 10.f + BARH), ph, controller, diag));
   g->AttachCornerResizer(EUIResizerMode::Scale, false);
