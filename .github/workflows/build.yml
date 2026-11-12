@@ -146,7 +146,7 @@ jobs:
             TwentyEngine-VST3-Mac.zip
             TwentyEngine-AAX-Mac-unsigned.zip
       - name: Release build on the draft release (plain downloads)
-        if: github.ref_name == 'main'
+        if: github.ref_name == 'main' || github.ref_name == 'switchfix'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -347,7 +347,7 @@ jobs:
             TwentyEngine-VST3-Windows.zip
             TwentyEngine-AAX-Windows-unsigned.zip
       - name: Release build on the draft release (plain downloads)
-        if: github.ref_name == 'main'
+        if: github.ref_name == 'main' || github.ref_name == 'switchfix'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
