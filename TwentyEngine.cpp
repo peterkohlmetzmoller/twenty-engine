@@ -13,6 +13,11 @@
 #include "IControls.h"
 #include "resources/font_data.h"
 
+#endif
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <sys/stat.h>
 // ---- switch diagnostics (test build): what the host delivers for the MS-20ic's switch (channel pressure) ----
 // VST3 hosts send it as a parameter change (IMidiMapping); iPlug2 (patched by tools/patch_iplug2.py) calls
 // TE_SwitchDiag for every point of that queue, then hands the point on as a channel-pressure message.
@@ -48,11 +53,7 @@ static bool SwitchDiagText(char* out, int n)
   snprintf(out + o, n - o, "   (%u)  now %s", cnt, lastV > 0 ? "held" : "up");
   return true;
 }
-#endif
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <sys/stat.h>
+
 #ifdef _WIN32
 #include <direct.h>
 static void MakeDir(const char* d) { _mkdir(d); }
