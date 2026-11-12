@@ -36,6 +36,10 @@ public:
 
   bool IsDirty() override
   {
+#ifdef __APPLE__
+    if (mPlug) { const ms20::Capture& c = mPlug->Cap(); const int64_t k = (int64_t)c.state() * 100000000 + (int64_t)(c.seconds() * 4.0) * 1000 + (int64_t)c.peaks().size() / 8 + (mBlink / 15) % 2;
+                 mBlink++; if (k != mCapShown) { mCapShown = k; return true; } }
+#endif
     if (++mFrames >= 30) { mFrames = 0; bool d = Scan(); const int t = Takes(); if (t != mTakes) { mTakes = t; d = true; } const int ps = mPlug ? mPlug->PanelSource() : 0; if (ps != mPanel) { mPanel = ps; d = true; } const int fc = (mPlug && mPlug->DirectNow() && !mPlug->HasFocus()) ? 0 : 1; if (fc != mFocus) { mFocus = fc; d = true; } if (TWENTY_STUDIO) d = true; if (d) return true; }   // about twice a second
     return IControl::IsDirty();
   }
@@ -58,6 +62,9 @@ public:
     g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE INSTRUMENT", in);
 #endif
 
+#ifdef __APPLE__
+    DrawCapture(g, ink, dim);
+#endif
     static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy" };
     const bool on = mController > 0;
     const IRECT row = in.GetFromBottom(18.f);
@@ -99,6 +106,50 @@ public:
 
 private:
   bool Scan() { const int c = LedPort::FindController(); if (c == mController) return false; mController = c; return true; }
+#ifdef __APPLE__
+  // ---- audio capture: the last take as audio, dragged from here into the DAW ----
+  IRECT CapRect() const { const IRECT in = mRECT.GetPadded(-22.f); return IRECT(in.R - 120.f, in.T - 6.f, in.R, in.T + 26.f); }
+  void DrawCapture(IGraphics& g, const IColor& ink, const IColor& dim)
+  {
+    const IRECT r = CapRect();
+    const ms20::Capture& c = mPlug->Cap();
+    const int st = c.state();
+    const IColor red(255, 216, 50, 42);
+    char t[48]; const int sec = (int)c.seconds();
+    snprintf(t, sizeof(t), "%d:%02d", sec / 60, sec % 60);
+    g.DrawRect(st == 2 ? ink : dim, r, nullptr, 1.f);
+    if (st == 0) { g.DrawText(IText(10.f, dim, "Roboto-Regular", EAlign::Center, EVAlign::Middle), "AUDIO  \xC2\xB7  plays from the next note", r); return; }
+    // the waveform so far, squeezed into the tile
+    const std::vector<float>& pk = c.peaks();
+    const IRECT w(r.L + 4.f, r.T + 3.f, r.R - 4.f, r.B - 12.f);
+    const int cols = (int)w.W();
+    if (!pk.empty())
+      for (int x = 0; x < cols; x++)
+      {
+        const size_t a = (size_t)((double)x / cols * pk.size()), b = (size_t)((double)(x + 1) / cols * pk.size());
+        float m = 0.f; for (size_t i = a; i <= b && i < pk.size(); i++) if (pk[i] > m) m = pk[i];
+        const float h = std::max(0.5f, m * w.H() * 0.5f);
+        g.DrawLine(st == 1 ? dim : ink, w.L + x, w.MH() - h, w.L + x, w.MH() + h, nullptr, 1.f);
+      }
+    const IRECT foot(r.L + 4.f, r.B - 12.f, r.R - 4.f, r.B - 1.f);
+    if (st == 1)
+    {
+      if ((mBlink / 15) % 2 == 0) g.FillCircle(red, foot.L + 4.f, foot.MH(), 3.f);
+      g.DrawText(IText(9.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Middle), (std::string("REC  ") + t).c_str(), foot.GetHShifted(11.f));
+    }
+    else g.DrawText(IText(9.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Middle), (std::string(t) + "  \xC2\xB7  drag into a track").c_str(), foot);
+  }
+  void OnMouseDown(float x, float y, const IMouseMod&) override { mPress = CapRect().Contains(x, y); mPressX = x; mPressY = y; }
+  void OnMouseUp(float, float, const IMouseMod&) override { mPress = false; }
+  void OnMouseDrag(float x, float y, float, float, const IMouseMod&) override
+  {
+    if (!mPress || !mPlug || mPlug->Cap().state() != 2) return;
+    if (fabsf(x - mPressX) + fabsf(y - mPressY) < 4.f) return;
+    mPress = false;
+    if (GetUI() && GetUI()->InitiateExternalFileDragDrop(mPlug->Cap().path().c_str(), CapRect())) mPlug->CapDragged();
+  }
+  bool mPress = false; float mPressX = 0.f, mPressY = 0.f; int64_t mCapShown = -1; int mBlink = 0;
+#endif
   int Takes() const { return mPlug ? mPlug->RecallTakes() : 0; }
   IRECT TakesRect() const { const IRECT in = mRECT.GetPadded(-22.f); return IRECT(in.L, in.T + 30.f, in.R, in.T + 46.f); }
   TwentyEngine* mPlug = nullptr;
@@ -241,6 +292,10 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       MakeDir(parent); MakeDir(dir);
       mHost->loadMemories(dir);
       snprintf(mPanelPath, sizeof(mPanelPath), "%sMS20PANEL.BIN", dir);
+      // audio captures: ~/Music/Twenty Engine/Captures/
+      { char cd[1100]; snprintf(cd, sizeof(cd), "%s/Music", home); MakeDir(cd);
+        snprintf(cd, sizeof(cd), "%s/Music/Twenty Engine", home); MakeDir(cd);
+        snprintf(cd, sizeof(cd), "%s/Music/Twenty Engine/Captures/", home); MakeDir(cd); mCap.setFolder(cd); }
       // diagnostics log (off in releases): TwentyEngine-debug-<process>-<copy>.txt
       // { char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug-%d-%d.txt", dir, (int)getpid(), mId); mDbg = fopen(lp, "w"); }
     }
@@ -487,6 +542,7 @@ void TwentyEngine::OnReset()
 void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
 {
   // everything goes to the engine: notes, CCs (knobs, rotaries, patch bay NRPN), channel pressure (button)
+  if ((msg.mStatus & 0xF0) == 0x90 && msg.mData2 > 0) mCapNote = true;   // the audio capture starts with a note
   if (msg.mStatus < 0xF0 && (msg.mStatus & 0xF0) != 0xB0) mDbgMidiQ.push({msg.mStatus, msg.mData1, msg.mData2, msg.mOffset, mClock});   // beta diagnostics: notes, pressure (not the many knob CCs)
   // performance recall (engine/recall.h): the track plays the notes, the switch and the mod wheel; knob and
   // cable CCs on the track are ignored when the knobs reach the plugin straight from the controller
@@ -619,6 +675,10 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
       outputs[0][done + i] = (sample)mScratchL[i];
       outputs[1][done + i] = (sample)mScratchR[i];
     }
+#ifdef __APPLE__
+    if (!GetRenderingOffline()) mCap.block(mScratchL, mScratchR, n, running, mCapNote, sr);   // what was played, for dragging into the DAW (not a bounce)
+    mCapNote = false;
+#endif
     done += n;
   }
   if (mDbg && mDbgBlocksLeft > 0)
@@ -677,6 +737,9 @@ void TwentyEngine::StreamApply(int slot, int32_t raw)
 
 void TwentyEngine::OnIdle()
 {
+#ifdef __APPLE__
+  mCap.idle();   // the audio capture to disk
+#endif
   // main thread, about every 20 ms
   // 0. beta diagnostics
   { int slot = mHost->memSlot(); if (slot != mDbgSlot) { Dbg("MEMORY slot %d (-1 = panel)  LPF cut %.2f  VCO1 wave %d  PW %.2f", slot,
@@ -825,7 +888,7 @@ void TwentyEngine::DrainController()
       if (on) { mHeard[mHeardHead] = {d1, WallMs()}; mHeardHead = (mHeardHead + 1) % 16; }
       continue;
     }
-    if (on) mHeldDirect[d1] = (uint8_t)((s & 0x0F) + 1); else if (off) mHeldDirect[d1] = 0;
+    if (on) { mHeldDirect[d1] = (uint8_t)((s & 0x0F) + 1); mCapNote = true; } else if (off) mHeldDirect[d1] = 0;
     const bool late = mRecall.directMsg(s, d1, d2);   // the host's copy of this key came first
     if (late) mPlay->midi(0, (uint8_t)(0x80 | (s & 0x0F)), d1, 0);   // silence the host's copy on the playback engine
     mHost->midi(0, s, d1, d2);

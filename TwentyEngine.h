@@ -17,6 +17,7 @@ const int kNumParams = ms20::NPARAMS;   // every parameter of the Ksoloti patch
 #include "engine/ms20_host.h"
 #include "engine/recall.h"
 #include "engine/paramstream.h"
+#include "engine/capture.h"
 #include "engine/panel_memory.h"
 #include <memory>
 #include <atomic>
@@ -67,6 +68,12 @@ public:
 private:
   int mId = 0;
   int64_t mFocusId = 0;
+  // audio capture (Mac for now): the last take as a WAV to drag into the DAW
+  ms20::Capture mCap; bool mCapNote = false;
+public:
+  const ms20::Capture& Cap() const { return mCap; }
+  void CapDragged() { mCap.dragged(); }
+private:
   // Windows with the loopMIDI port: one engine; the panel's sound kept while no take plays
   int32_t mWinPanel[ms20::NPARAMS] = {}; bool mWinPanelKnown = false, mWinInTake = false; int mPortScan = 0;
   bool mHadFocus = false;
