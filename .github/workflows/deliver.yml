@@ -1,0 +1,29 @@
+name: Deliver UI test build
+on:
+  push:
+    branches: [deliver-ui]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  deliver:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: TwentyEngineUI-Mac
+          run-id: 43049589344
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: art
+      - name: Check the zip and put it on a draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -la art
+          unzip -l art/TwentyEngineUI-AU.zip | tail -5
+          unzip -tq art/TwentyEngineUI-AU.zip
+          sha256sum art/TwentyEngineUI-AU.zip
+          gh release view ui-test -R ${{ github.repository }} > /dev/null 2>&1 || \
+            gh release create ui-test -R ${{ github.repository }} --draft --title "Twenty Engine UI (test build)" --notes "Test build of the plugin with the panel window. Not for release." --target ui
+          gh release upload ui-test art/TwentyEngineUI-AU.zip --clobber -R ${{ github.repository }}
+          gh release view ui-test -R ${{ github.repository }} --json assets -q '.assets[]|.name+" "+(.size|tostring)+" "+.url'
