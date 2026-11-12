@@ -72,6 +72,8 @@ public:
   void SetNoisePick(int j, int pick) override { if (j >= 0 && j < 35) mNoise[j] = (uint8_t)pick; }
   void SwitchDown(bool down) override { UiMidi(0xD0, down ? 127 : 0, 0); }
   int Leds() const override { return mUiLeds.load(); }
+  int ArpSync() const override { return mArpSync.load(); }
+  void SetArpSync(int v) override { mArpSync.store(v >= 0 && v < 7 ? v : 0); }
 #endif
   int PanelSource() const { return mPanelSrc.load(); }       // UI: 0 unknown, 1 from memory (MS20PANEL.BIN), 2 read from the controller
 #if IPLUG_EDITOR && defined(_WIN32)
@@ -97,6 +99,8 @@ private:
   std::atomic<int> mController{0};
   static constexpr int32_t kMemPresetMagic = 0x54454D53;   // 'TEMS': a preset that is a memory slot
   int mPresetShown = 36;
+  std::atomic<int> mArpSync{0};   // arp SYNC: 0 free (RATE knob), 1..6 = 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32
+  double mArpPpq = 0.0;
   int mCtlScan = 0;
   std::atomic<int64_t> mUiTouchMs[kNumParams] = {};
   int32_t mUiShown[kNumParams] = {};

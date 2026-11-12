@@ -635,6 +635,62 @@ private:
 };
 
 // ---------------------------------------------------------------- status bar: controller, modes, switch, where the sound is kept
+// SYNC (the plugin only): the arp's steps on the DAW's beat (FREE = its own RATE knob). Seven positions.
+// Greyed out in poly, where there is no arp.
+class SyncKnob : public IControl
+{
+public:
+  SyncKnob(float cx, float cy, PatchHost* h) : IControl(IRECT(cx - 6.8f * S, cy - 3.2f * 2.4f * S, cx + 6.8f * S, cy + 3.2f * 1.62f * S + 6.f * S)), mCX(cx), mCY(cy), mR(3.2f * S), mHost(h) {}
+  void Draw(IGraphics& g) override
+  {
+    static const char* kName[7] = { "FREE", "1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32" };
+    const bool active = ArpZone(GetDelegate()) > 0;
+    const IColor c = active ? kInk : kGrey;
+    const int v = Val();
+    for (int i = 0; i < 7; i++)   // one mark per position
+    {
+      const float a = Rad(240.f - 50.f * i);
+      g.DrawLine(c, mCX + mR * 1.12f * std::cos(a), mCY - mR * 1.12f * std::sin(a), mCX + mR * 1.5f * std::cos(a), mCY - mR * 1.5f * std::sin(a), nullptr, 0.3f * S);
+    }
+    g.FillCircle(kPaper, mCX, mCY, mR);
+    g.DrawCircle(c, mCX, mCY, mR, nullptr, 0.38f * S);
+    const float a = Rad(240.f - 50.f * v);
+    IStrokeOptions o; o.mCapOption = ELineCap::Round;
+    g.PathMoveTo(mCX + mR * 0.1f * std::cos(a), mCY - mR * 0.1f * std::sin(a));
+    g.PathLineTo(mCX + mR * 0.86f * std::cos(a), mCY - mR * 0.86f * std::sin(a));
+    g.PathStroke(IPattern(c), mR * 0.13f, o);
+    char lb[32]; snprintf(lb, sizeof(lb), "SYNC %s", kName[v]);
+    Txt(g, mCX, mCY + (mR / S * 1.62f + 1.5f) * S + 0.4f * S, lb, 1.72f, c);
+  }
+  bool IsDirty() override
+  {
+    const int st = (ArpZone(GetDelegate()) > 0 ? 16 : 0) | Val();
+    if (st != mShown) { mShown = st; SetDirty(false); }
+    return IControl::IsDirty();
+  }
+  void OnMouseDown(float, float, const IMouseMod&) override { mAcc = 0.f; }
+  void OnMouseDrag(float, float, float, float dY, const IMouseMod&) override
+  {
+    mAcc -= dY;
+    while (mAcc >= 10.f) { Set(Val() + 1); mAcc -= 10.f; }
+    while (mAcc <= -10.f) { Set(Val() - 1); mAcc += 10.f; }
+  }
+  void OnMouseWheel(float, float, const IMouseMod&, float d) override { Set(Val() + (d > 0 ? 1 : -1)); }
+  void OnMouseDblClick(float, float, const IMouseMod&) override { Set(0); }
+  void OnMouseOver(float, float, const IMouseMod&) override { Info(); }
+  bool IsHit(float x, float y) const override { return (x - mCX) * (x - mCX) + (y - mCY) * (y - mCY) <= mR * mR * 2.4f; }
+private:
+  int Val() const { const int v = mHost ? mHost->ArpSync() : 0; return v < 0 ? 0 : (v > 6 ? 6 : v); }
+  void Set(int v) { if (!mHost) return; mHost->SetArpSync(v < 0 ? 0 : (v > 6 ? 6 : v)); Info(); SetDirty(false); }
+  void Info()
+  {
+    static const char* kLong[7] = { "free: the RATE knob sets the speed", "quarter notes", "eighth notes", "eighth-note triplets", "sixteenth notes", "sixteenth-note triplets", "thirty-second notes" };
+    char b[160]; snprintf(b, sizeof(b), "ARP SYNC  \xC2\xB7  %s%s", kLong[Val()], Val() ? " on the DAW's beat" : "");
+    SetInfo(b);
+  }
+  float mCX, mCY, mR, mAcc = 0.f; PatchHost* mHost; int mShown = -1;
+};
+
 // DELAY latch (the window only): in VCO2 arp / latch the ESP knobs run the arp; this latch brings the delay to them,
 // as holding SWITCH does on the MS-20ic, without silencing the keys. Greyed out in poly (the knobs are the delay there).
 class DelayLatchButton : public IControl
@@ -791,6 +847,7 @@ inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller,
   g->AttachControl(new EspKnob(RX(820), ey, "CV ADJUST", {PARAM_INDEX_BBD__Delay_wowflutter, "WOW / FLUTTER"}, {PARAM_INDEX_MS20__Voices_arporder, "ORDER"}, none));
   g->AttachControl(new EspKnob(RX(1000), ey, "THRESHOLD LEVEL", {PARAM_INDEX_BBD__Delay_drywet, "DELAY AMOUNT"}, none, none));   // BBD tone: held in the middle
   g->AttachControl(new DelayLatchButton(RX(1160), ey));
+  if (ph && ph->ArpSync() >= 0) g->AttachControl(new SyncKnob(RX(1340), ey, ph));   // only where there is a DAW clock
   // status bar
   g->AttachControl(new StatusBar(IRECT(0, Yd(PH) + 10.f, (float)kW, Yd(PH) + 10.f + BARH), ph, controller, diag));
   g->AttachCornerResizer(EUIResizerMode::Scale, false);

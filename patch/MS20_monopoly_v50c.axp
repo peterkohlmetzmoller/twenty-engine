@@ -104,7 +104,7 @@ inline float gcurve(float x,float m){        // soft / hard glide curves (33 poi
  float f=x*32.f;int i=(int)f;if(i>=32)return 1.f;float r=f-(float)i;
  float s=S[i]+(S[i+1]-S[i])*r;float h=H[i]+(H[i+1]-H[i])*r;return s+(h-s)*m;}
 // ---- arp (VCO2 mono) ----
-uint8_t h[16],a[16];int nh,na;float ap;int am,amp,mode;uint32_t acc,ledp,arng;int ai,ao;bool aup,zk;float p2,drf2,drt2;
+uint8_t h[16],a[16];int nh,na;float ap;int am,amp,mode;uint32_t acc,ledp,arng;uint32_t ext_aper;int ext_step; /* arp clock from outside (the plugin: DAW tempo); 0 = own rate */int ai,ao;bool aup,zk;float p2,drf2,drt2;
 // ---- 12-stage phaser (Moogerfooger MF-103 style) on the VCO1 bus: saw + PW ----
 float ap_s[12],ph_fb,ph_a,ph_da;bool phwas;
 inline float ftan(float x){float x2=x*x;return x*(945.f-105.f*x2+x2*x2)/(945.f-420.f*x2+15.f*x2*x2);} // tan() without libm, <0.01 cent error up to 0.42*fs
@@ -219,7 +219,7 @@ drng=24681357U;for(int i=0;i<NV;i++){drng=drng*196314165U+907633515U;dtn[i]=(int
 for(int i=0;i<NV;i++){sc[i]=0;vt[i]=vlt[i]=0;tg[i]=gs[i]=ginc[i]=gmix[i]=0.f;gpos[i]=1.f;gon[i]=false;}kclk=0;porta=0.f;
 lon=0;cid=0;for(int i=0;i<NV;i++){vc[i]=0;vu[i]=0;}
 mono_on=false;mg_was=0;mhp=0;mtg=mpos=0.f;p1a=0.f;
-nh=na=0;ap=60.f;am=amp=mode=0;acc=0;ledp=0;arng=1357911U;ai=ao=0;aup=zk=true;p2=0.f;drf2=drt2=0.f;
+nh=na=0;ap=60.f;am=amp=mode=0;acc=0;ext_aper=0;ext_step=0;ledp=0;arng=1357911U;ai=ao=0;aup=zk=true;p2=0.f;drf2=drt2=0.f;
          
 for(int i=0;i<1;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654468715U;kn_f=1;
 
@@ -247,7 +247,7 @@ amp=am;mode=am;outlet_mode=am;
 // ===== ARP (VCO2 mono) =====
 if(am==2){ledp+=2863311U;outlet_arpled=(ledp&0x80000000)?1:0;}else{outlet_arpled=(am==1)?1:0;}
 if(am<2&&nh==0){na=0;}if(am==1){na=nh;for(int i=0;i<nh;i++)a[i]=h[i];}
-float n=param_arprate*7.45e-9f;if(n>0.6f)n=0.6f; /* arp rate: from 1 o'clock up it stays at full speed (about 19 steps/s) */float n2=n*n;float hz=0.5f+n2*20.f+(n2*n2*n)*150.f;uint32_t aper=(uint32_t)(3000.f/hz);
+float n=param_arprate*7.45e-9f;if(n>0.6f)n=0.6f; /* arp rate: from 1 o'clock up it stays at full speed (about 19 steps/s) */float n2=n*n;float hz=0.5f+n2*20.f+(n2*n2*n)*150.f;uint32_t aper=(uint32_t)(3000.f/hz);if(ext_aper){aper=ext_aper;if(ext_step){acc=aper-1;ext_step=0;}} /* synced: a step on each beat division */
 int dtg=0;bool gt=false;acc++;
 if(am>0&&na>0){
  if(acc>=aper){

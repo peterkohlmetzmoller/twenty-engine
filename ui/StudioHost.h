@@ -10,5 +10,8 @@ struct PatchHost {
   virtual void SetNoisePick(int jackIndex, int pick) = 0;
   virtual void SwitchDown(bool down) = 0;               // the MS-20's momentary switch (tap tempo)
   virtual int Leds() const { return 0x10; }             // the LEDs as the engine drives them (bit 0 MG rate, 1 EG 1, 2 PEAK, 3 TRIG, 4 power)
+  // arp SYNC to the host's tempo: 0 free, 1..6 = 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32; -1 = not available (no host clock)
+  virtual int ArpSync() const { return -1; }
+  virtual void SetArpSync(int) {}
 };
 }
