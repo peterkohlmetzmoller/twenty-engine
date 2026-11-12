@@ -9,6 +9,10 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: write
+  actions: read
+
 env:
   IPLUG2_COMMIT: d82b2e99b17c8f723d3f6e2a88ffd8b656f28e5d
   VST3_TAG: v3.8.0_build_66
@@ -175,6 +179,14 @@ jobs:
           path: |
             TwentyEngineUI-AU.zip
             TwentyEngine-AAX-Mac-unsigned.zip
+      - name: UI test build on the draft release (a plain download)
+        if: github.ref_name == 'ui'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view ui-test -R ${{ github.repository }} > /dev/null 2>&1 || \
+            gh release create ui-test -R ${{ github.repository }} --draft --title "Twenty Engine UI (test build)" --notes "Test build of the plugin with the panel window. Not for release." --target ui
+          gh release upload ui-test TwentyEngineUI-AU.zip --clobber -R ${{ github.repository }}
 
   # ---------------- Apple Silicon: validate the arm64 half of the same AU ----------------
   # Apple Silicon runners are rarely available on GitHub (jobs sat in the queue and were cancelled), so the

@@ -107,6 +107,8 @@ public:
         while (ei < nev && ev[ei].te < (double)(produced + BUFSIZE)) {
           core->midi(ev[ei].s, ev[ei].d1, ev[ei].d2); ei++;
         }
+        { const int rq = recallReq.exchange(-1); if (rq >= 0) core->o_Patch_Memory.recall(rq); }   // a memory picked in the host
+        { const int pi = pinIdx.load(std::memory_order_relaxed); if (pi >= 0) core->root.PExch[pi].value = pinVal.load(std::memory_order_relaxed); }
         if (hook) hook->before(k);
         core->process();
         if (hook) hook->after(k);
@@ -158,6 +160,18 @@ public:
     if (core->o_Patch_Memory.savereq) { core->o_Patch_Memory.savereq = 0;
       if (core->o_Patch_Memory.saveFile()) core->o_Patch_Memory.flash(31, 5); else core->o_Patch_Memory.flash(12, 8); }   // saved: 5 x all LEDs, failed: 8 x PEAK+TRIG
   }
+  // main thread: recall memory slot n (0..35; 36 = the panel), as switch + key does; applied in the next block
+  void requestRecall(int n) { if (n >= 0 && n <= 36) recallReq.store(n); }
+  void cancelRecall() { recallReq.store(-1); }
+  // a parameter held at one value whatever the knobs do (the Twenty Engine UI: BBD tone in the middle)
+  void pinParam(int idx, int32_t raw) { pinVal = raw; pinIdx = idx; }
+  // slot n still holds its factory sound (for the preset names)
+  bool slotIsFactory(int n) const {
+    O_Patch_Memory &m = core->o_Patch_Memory;
+    if (n < 0 || n >= O_Patch_Memory::NS || !m.valid[n]) return false;
+    for (int p = 0; p < O_Patch_Memory::NP; p++) if (m.mem[n][p] != m.facval(n, p)) return false;
+    return true;
+  }
   // main thread: forget a save request (a take playing back replays the save gesture: never overwrite the memory then)
   void dropMemorySave() { core->o_Patch_Memory.savereq = 0; }
 
@@ -180,6 +194,8 @@ private:
   float ebL[RB], ebR[RB];
   float kern[(PH + 1) * 2 * HW];
 
+  std::atomic<int> recallReq{-1};
+  std::atomic<int> pinIdx{-1}; std::atomic<int32_t> pinVal{0};
   // the memory table survives an engine reset (sample-rate change) like the parameters do
   int32_t memKeep[sizeof(((O_Patch_Memory *)0)->_mem) / sizeof(int32_t)]; uint8_t validKeep[sizeof(((O_Patch_Memory *)0)->_valid)];
   void saveMemTable() { memcpy(memKeep, core->o_Patch_Memory._mem, sizeof(memKeep)); memcpy(validKeep, core->o_Patch_Memory._valid, sizeof(validKeep)); }
