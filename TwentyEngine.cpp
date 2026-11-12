@@ -629,12 +629,12 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
 #if TWENTY_UI
     {
       // arp SYNC: steps on the DAW's beat divisions (free-running at the DAW tempo while it is stopped)
-      static const double kDiv[7] = { 0.0, 1.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125 };   // free, 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32
+      // SYNC on: the RATE knob picks the division (te_ui::SyncZone)
       const int sy = mArpSync.load();
       const double bps = (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0;
       if (done == 0) { if (running) mArpPpq = GetPPQPos(); }
       ms20::MS20Host::ArpClock c;
-      if (sy > 0 && sy < 7 && bps > 0.0) { c.ppq0 = mArpPpq; c.beatsPerSample = bps; c.beatsPerStep = kDiv[sy]; }
+      if (sy > 0 && bps > 0.0) { c.ppq0 = mArpPpq; c.beatsPerSample = bps; c.beatsPerStep = te_ui::kSyncBeats[te_ui::SyncZone(mHost->getParamRaw(PARAM_INDEX_MS20__Voices_arprate) / 134217728.0)]; }
       mHost->setArpClock(c);
       if (twoEngines) mPlay->setArpClock(c);
       mArpPpq += n * bps;
@@ -906,7 +906,7 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
   if (pos >= 0 && pos + 8 <= chunk.Size())
   {
     int32_t magic = 0, sync = 0; int q = chunk.Get(&magic, pos);
-    if (q > 0 && magic == 0x54455532 && chunk.Get(&sync, q) > 0) { mArpSync.store(sync >= 0 && sync < 7 ? sync : 0); pos = q + 4; }
+    if (q > 0 && magic == 0x54455532 && chunk.Get(&sync, q) > 0) { mArpSync.store(sync > 0 ? 1 : 0); pos = q + 4; }
   }
 #endif
   return pos;
