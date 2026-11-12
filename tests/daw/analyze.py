@@ -58,6 +58,13 @@ for f in sorted(os.listdir(d)):
             if rms(s[i:i + 480]) < 1e-4: gaps += 1
     early, late = bright(seg(x, sr, 0.8, 2.2)), bright(seg(x, sr, 7.6, 8.4))   # chord (sweep nearly closed) / end (open)
     res[name] = dict(peak=peak, clip=clip, dc=dc, gaps=gaps, early=early, late=late, rms=rms(x))
+    if '_recall' in name:   # switch + key recall: the note after each recall must sound like the one before
+        a, b, c = rms(seg(x, sr, 0.7, 1.4)), rms(seg(x, sr, 3.7, 4.4)), rms(seg(x, sr, 7.2, 7.9))
+        db = lambda v: 20 * math.log10(v + 1e-9)
+        ok = a > 1e-3 and b > a * 0.1 and c > a * 0.1
+        print('%-22s note before %6.1f dB  after memory 1 %6.1f dB  after panel %6.1f dB  %s' % (name, db(a), db(b), db(c), 'ok' if ok else 'FAIL'))
+        if not ok: fails.append(name + ': muted after a switch + key recall')
+        continue
     ok = peak > 0.01 and clip < 50 and dc < 0.02 and gaps == 0
     print('%-22s peak %6.1f dB  rms %6.1f dB  clip %4d  dc %.4f  gaps %3d  bright %.4f -> %.4f  %s' % (
         name, 20 * math.log10(peak + 1e-9), 20 * math.log10(res[name]['rms'] + 1e-9), clip, dc, gaps, early, late, 'ok' if ok else 'FAIL'))

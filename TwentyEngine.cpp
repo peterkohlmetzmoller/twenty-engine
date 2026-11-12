@@ -12,6 +12,42 @@
 #if IPLUG_EDITOR && !defined(NO_IGRAPHICS)
 #include "IControls.h"
 #include "resources/font_data.h"
+
+// ---- switch diagnostics (test build): what the host delivers for the MS-20ic's switch (channel pressure) ----
+// VST3 hosts send it as a parameter change (IMidiMapping); iPlug2 (patched by tools/patch_iplug2.py) calls
+// TE_SwitchDiag for every point of that queue, then hands the point on as a channel-pressure message.
+// code: kind << 24 | points << 16 | point << 8 | value (0..127); kind 1 = parameter point, 2 = MIDI event
+static std::atomic<uint32_t> gSwN{0};
+static int32_t gSwCode[16];
+static bool gSwFromParam = false;
+static void SwRecord(int kind, int pts, int pt, int v)
+{
+  const uint32_t n = gSwN.load(std::memory_order_relaxed);
+  gSwCode[n & 15] = (kind << 24) | ((pts & 0xFF) << 16) | ((pt & 0xFF) << 8) | (v & 0xFF);
+  gSwN.store(n + 1, std::memory_order_release);
+}
+void TE_SwitchDiag(int numPoints, int point, int offset, double value)
+{
+  (void)offset; SwRecord(1, numPoints, point, (int)(value * 127. + 0.5)); gSwFromParam = true;
+}
+// "Switch: 127 0 127/0 e0  ·  up" - the last values received, newest last (a/b = one queue with two points)
+static bool SwitchDiagText(char* out, int n)
+{
+  const uint32_t cnt = gSwN.load(std::memory_order_acquire);
+  if (!cnt) return false;
+  int o = snprintf(out, n, "Switch in:");
+  const uint32_t first = cnt > 10 ? cnt - 10 : 0;
+  int lastV = 0;
+  for (uint32_t i = first; i < cnt && o < n - 12; i++)
+  {
+    const int32_t c = gSwCode[i & 15]; const int kind = (c >> 24) & 0xFF, pts = (c >> 16) & 0xFF, pt = (c >> 8) & 0xFF, v = c & 0xFF;
+    lastV = v;
+    if (kind == 2) o += snprintf(out + o, n - o, " e%d", v);
+    else o += snprintf(out + o, n - o, (pt > 0 && i > first) ? "/%d" : (pts > 1 ? " %d" : " %d"), v);
+  }
+  snprintf(out + o, n - o, "   (%u)  now %s", cnt, lastV > 0 ? "held" : "up");
+  return true;
+}
 #endif
 #include <string.h>
 #include <stdlib.h>
@@ -407,7 +443,7 @@ void TwentyEngine::PaintStatus(HDC wdc)
   // takes line (Instrument) or where the sound is kept
   char tk[192];
 #if TWENTY_STUDIO
-  tk[0] = 0; StudioDiag(tk, sizeof(tk));
+  tk[0] = 0; if (!SwitchDiagText(tk, sizeof(tk))) StudioDiag(tk, sizeof(tk));   // test build: the switch as received
 #else
   const int takes = RecallTakes();
   if (!RecallOn()) snprintf(tk, sizeof(tk), "Performance recall off: needs Windows 11 MIDI Services");
@@ -486,6 +522,7 @@ void TwentyEngine::OnReset()
 
 void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
 {
+  if ((msg.mStatus & 0xF0) == 0xD0) { if (gSwFromParam) gSwFromParam = false; else SwRecord(2, 1, 0, msg.mData1); }   // switch diagnostics
   // everything goes to the engine: notes, CCs (knobs, rotaries, patch bay NRPN), channel pressure (button)
   if (msg.mStatus < 0xF0 && (msg.mStatus & 0xF0) != 0xB0) mDbgMidiQ.push({msg.mStatus, msg.mData1, msg.mData2, msg.mOffset, mClock});   // beta diagnostics: notes, pressure (not the many knob CCs)
   // performance recall (engine/recall.h): the track plays the notes, the switch and the mod wheel; knob and
