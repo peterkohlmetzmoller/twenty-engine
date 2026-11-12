@@ -13,7 +13,11 @@
 #include "ui/StudioHost.h"
 #endif
 
+#if TWENTY_UI
+const int kNumPresets = 37;   // the 36 memories on the keys + the panel, in the host's preset menu
+#else
 const int kNumPresets = 1;
+#endif
 const int kNumParams = ms20::NPARAMS;   // every parameter of the Ksoloti patch
 
 #if IPLUG_DSP
@@ -91,6 +95,8 @@ private:
   std::atomic<bool> mCableFlag[2] = {false, false};
   uint8_t mNoise[35] = {};
   std::atomic<int> mController{0};
+  static constexpr int32_t kMemPresetMagic = 0x54454D53;   // 'TEMS': a preset that is a memory slot
+  int mPresetShown = 36;
   int mCtlScan = 0;
   std::atomic<int64_t> mUiTouchMs[kNumParams] = {};
   int32_t mUiShown[kNumParams] = {};

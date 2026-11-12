@@ -257,6 +257,28 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 #endif
   if (mPanelPath[0] && mPanelMem.load(mPanelPath)) mPanelSrc.store(1);   // the last panel: replayed when the controller connects
 #endif
+#if TWENTY_UI
+  // The host's preset menu (Logic's Setting menu): the 36 memories on the keys and the panel. Picking one recalls
+  // it as switch + key does. Each preset is only a marker ('TEMS' + slot): the sound itself stays in MS20MEM.BIN.
+  // A slot saved over on the keys is listed as "User" (the name is read when the plugin opens).
+  {
+    static const char* kFactory[36] = { "Punch Saw Bass", "Acid Reso", "Sub Pulse", "Wide Pulse Bass", "Octave Bass", "Fifth Bass",
+      "Ring Bass", "Sine Thump", "Round Bass", "Wobble", "Glide Bass", "Phaser Bass", "Poly Strings", "Brass", "Organ", "Soft Keys",
+      "Bell", "Glass Pad", "Sweep Pad", "Phaser Pad", "Clav", "Harpsi", "Vowel Pad", "Poly Synth", "Fourth Lead", "Square Lead",
+      "Screamer", "Soft Flute", "Reed", "Theremin", "Rising Zap", "Laser", "Random Bleeps", "Wind", "Ring Metal", "Slow Swell" };
+    for (int n = 0; n <= 36; n++)
+    {
+      char name[64];
+      if (n == 36) snprintf(name, sizeof(name), "Panel (the knobs as they are)");
+      else snprintf(name, sizeof(name), "%02d %s", n + 1, mHost->slotIsFactory(n) ? kFactory[n] : "User");
+      IByteChunk c; const int32_t magic = kMemPresetMagic, slot = n;
+      c.Put(&magic); c.Put(&slot);
+      MakePresetFromChunk(name, c);
+    }
+  }
+  // BBD tone: held in the middle (not on the panel)
+  mHost->pinParam(PARAM_INDEX_BBD__Delay_bbdfilter, 67108864);
+#endif
   // Same ranges as the Ksoloti editor shows them: knobs 0..64 (bipolar -64..64), selectors as integers.
   // Not automatable: the sound is played on the controller and stored by performance recall, not edited in the DAW.
 #if TWENTY_STUDIO
@@ -644,6 +666,13 @@ void TwentyEngine::OnParamChange(int paramIdx, EParamSource source, int sampleOf
   const int32_t raw = ToRaw(paramIdx, GetParam(paramIdx)->Value());
 #if TWENTY_UI
   if (source != kUI) { mHostSetMs[paramIdx] = ms20::ParamStream<kNumParams>::NowMs(); mUiShown[paramIdx] = raw; }
+  if (source == kPresetRecall)
+  {
+    // a preset from the host's menu (or the project as saved): the window shows it, so the live engine plays it,
+    // and a region being recorded gets it
+    mHost->setParamRaw(paramIdx, raw);
+    if (PanelPort::Get().Ok() && (HasFocus() || !mLed.KnobsDirect())) StreamSend(paramIdx, raw);
+  }
   if (source == kUI)
   {
     // a knob in the window: the live engine, as the MS-20ic's knob would; out through the port (recorded into
@@ -751,7 +780,10 @@ void TwentyEngine::OnIdle()
       SendParameterValueFromDelegate(i, GetParam(i)->GetNormalized(), true);
       mFromEngine = false;
     }
-    if (--mCtlScan <= 0) { mCtlScan = 50; mController.store(LedPort::FindController()); } }   // about once a second
+    if (--mCtlScan <= 0) { mCtlScan = 50; mController.store(LedPort::FindController()); }   // about once a second
+    // the host's preset menu shows the memory recalled on the keys (or the panel)
+    { const int m = mHost->memSlot(), shown = m >= 0 ? m : 36;
+      if (audio && shown != mPresetShown) { mPresetShown = shown; SetCurrentPresetIdx(shown); InformHostOfPresetChange(); } } }
 #endif
   // 1c. the controller's panel: a real start-up dump (volume switched on) makes it "read"; saved after a quiet second
   { const uint32_t pons = mPanelMem.powerOns(); if (pons != mPanelPons) { mPanelPons = pons; mPanelSrc.store(2); }
@@ -819,6 +851,17 @@ bool TwentyEngine::SerializeState(IByteChunk& chunk) const
 
 int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
 {
+#if TWENTY_UI && IPLUG_DSP
+  // a memory from the preset menu: recall it on the live engine (the knobs follow the engine)
+  if (chunk.Size() == startPos + 8)
+  {
+    int32_t magic = 0, slot = -1; int q = chunk.Get(&magic, startPos);
+    if (q > 0 && magic == kMemPresetMagic && chunk.Get(&slot, q) > 0 && slot >= 0 && slot <= 36) { mHost->requestRecall(slot); mPresetShown = slot; return startPos + 8; }
+  }
+  // the whole sound (a project, a preset saved in the host): it wins over a memory picked by name just before
+  // (AU: the host restores the preset of that name first, then this state)
+  mHost->cancelRecall();
+#endif
   int pos = UnserializeParams(chunk, startPos);
 #if IPLUG_DSP
   // older projects (before recall) end here; anything that is not our block is left alone

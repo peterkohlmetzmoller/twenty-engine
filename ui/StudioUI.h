@@ -389,7 +389,7 @@ private:
 // ---------------------------------------------------------------- ESP knobs
 // Plain knobs whose name follows the play mode, as on the hardware: in poly they run the delay, in VCO2 arp / latch
 // LOW CUT, HIGH CUT and CV ADJUST run the arp (RATE, OCTAVES, ORDER). Holding SWITCH brings the delay back, and
-// THRESHOLD becomes the delay TONE. Only the name under the knob changes; nothing else is shown.
+// THRESHOLD stays DELAY AMOUNT (the BBD tone is held in the middle). Only the name under the knob changes; nothing else is shown.
 static bool& SwitchHeld() { static bool b = false; return b; }
 static int ArpZone(IEditorDelegate* d)   // engine zones of SIGNAL LEVEL: < 18 poly, < 42 VCO2 arp, else latch
 {
@@ -697,7 +697,8 @@ inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller,
   // VCO 1 / VCO 2 (rotaries: the waveform symbols are the sounds the engine makes in each position)
   g->AttachControl(new PRotary(X(COLX[0]), Yd(RA), PARAM_INDEX_MS20__Voices_vco1wave, "WAVEFORM", "VCO 1 WAVEFORM  \xC2\xB7  PULSE WIDTH shapes every waveform", {"w:tri", "w:saw", "w:pulse", "w:noise"}));
   {
-    PKnob* pw = new PKnob(X(COLX[0]), Yd(RB), 3.0f, PARAM_INDEX_MS20__Voices_pw, "PULSE\nWIDTH", "VCO 1 PULSE WIDTH");
+    PKnob* pw = new PKnob(X(COLX[0]), Yd(RB - 2.5f), 3.0f,   // a little higher: its wave sticker clear of SCALE
+                          PARAM_INDEX_MS20__Voices_pw, "PULSE\nWIDTH", "VCO 1 PULSE WIDTH");
     pw->SetLook([g]() -> PKnob::Look {   // what PW does depends on VCO 1's waveform
       const int w = (int)std::lround(g->GetDelegate()->GetParam(PARAM_INDEX_MS20__Voices_vco1wave)->Value());
       switch (w)
@@ -750,7 +751,7 @@ inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller,
   g->AttachControl(new EspKnob(RX(460), ey, "LOW CUT FREQ", {PARAM_INDEX_BBD__Delay_time, "TIME"}, {PARAM_INDEX_MS20__Voices_arprate, "RATE"}, none));
   g->AttachControl(new EspKnob(RX(640), ey, "HIGH CUT FREQ", {PARAM_INDEX_BBD__Delay_feedback, "FEEDBACK"}, {PARAM_INDEX_MS20__Voices_arpoct, "OCTAVES"}, none));
   g->AttachControl(new EspKnob(RX(820), ey, "CV ADJUST", {PARAM_INDEX_BBD__Delay_wowflutter, "WOW / FLUTTER"}, {PARAM_INDEX_MS20__Voices_arporder, "ORDER"}, none));
-  g->AttachControl(new EspKnob(RX(1000), ey, "THRESHOLD LEVEL", {PARAM_INDEX_BBD__Delay_drywet, "DELAY AMOUNT"}, none, {PARAM_INDEX_BBD__Delay_bbdfilter, "TONE"}));
+  g->AttachControl(new EspKnob(RX(1000), ey, "THRESHOLD LEVEL", {PARAM_INDEX_BBD__Delay_drywet, "DELAY AMOUNT"}, none, none));   // BBD tone: held in the middle
   // status bar
   g->AttachControl(new StatusBar(IRECT(0, Yd(PH) + 10.f, (float)kW, Yd(PH) + 10.f + BARH), ph, controller, diag));
   g->AttachCornerResizer(EUIResizerMode::Scale, false);
