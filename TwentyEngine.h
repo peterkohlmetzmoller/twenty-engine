@@ -67,6 +67,8 @@ public:
 private:
   int mId = 0;
   int64_t mFocusId = 0;
+  // Windows with the loopMIDI port: one engine; the panel's sound kept while no take plays
+  int32_t mWinPanel[ms20::NPARAMS] = {}; bool mWinPanelKnown = false, mWinInTake = false; int mPortScan = 0;
   bool mHadFocus = false;
   struct Heard { uint8_t key; int64_t ms; };
   Heard mHeard[16] = {}; int mHeardHead = 0;     // controller note-ons while another track has the controller

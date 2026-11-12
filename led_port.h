@@ -168,6 +168,7 @@ class PanelPort
 public:
   static PanelPort& Get() { static PanelPort p; return p; }
   bool Ok() const { return mSrc != 0; }
+  void Rescan() {}   // the port is made by the plugin itself
   void Send(const uint8_t* bytes, int len)
   {
     if (!mSrc || len <= 0 || len > 200) return;
@@ -267,7 +268,8 @@ public:
       MIDIINCAPSA caps;
       if (midiInGetDevCapsA(i, &caps, sizeof(caps)) != MMSYSERR_NOERROR) continue;
       int k = 0;
-      if (Has(caps.szPname, "ksoloti")) k = 2;
+      if (Has(caps.szPname, "twenty engine panel")) k = 0;   // the loopMIDI port for PanelPort, never the controller
+      else if (Has(caps.szPname, "ksoloti")) k = 2;
       else if (Has(caps.szPname, "teensy") || Has(caps.szPname, "twenty engine")) k = 3;
       else if (Has(caps.szPname, "ms-20")) k = 1;
       if (k > found) found = k;
@@ -326,7 +328,8 @@ private:
       MIDIINCAPSA caps;
       if (midiInGetDevCapsA(i, &caps, sizeof(caps)) != MMSYSERR_NOERROR) continue;
       int k = 0;
-      if (Has(caps.szPname, "ksoloti")) k = 2;
+      if (Has(caps.szPname, "twenty engine panel")) k = 0;   // the loopMIDI port for PanelPort, never the controller
+      else if (Has(caps.szPname, "ksoloti")) k = 2;
       else if (Has(caps.szPname, "teensy") || Has(caps.szPname, "twenty engine")) k = 3;
       else if (Has(caps.szPname, "ms-20")) k = 1;
       if (k > bestK) { bestK = k; best = (int)i; }
@@ -363,7 +366,42 @@ public:
 };
 #endif
 
-#ifndef __APPLE__
-// PanelPort: Mac only for now (Windows needs Windows MIDI Services for a port of our own)
-class PanelPort { public: static PanelPort& Get() { static PanelPort p; return p; } bool Ok() const { return false; } void Send(const uint8_t*, int) {} };
+#if defined(_WIN32)
+// PanelPort on Windows: a plugin cannot make a MIDI port of its own on Windows 10, so the port is made with the
+// free loopMIDI (Tobias Erichsen): a port named "Twenty Engine Panel". The plugin sends into it; the DAW sees the
+// same port as a MIDI input and records it with the track (input: all MIDI inputs), exactly as on the Mac.
+// Not there: Ok() is false and the plugin plays the panel's sound as before. Main thread only.
+class PanelPort
+{
+public:
+  static PanelPort& Get() { static PanelPort p; return p; }
+  bool Ok() const { return mOut != nullptr; }
+  // look for the port (again): the user may create it while the DAW runs
+  void Rescan()
+  {
+    if (mOut) return;
+    const UINT n = midiOutGetNumDevs();
+    for (UINT i = 0; i < n; i++)
+    {
+      MIDIOUTCAPSA caps;
+      if (midiOutGetDevCapsA(i, &caps, sizeof(caps)) != MMSYSERR_NOERROR) continue;
+      char low[64]; size_t k = 0; for (; caps.szPname[k] && k < sizeof(low) - 1; k++) low[k] = (char)tolower((unsigned char)caps.szPname[k]); low[k] = 0;
+      if (!strstr(low, "twenty engine panel")) continue;
+      if (midiOutOpen(&mOut, i, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR) mOut = nullptr;
+      return;
+    }
+  }
+  void Send(const uint8_t* b, int len)
+  {
+    if (!mOut || len < 2 || len > 3) return;   // the stream is short messages only
+    const DWORD m = (DWORD)b[0] | ((DWORD)b[1] << 8) | (len > 2 ? ((DWORD)b[2] << 16) : 0);
+    if (midiOutShortMsg(mOut, m) != MMSYSERR_NOERROR) { midiOutClose(mOut); mOut = nullptr; }   // the port went away
+  }
+private:
+  PanelPort() { Rescan(); }
+  ~PanelPort() { if (mOut) { midiOutReset(mOut); midiOutClose(mOut); } }
+  HMIDIOUT mOut = nullptr;
+};
+#elif !defined(__APPLE__)
+class PanelPort { public: static PanelPort& Get() { static PanelPort p; return p; } bool Ok() const { return false; } void Send(const uint8_t*, int) {} void Rescan() {} };
 #endif

@@ -32,5 +32,8 @@ Source: "..\out\TwentyEngine.vst3\*"; DestDir: "{commoncf64}\VST3\TwentyEngine.v
 Type: filesandordirs; Name: "{commoncf64}\VST3\TwentyEngine.vst3"
 Type: filesandordirs; Name: "{commoncf64}\VST3\TwentyEngineAutomation.vst3"
 
+[Run]
+Filename: "https://www.tobias-erichsen.de/software/loopmidi.html"; Description: "Open the loopMIDI download page (free; keeps each take's sound - add a port named Twenty Engine Panel)"; Flags: postinstall shellexec skipifsilent unchecked nowait
+
 [Messages]
 FinishedLabel=Twenty Engine is installed. Rescan plugins in your music software (or restart it), then add it to an instrument track with the MS-20ic as its MIDI input.

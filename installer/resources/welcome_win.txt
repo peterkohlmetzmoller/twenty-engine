@@ -2,7 +2,10 @@ Twenty Engine - an 8-voice polysynth engine for the Korg MS-20ic.
 
 This installs the 64-bit VST3 plugin Twenty Engine into the standard VST3 folder (C:\Program Files\Common Files\VST3). It works in Ableton Live, Bitwig, Reaper, Cubase and other VST3 hosts. Your 36 memory sounds are kept in %APPDATA%\Twenty Engine and are not removed when you uninstall.
 
-On Windows the plugin plays from the track like any synth, with the panel's sound: add it to an instrument track with the MS-20ic as its MIDI input. To keep a part's sound, freeze or bounce the track. (Keeping the sound inside each region is a Mac feature for now.)
+Add it to an instrument track with the MS-20ic as its MIDI input; it plays with the panel's sound.
+
+To keep each take's own sound (its knob moves and starting sound travel with the take, also when you move it), install the free loopMIDI by Tobias Erichsen and add a port named exactly:  Twenty Engine Panel
+Then enable that port as a MIDI input in your DAW and set the Twenty Engine track's input to all MIDI inputs. The installer can open the loopMIDI download page at the end.
 
 For the panel LEDs, don't enable the MS-20ic as a MIDI output in your DAW.
 

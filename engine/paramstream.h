@@ -228,6 +228,17 @@ struct StreamMemory {
     for (int k = 0; k < n; k++) { if (s[k].pos <= pos + ahead) best = &s[k]; else break; }
     return best ? best->v : nullptr;
   }
+  // like at(), but only inside a stretch of snapshots (a take): the snapshot before pos must be followed by
+  // another within gap, or lie within gap of pos itself. Null outside every take (Windows: one engine, so a
+  // place without a take keeps the panel's sound).
+  const int32_t *atInside(double pos, double ahead, double gap) const {
+    int b = -1;
+    for (int k = 0; k < n; k++) { if (s[k].pos <= pos + ahead) b = k; else break; }
+    if (b < 0) return nullptr;
+    const bool justBefore = s[b].pos >= pos - gap;   // (not "near": a macro on Windows)
+    const bool between = b + 1 < n && s[b + 1].pos - s[b].pos <= gap;
+    return (justBefore || between) ? s[b].v : nullptr;
+  }
   // a snapshot with its position in (a, b], or null (entering a region whose first snapshot comes a moment
   // after its first notes)
   const Snap *within(double a, double b) const {

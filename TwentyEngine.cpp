@@ -495,6 +495,11 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   // always read, also where this computer has no port of its own (a project recorded elsewhere keeps its sounds)
   if (mStream.push(msg.mStatus, msg.mData1, msg.mData2)) return;
 #endif
+#if defined(_WIN32) && TWENTY_STUDIO
+  // Windows with the loopMIDI port: a key played while no take is playing is live - this copy's track is the
+  // one being played on, so this copy sends its sound into the port (one copy at a time)
+  if (!mLed.KnobsDirect() && (msg.mStatus & 0xF0) == 0x90 && msg.mData2 > 0 && !mWinInTake) FocusCell()->store(mFocusId);
+#endif
   if (!mLed.KnobsDirect()) { mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2); return; }   // Windows: the track plays the live engine
   DrainController();                                                  // what the controller sent first: tells live from region
   const int type = msg.mStatus & 0xF0;
@@ -537,10 +542,32 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
     ms20::MS20Host* e = mLed.KnobsDirect() ? mPlay.get() : mHost.get();
     const double ppq = GetPPQPos(), bps = (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0;
     const bool jumped = running && mWasRunPpq && fabs(ppq - mExpectPpq) > 1.0;   // (a live track's position wobbles a little)
+#if defined(_WIN32)
+    // Windows with the loopMIDI port: one engine plays both the live keys and the takes. A take brings its sound
+    // (its stream); outside a take, and when the transport stops, the engine goes back to the panel's sound
+    // (what the knobs made), kept here while no take plays.
+    const bool win = !mLed.KnobsDirect() && PanelPort::Get().Ok();
+    const double gap = (tempo > 0.0 ? tempo : 120.0) / 60.0 * 1.6;   // a take's snapshots come every second
+#else
+    const bool win = false; const double gap = 0.0;
+#endif
     if (running && (mStartReq.exchange(false) || !mRunBefore || jumped))
     {
       mMem->breakRun();
-      if (const int32_t* v = mMem->at(ppq, 0.25)) { for (int i = 0; i < kNumParams; i++) e->setParamQuiet(i, v[i]); mMemUsed++; mLastStreamClk = mClock; }
+      if (const int32_t* v = win ? mMem->atInside(ppq, 0.25, gap) : mMem->at(ppq, 0.25)) { for (int i = 0; i < kNumParams; i++) e->setParamQuiet(i, v[i]); mMemUsed++; mLastStreamClk = mClock; }
+    }
+    if (win)
+    {
+      if (!mWinPanelKnown) { for (int i = 0; i < kNumParams; i++) mWinPanel[i] = e->getParamRaw(i); mWinPanelKnown = true; }
+      // entering a take whose first snapshot is just ahead
+      if (running && !mWinInTake)
+        if (const auto* ahead = mMem->within(ppq, ppq + 0.25))
+          if (ahead->pos != mAheadPos) { for (int i = 0; i < kNumParams; i++) e->setParamQuiet(i, ahead->v[i]); mAheadPos = ahead->pos; mLastStreamClk = mClock; }
+      const bool inTake = running && mStreamEver.load() && mClock - mLastStreamClk < (int64_t)(sr * 1.5);
+      if (mWinInTake && !inTake)   // the take is over (or stopped): back to the panel's sound
+        for (int i = 0; i < kNumParams; i++) if (e->getParamRaw(i) != mWinPanel[i]) e->setParamQuiet(i, mWinPanel[i]);
+      if (!inTake) for (int i = 0; i < kNumParams; i++) mWinPanel[i] = e->getParamRaw(i);   // the knobs (and memories) as they are
+      mWinInTake = inTake;
     }
     mRunBefore = running; mWasRunPpq = running;
     if (!running) mMem->breakRun();
@@ -667,7 +694,12 @@ void TwentyEngine::OnIdle()
   const bool port = PanelPort::Get().Ok();
   const int64_t nowMs = ms20::ParamStream<kNumParams>::NowMs();
   const bool again = mRunningA.load() && nowMs - mLastSnapMs >= ms20::ParamStream<kNumParams>::SNAP_EVERY_MS;
+#if defined(_WIN32)
+  if (!port && --mPortScan <= 0) { mPortScan = 100; PanelPort::Get().Rescan(); }   // loopMIDI's port made later (every 2 s)
+  const bool focus = HasFocus();   // Windows: the copy whose track was last played on (one copy sends at a time)
+#else
   const bool focus = HasFocus() || !mLed.KnobsDirect();   // only the copy that plays from the controller sends its panel
+#endif
   if ((mSnapReq.exchange(false) || again) && port && focus)
   {
     mLastSnapMs = nowMs;
@@ -825,7 +857,11 @@ void TwentyEngine::Claim(const IMidiMsg& msg)
 void TwentyEngine::StudioDiag(char* out, int n) const
 {
 #if IPLUG_DSP
+#if defined(_WIN32)
+  if (!PanelPort::Get().Ok()) snprintf(out, n, "Plays the panel's sound (to keep it in the takes: loopMIDI port \"Twenty Engine Panel\")");
+#else
   if (!PanelPort::Get().Ok()) snprintf(out, n, "Plays the panel's sound (keeping it in the regions needs a Mac)");
+#endif
   else if (mFollowA.load()) snprintf(out, n, "No sound recorded here yet \xC2\xB7 plays the panel (track input: All)");
   else snprintf(out, n, "The sound is recorded with the regions");
 #else

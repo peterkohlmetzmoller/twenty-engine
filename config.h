@@ -5,8 +5,8 @@
 #define TWENTY_STUDIO 1
 #define PLUG_NAME "Twenty Engine"
 #define PLUG_MFR "Peter Kohlmetz Moller"
-#define PLUG_VERSION_HEX 0x00010001
-#define PLUG_VERSION_STR "1.0.1"
+#define PLUG_VERSION_HEX 0x00010002
+#define PLUG_VERSION_STR "1.0.2"
 #define PLUG_UNIQUE_ID 'Tw20'
 #define PLUG_MFR_ID 'Pkmo'
 #define PLUG_URL_STR "https://7233849350308.gumroad.com/l/ygmrks"
