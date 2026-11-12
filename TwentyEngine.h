@@ -82,6 +82,7 @@ private:
   std::unique_ptr<ms20::MS20Host> mPlay;   // the playback engine: plays the track; follows a recorded take or the panel
   ms20::Recall mRecall;         // performance recall (engine/recall.h)
   LedPort mLed;                 // sends the LED SysEx straight to the MS-20 iC (Core MIDI)
+  bool mSwFlip = false;          // Live on Windows: the switch, flipped on each message (ProcessMidiMsg)
   bool mFromEngine = false;     // true while we push an engine-side change to the host
   int mRescan = 0;
   float mScratchL[512], mScratchR[512], mPlayL[512], mPlayR[512];

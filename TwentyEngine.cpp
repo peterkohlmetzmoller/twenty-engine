@@ -25,6 +25,7 @@
 static std::atomic<uint32_t> gSwN{0};
 static int32_t gSwCode[16];
 static bool gSwFromParam = false;
+static int gSwEngine = 0;   // what the engine was given last: 0 nothing yet, 1 up, 2 held
 static void SwRecord(int kind, int pts, int pt, int v)
 {
   const uint32_t n = gSwN.load(std::memory_order_relaxed);
@@ -41,7 +42,7 @@ static bool SwitchDiagText(char* out, int n)
   const uint32_t cnt = gSwN.load(std::memory_order_acquire);
   if (!cnt) return false;
   int o = snprintf(out, n, "Switch in:");
-  const uint32_t first = cnt > 10 ? cnt - 10 : 0;
+  const uint32_t first = cnt > 6 ? cnt - 6 : 0;
   int lastV = 0;
   for (uint32_t i = first; i < cnt && o < n - 12; i++)
   {
@@ -50,7 +51,7 @@ static bool SwitchDiagText(char* out, int n)
     if (kind == 2) o += snprintf(out + o, n - o, " e%d", v);
     else o += snprintf(out + o, n - o, (pt > 0 && i > first) ? "/%d" : (pts > 1 ? " %d" : " %d"), v);
   }
-  snprintf(out + o, n - o, "   (%u)  now %s", cnt, lastV > 0 ? "held" : "up");
+  snprintf(out + o, n - o, "   (%u)  in %s, plays %s", cnt, lastV > 0 ? "held" : "up", gSwEngine == 2 ? "held" : "up");
   return true;
 }
 
@@ -521,9 +522,21 @@ void TwentyEngine::OnReset()
 #endif
 }
 
-void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
+void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msgIn)
 {
-  if ((msg.mStatus & 0xF0) == 0xD0) { if (gSwFromParam) gSwFromParam = false; else SwRecord(2, 1, 0, msg.mData1); }   // switch diagnostics
+  IMidiMsg msg = msgIn;
+  if ((msg.mStatus & 0xF0) == 0xD0)
+  {
+    const bool fromParam = gSwFromParam; gSwFromParam = false;
+    if (!fromParam) SwRecord(2, 1, 0, msg.mData1);   // switch diagnostics
+#if defined(_WIN32)
+    // Ableton Live (VST3, Windows) hands the plugin each switch value one step late: a press arrives with the value
+    // from before it, a release with the press. Every message still is one press or one release, in order - so in
+    // Live the switch flips on each message instead of following its value.
+    if (fromParam && GetHost() == kHostAbletonLive && !mLed.KnobsDirect()) { mSwFlip = !mSwFlip; msg.mData1 = mSwFlip ? 127 : 0; }
+#endif
+    gSwEngine = msg.mData1 > 0 ? 2 : 1;
+  }
   // everything goes to the engine: notes, CCs (knobs, rotaries, patch bay NRPN), channel pressure (button)
   if (msg.mStatus < 0xF0 && (msg.mStatus & 0xF0) != 0xB0) mDbgMidiQ.push({msg.mStatus, msg.mData1, msg.mData2, msg.mOffset, mClock});   // beta diagnostics: notes, pressure (not the many knob CCs)
   // performance recall (engine/recall.h): the track plays the notes, the switch and the mod wheel; knob and
