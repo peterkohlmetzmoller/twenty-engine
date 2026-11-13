@@ -161,7 +161,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release view mk-test -R ${{ github.repository }} > /dev/null 2>&1 || \
-            gh release create mk-test -R ${{ github.repository }} --draft --title "microKONTROL test" --notes "Test build (draft)." --target mk-test
+            gh release create mk-test -R ${{ github.repository }} --draft --title "microKONTROL test" --notes "Test build (draft)." --target mk-test || true   # Mac and Windows may race
           gh release upload mk-test TwentyEngine-Installer.pkg --clobber -R ${{ github.repository }}
 
   # ---------------- Apple Silicon: validate the arm64 half of the same AU ----------------
@@ -171,7 +171,7 @@ jobs:
   # ---------------- the plugins in other hosts: pluginval and REAPER (Mac) ----------------
   daw-test-mac:
     needs: build-mac
-    if: ${{ !cancelled() && (needs.build-mac.result == 'success' || inputs.artifacts_run) }}
+    if: ${{ github.ref_name != 'mk-test' && !cancelled() && (needs.build-mac.result == 'success' || inputs.artifacts_run) }}
     runs-on: macos-15-intel
     timeout-minutes: 45
     steps:
@@ -362,11 +362,20 @@ jobs:
           gh release view $V -R ${{ github.repository }} > /dev/null 2>&1 || \
             gh release create $V -R ${{ github.repository }} --draft --title "Twenty Engine $V" --notes "Release build (draft: only you can see it)." --target main
           gh release upload $V TwentyEngine-Setup.exe --clobber -R ${{ github.repository }}
+      - name: microKONTROL test build on its own draft release
+        if: github.ref_name == 'mk-test'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view mk-test -R ${{ github.repository }} > /dev/null 2>&1 || \
+            gh release create mk-test -R ${{ github.repository }} --draft --title "microKONTROL test" --notes "Test build (draft)." --target mk-test || true   # Mac and Windows may race
+          gh release upload mk-test TwentyEngine-Setup.exe --clobber -R ${{ github.repository }}
 
   # ---------------- the plugins in other hosts: pluginval and REAPER (Windows) ----------------
   daw-test-windows:
     needs: build-windows
-    if: ${{ !cancelled() && (needs.build-windows.result == 'success' || inputs.artifacts_run) }}
+    if: ${{ github.ref_name != 'mk-test' && !cancelled() && (needs.build-windows.result == 'success' || inputs.artifacts_run) }}
     runs-on: windows-2022
     timeout-minutes: 45
     defaults:
@@ -429,7 +438,7 @@ jobs:
   # ---------------- Teensy 4.1 firmware (.hex for the Teensy Loader) ----------------
   # ---------------- Daisy Patch SM firmware (beta) ----------------
   build-daisy:
-    if: ${{ !inputs.artifacts_run }}
+    if: ${{ !inputs.artifacts_run && github.ref_name != 'mk-test' }}   # mk-test: Mac and Windows only
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -454,7 +463,7 @@ jobs:
           path: dout/*
 
   build-teensy:
-    if: ${{ !inputs.artifacts_run }}
+    if: ${{ !inputs.artifacts_run && github.ref_name != 'mk-test' }}   # mk-test: Mac and Windows only
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
