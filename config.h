@@ -4,6 +4,8 @@
 // (0 builds the older two-engine "Instrument" with performance recall, kept in the code for reference.)
 #define TWENTY_STUDIO 1
 #define PLUG_NAME "Twenty Engine"
+// microKONTROL test build: its own folder for memories and panel, so the tester's own files stay untouched
+#define TE_DATA_DIR "Twenty Engine (microKONTROL test)"
 #define PLUG_MFR "Peter Kohlmetz Moller"
 #define PLUG_VERSION_HEX 0x00010002
 #define PLUG_VERSION_STR "1.0.2"

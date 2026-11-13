@@ -182,8 +182,8 @@ static std::atomic<int64_t>* FocusCell()
     {
       char p[1100];
       snprintf(p, sizeof(p), "%s/Library/Application Support", home); mkdir(p, 0755);
-      snprintf(p, sizeof(p), "%s/Library/Application Support/Twenty Engine", home); mkdir(p, 0755);
-      snprintf(p, sizeof(p), "%s/Library/Application Support/Twenty Engine/focus.bin", home);
+      snprintf(p, sizeof(p), "%s/Library/Application Support/" TE_DATA_DIR, home); mkdir(p, 0755);
+      snprintf(p, sizeof(p), "%s/Library/Application Support/" TE_DATA_DIR "/focus.bin", home);
       const int fd = open(p, O_RDWR | O_CREAT, 0644);
       if (fd >= 0)
       {
@@ -240,7 +240,7 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 #ifdef _WIN32
     const char *base = getenv("APPDATA");
     if (base) {
-      snprintf(dir, sizeof(dir), "%s/Twenty Engine/", base);
+      snprintf(dir, sizeof(dir), "%s/" TE_DATA_DIR "/", base);
       MakeDir(dir);
       mHost->loadMemories(dir);
       snprintf(mPanelPath, sizeof(mPanelPath), "%sMS20PANEL.BIN", dir);
@@ -249,7 +249,7 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 #else
     const char *home = getenv("HOME");
     if (home) {
-      snprintf(dir, sizeof(dir), "%s/Library/Application Support/Twenty Engine/", home);
+      snprintf(dir, sizeof(dir), "%s/Library/Application Support/" TE_DATA_DIR "/", home);
       char parent[1024]; snprintf(parent, sizeof(parent), "%s/Library/Application Support", home);
       MakeDir(parent); MakeDir(dir);
       mHost->loadMemories(dir);
