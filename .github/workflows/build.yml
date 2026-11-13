@@ -66,6 +66,7 @@ jobs:
           clang++ -std=c++17 -O2 -w -o recall_test recall_test.cpp && ./recall_test
           clang++ -std=c++17 -O2 -w -o region_test region_test.cpp && ./region_test
           clang++ -std=c++17 -O2 -w -o panel_test panel_test.cpp && ./panel_test
+          clang++ -std=c++17 -O2 -w -o mk_test mk_test.cpp && ./mk_test
           clang++ -std=c++17 -O2 -w -o mem_test mem_test.cpp && ./mem_test
 
       - name: Configure
@@ -153,6 +154,15 @@ jobs:
           gh release view $V -R ${{ github.repository }} > /dev/null 2>&1 || \
             gh release create $V -R ${{ github.repository }} --draft --title "Twenty Engine $V" --notes "Release build (draft: only you can see it)." --target main
           gh release upload $V TwentyEngine-Installer.pkg --clobber -R ${{ github.repository }}
+      - name: microKONTROL test build on its own draft release
+        if: github.ref_name == 'mk-test'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view mk-test -R ${{ github.repository }} > /dev/null 2>&1 || \
+            gh release create mk-test -R ${{ github.repository }} --draft --title "microKONTROL test" --notes "Test build (draft)." --target mk-test
+          gh release upload mk-test TwentyEngine-Installer.pkg --clobber -R ${{ github.repository }}
 
   # ---------------- Apple Silicon: validate the arm64 half of the same AU ----------------
   # Apple Silicon runners are rarely available on GitHub (jobs sat in the queue and were cancelled), so the
