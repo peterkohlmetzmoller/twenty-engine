@@ -54,6 +54,10 @@ public:
   bool HasFocus() const;
   bool DirectNow() const { return mLed.KnobsDirect(); }
   int PanelSource() const { return mPanelSrc.load(); }       // UI: 0 unknown, 1 from memory (MS20PANEL.BIN), 2 read from the controller
+#ifdef _WIN32
+  int mNrpnMsb = -1, mNrpnLsb = -1, mSwRaw = -1;   // the switch: "power on" seen, its report (ProcessMidiMsg)
+  int64_t mPowerOnClk = -1, mSwRawClk = -1;
+#endif
 #if IPLUG_EDITOR && defined(_WIN32)
   // Windows: the window is drawn with plain GDI instead of OpenGL (some graphics drivers, e.g. in virtual
   // machines, crashed the OpenGL window)

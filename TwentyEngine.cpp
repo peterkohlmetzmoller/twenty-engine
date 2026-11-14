@@ -296,6 +296,45 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 #endif
 }
 
+// ---- Windows: a reversed SWITCH ----
+// The MS-20ic's SWITCH arrives as channel pressure: 127 pressed, 0 released. Some units send it the other way
+// round (0 pressed, 127 released). The iC reports the switch position when it is switched on (volume knob
+// off/on): NRPN 6/0 = 127 ("power on"), then the switch. Nobody holds the switch while turning the volume up, so
+// a report that says "pressed" means the switch is reversed. The setting is kept for every copy and project
+// (%APPDATA%\Twenty Engine\switch.txt); a click on the switch line in the window flips it by hand.
+#ifdef _WIN32
+static std::atomic<int> gSwReversed{-1};   // -1 not read yet, 0 normal, 1 reversed
+static void SwitchPath(char* p, size_t n)
+{
+  const char* base = getenv("APPDATA");
+  if (base) snprintf(p, n, "%s/Twenty Engine/switch.txt", base); else p[0] = 0;
+}
+static bool SwitchReversed()
+{
+  int v = gSwReversed.load();
+  if (v < 0)
+  {
+    char p[1100]; SwitchPath(p, sizeof(p)); v = 0;
+    if (p[0]) if (FILE* f = fopen(p, "r")) { char b[16] = ""; if (fgets(b, sizeof(b), f) && !strncmp(b, "reversed", 8)) v = 1; fclose(f); }
+    gSwReversed.store(v);
+  }
+  return v == 1;
+}
+static std::atomic<bool> gSwDirty{false};
+static void SetSwitchReversed(bool r)   // any thread; the file is written on the main thread (SaveSwitch)
+{
+  if (SwitchReversed() == r) return;
+  gSwReversed.store(r ? 1 : 0);
+  gSwDirty.store(true);
+}
+static void SaveSwitch()   // main thread (OnIdle, the window)
+{
+  if (!gSwDirty.exchange(false)) return;
+  char p[1100]; SwitchPath(p, sizeof(p));
+  if (p[0]) if (FILE* f = fopen(p, "w")) { fputs(SwitchReversed() ? "reversed\n" : "normal\n", f); fclose(f); }
+}
+#endif
+
 #if IPLUG_EDITOR && defined(_WIN32)
 // ---- Windows: the status window with GDI (same content as StatusControl, no OpenGL) ----
 #if TWENTY_STUDIO
@@ -349,6 +388,12 @@ LRESULT CALLBACK TwentyEngine::StatusWndProc(HWND h, UINT msg, WPARAM wp, LPARAM
   {
     case WM_TIMER: InvalidateRect(h, nullptr, FALSE); return 0;
     case WM_ERASEBKGND: return 1;
+    case WM_LBUTTONDOWN:     // a click on the switch (bottom row, right half): normal <-> reversed
+    {
+      const int x = (short)LOWORD(lp), y = (short)HIWORD(lp);
+      if (p && y >= PLUG_HEIGHT - 44 && x >= PLUG_WIDTH / 2) { SetSwitchReversed(!SwitchReversed()); SaveSwitch(); InvalidateRect(h, nullptr, FALSE); }
+      return 0;
+    }
     case WM_LBUTTONDBLCLK:   // double-click on the takes line: forget the recorded takes
     {
       const int y = (short)HIWORD(lp);
@@ -403,6 +448,8 @@ void TwentyEngine::PaintStatus(HDC wdc)
   if (on) snprintf(txt, sizeof(txt), "Connected  \xC2\xB7  %s", kNames[controller]); else snprintf(txt, sizeof(txt), "Not connected");
   SelectObject(dc, fRow); SetTextColor(dc, on ? ink : dim);
   DrawUtf8(dc, txt, RECT{L + 20, B - 18, R, B}, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+  SelectObject(dc, fSmall); SetTextColor(dc, SwitchReversed() ? ink : dim);
+  DrawUtf8(dc, SwitchReversed() ? "Switch: reversed  \xC2\xB7  click" : "Switch: normal  \xC2\xB7  click", RECT{W / 2, B - 18, R, B}, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 
   // takes line (Instrument) or where the sound is kept
   char tk[192];
@@ -500,7 +547,43 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   // one being played on, so this copy sends its sound into the port (one copy at a time)
   if (!mLed.KnobsDirect() && (msg.mStatus & 0xF0) == 0x90 && msg.mData2 > 0 && !mWinInTake) FocusCell()->store(mFocusId);
 #endif
-  if (!mLed.KnobsDirect()) { mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2); return; }   // Windows: the track plays the live engine
+#ifdef _WIN32
+  if (!mLed.KnobsDirect())   // Windows: the track plays the live engine
+  {
+    int d1 = msg.mData1;
+    const int st = msg.mStatus & 0xF0;
+    if (st == 0xB0)   // watch for "power on" (NRPN 6/0 = 127): the switch report follows
+    {
+      if (msg.mData1 == 99) mNrpnMsb = msg.mData2;
+      else if (msg.mData1 == 98) mNrpnLsb = msg.mData2;
+      else if (msg.mData1 == 6 && mNrpnMsb == 6 && mNrpnLsb == 0)
+      {
+        // VST3 hosts may hand over a block's CCs in any order; between power off and on only the volume CC
+        // comes, so the last NRPN is still 6/0. A switch report already seen in this block is used too.
+        if (msg.mData2 == 127)
+        {
+          mPowerOnClk = mClock;
+          if (mSwRawClk == mClock && mSwRaw >= 0)   // the report came first: decide now, and give the engine the right position
+          {
+            SetSwitchReversed(mSwRaw > 0); mPowerOnClk = -1;
+            mHost->midi(msg.mOffset, 0xD0 | (msg.mStatus & 0x0F), 0, 0);   // nobody holds it: up
+          }
+        }
+      }
+    }
+    else if (st == 0xD0)
+    {
+      mSwRaw = d1; mSwRawClk = mClock;
+      const int64_t soon = (int64_t)(GetSampleRate() * 0.2);
+      if (mPowerOnClk >= 0 && mClock - mPowerOnClk <= soon) { SetSwitchReversed(d1 > 0); mPowerOnClk = -1; }   // the report
+      if (SwitchReversed()) d1 = d1 > 0 ? 0 : 127;
+    }
+    mHost->midi(msg.mOffset, msg.mStatus, d1, msg.mData2);
+    return;
+  }
+#else
+  if (!mLed.KnobsDirect()) { mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2); return; }   // the track plays the live engine
+#endif
   DrainController();                                                  // what the controller sent first: tells live from region
   const int type = msg.mStatus & 0xF0;
   // this track receives a key the controller just played, while another copy has the controller: the host
@@ -678,6 +761,9 @@ void TwentyEngine::StreamApply(int slot, int32_t raw)
 void TwentyEngine::OnIdle()
 {
   // main thread, about every 20 ms
+#ifdef _WIN32
+  SaveSwitch();   // a reversed switch found at power-on: remembered
+#endif
   // 0. beta diagnostics
   { int slot = mHost->memSlot(); if (slot != mDbgSlot) { Dbg("MEMORY slot %d (-1 = panel)  LPF cut %.2f  VCO1 wave %d  PW %.2f", slot,
       mHost->getParamRaw(PARAM_INDEX_Filter__Macro_lpfcut) / 2097152.0, (int)mHost->getParamRaw(PARAM_INDEX_MS20__Voices_vco1wave), mHost->getParamRaw(PARAM_INDEX_MS20__Voices_pw) / 2097152.0); mDbgSlot = slot; }

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(TwentyEngine VERSION 1.0.2)
+project(TwentyEngine VERSION 1.0.3)
 
 # iPlug2 lives next to the sources (cloned by the build workflow at a fixed version)
 if(NOT DEFINED IPLUG2_DIR)
