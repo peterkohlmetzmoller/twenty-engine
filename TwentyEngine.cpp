@@ -65,8 +65,11 @@ public:
     if (on) g.FillCircle(ink, cx, cy, 5.f);
     else    g.DrawCircle(dim, cx, cy, 5.f, nullptr, 1.5f);
     WDL_String txt;
-    if (on) txt.SetFormatted(64, "Connected  \xC2\xB7  %s", kNames[mController]);
-    else    txt.Set("Not connected");
+    // "Connected" only when the plugin also reaches the controller (its LEDs): input seen and output open.
+  // (The stock MS-20ic only: Ksoloti and Teensy inside the iC drive the LEDs themselves.)
+    if (on && (mController != 1 || mLedOut == 1)) txt.SetFormatted(64, "Connected  \xC2\xB7  %s", kNames[mController]);
+    else if (on)            txt.SetFormatted(96, "%s found  \xC2\xB7  no LED output", kNames[mController]);
+    else                    txt.Set("Not connected");
     g.DrawText(IText(14.f, on ? ink : dim, "Roboto-Regular", EAlign::Near, EVAlign::Middle), txt.Get(), row.GetHShifted(20.f));
 
     WDL_String tk;
@@ -98,11 +101,12 @@ public:
   }
 
 private:
-  bool Scan() { const int c = LedPort::FindController(); if (c == mController) return false; mController = c; return true; }
+  bool Scan() { const int c = LedPort::FindController(); const int lo = (mPlug && mPlug->LedOut()) ? 1 : 0; if (c == mController && lo == mLedOut) return false; mController = c; mLedOut = lo; return true; }
   int Takes() const { return mPlug ? mPlug->RecallTakes() : 0; }
   IRECT TakesRect() const { const IRECT in = mRECT.GetPadded(-22.f); return IRECT(in.L, in.T + 30.f, in.R, in.T + 46.f); }
   TwentyEngine* mPlug = nullptr;
   int mController = -1;
+  int mLedOut = -1;
   int mTakes = -1;
   int mPanel = -1;
   int mFocus = -1;
@@ -445,7 +449,11 @@ void TwentyEngine::PaintStatus(HDC wdc)
   else { HPEN pd = CreatePen(PS_SOLID, 1, dim); HGDIOBJ op = SelectObject(dc, pd); Ellipse(dc, L + 1, cy - 5, L + 12, cy + 6); SelectObject(dc, op); DeleteObject(pd); }
   DeleteObject(bInk);
   char txt[96];
-  if (on) snprintf(txt, sizeof(txt), "Connected  \xC2\xB7  %s", kNames[controller]); else snprintf(txt, sizeof(txt), "Not connected");
+  // "Connected" only when the plugin also reaches the controller (its LEDs): input seen and output open.
+  // (The stock MS-20ic only: Ksoloti and Teensy inside the iC drive the LEDs themselves.)
+  if (on && (controller != 1 || LedOut())) snprintf(txt, sizeof(txt), "Connected  \xC2\xB7  %s", kNames[controller]);
+  else if (on) snprintf(txt, sizeof(txt), "%s found  \xC2\xB7  LED output in use by another program", kNames[controller]);
+  else snprintf(txt, sizeof(txt), "Not connected");
   SelectObject(dc, fRow); SetTextColor(dc, on ? ink : dim);
   DrawUtf8(dc, txt, RECT{L + 20, B - 18, R, B}, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
   SelectObject(dc, fSmall); SetTextColor(dc, SwitchReversed() ? ink : dim);
@@ -761,6 +769,8 @@ void TwentyEngine::StreamApply(int slot, int32_t raw)
 void TwentyEngine::OnIdle()
 {
   // main thread, about every 20 ms
+  // the plugin just reached the controller's LEDs: the power-on light show once, so the user sees it works
+  { const bool lo = mLed.Connected(); if (lo && !mLedWas) mHost->requestLightShow(); mLedWas = lo; }
 #ifdef _WIN32
   SaveSwitch();   // a reversed switch found at power-on: remembered
 #endif

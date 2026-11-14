@@ -53,6 +53,8 @@ public:
   // track, the notes the controller just sent; the other copies play only their regions.
   bool HasFocus() const;
   bool DirectNow() const { return mLed.KnobsDirect(); }
+  bool LedOut() const { return mLed.Connected(); }   // the plugin can send to the controller (LEDs)
+  bool mLedWas = false;                                // OnIdle: the moment the LED output opens -> light show
   int PanelSource() const { return mPanelSrc.load(); }       // UI: 0 unknown, 1 from memory (MS20PANEL.BIN), 2 read from the controller
 #ifdef _WIN32
   int mNrpnMsb = -1, mNrpnLsb = -1, mSwRaw = -1;   // the switch: "power on" seen, its report (ProcessMidiMsg)

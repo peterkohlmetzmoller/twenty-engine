@@ -21,7 +21,7 @@ env:
 jobs:
   # ---------------- Mac: AU + VST3, universal (Apple Silicon + Intel) ----------------
   build-mac:
-    if: ${{ !inputs.artifacts_run && github.ref_name != 'switchrev' }}   # switchrev: Windows only
+    if: ${{ !inputs.artifacts_run }}
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
@@ -352,15 +352,6 @@ jobs:
           gh release view $V -R ${{ github.repository }} > /dev/null 2>&1 || \
             gh release create $V -R ${{ github.repository }} --draft --title "Twenty Engine $V" --notes "Release build (draft: only you can see it)." --target main
           gh release upload $V TwentyEngine-Setup.exe --clobber -R ${{ github.repository }}
-      - name: Switch test build on its own draft release
-        if: github.ref_name == 'switchrev'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release view switchrev -R ${{ github.repository }} > /dev/null 2>&1 || \
-            gh release create switchrev -R ${{ github.repository }} --draft --title "Switch test (Windows)" --notes "Test build (draft)." --target switchrev || true
-          gh release upload switchrev TwentyEngine-Setup.exe --clobber -R ${{ github.repository }}
 
   # ---------------- the plugins in other hosts: pluginval and REAPER (Windows) ----------------
   daw-test-windows:
@@ -428,7 +419,7 @@ jobs:
   # ---------------- Teensy 4.1 firmware (.hex for the Teensy Loader) ----------------
   # ---------------- Daisy Patch SM firmware (beta) ----------------
   build-daisy:
-    if: ${{ !inputs.artifacts_run && github.ref_name != 'switchrev' }}   # switchrev: Windows only
+    if: ${{ !inputs.artifacts_run }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -453,7 +444,7 @@ jobs:
           path: dout/*
 
   build-teensy:
-    if: ${{ !inputs.artifacts_run && github.ref_name != 'switchrev' }}   # switchrev: Windows only
+    if: ${{ !inputs.artifacts_run }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

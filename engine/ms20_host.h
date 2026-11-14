@@ -93,12 +93,16 @@ public:
   // audio thread, outside process(): set a value the host itself gave (not reported back as an engine change)
   void setParamQuiet(int idx, int32_t raw) { if (idx >= 0 && idx < NPARAMS) { core->root.PExch[idx].value = raw; known[idx] = raw; } }
   void setHook(BlockHook *h) { hook = h; }
+  // any thread: play the iC's power-on light show once (the plugin just reached the controller's LEDs: the user
+  // sees that its messages get through)
+  void requestLightShow() { lightReq.store(1, std::memory_order_relaxed); }
 
   // --- audio (audio thread) ---
   void process(float *outL, float *outR, int n) {
     ParamSet ps;
     while (toEngine.pop(ps)) { core->root.PExch[ps.idx].value = ps.raw; known[ps.idx] = ps.raw; }
     g_sysexSender = &MS20Host::onSysex; g_sysexUser = this;
+    if (lightReq.exchange(0, std::memory_order_relaxed)) core->o_MS20iC_LEDs.anim = 0;
     int ei = 0;
     for (int k = 0; k < n; k++) {
       double need = bypass ? pos : pos + HW;
@@ -169,6 +173,7 @@ private:
 
   EngineCore *core = nullptr;
   BlockHook *hook = nullptr;
+  std::atomic<int> lightReq{0};
   bool inited = false;
   int32_t known[NPARAMS];
   SpscQueue<ParamSet, 1024> toEngine, fromEngine;
