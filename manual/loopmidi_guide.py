@@ -47,13 +47,13 @@ def draw(c):
     c.setFont('Cond', 22); c.setFillColor(INK); c.drawString(M, H - M - 8 * mm, 'Windows: keep each take\'s sound')
     c.setStrokeColor(RED); c.setLineWidth(0.8); c.line(M, H - M - 10.5 * mm, M + 120 * mm, H - M - 10.5 * mm)
     c.setFillColor(RED); c.rect(M, H - M - 12 * mm, 3 * mm, 3 * mm, fill=1, stroke=0)
-    c.setFont('CondB', 10); c.setFillColor(GREY); c.drawRightString(W - M, H - M - 8 * mm, 'TWENTY ENGINE  ·  1.0.2')
+    c.setFont('CondB', 10); c.setFillColor(GREY); c.drawRightString(W - M, H - M - 8 * mm, 'TWENTY ENGINE  ·  1.0.3')
     intro = Paragraph('On a Mac the plugin keeps every take\'s sound by itself. Windows 10 does not let a plugin make a MIDI port of '
                       'its own, so it uses one made with the free <b>loopMIDI</b>. Setup takes two minutes and is done once. '
                       'Without it, Twenty Engine plays the panel\'s sound like any synth.', body)
     f = Frame(M, H - M - 36 * mm, W - 2 * M, 22 * mm, 0, 0, 0, 0, showBoundary=0); f.addFromList([intro], c)
     # five steps in a row of cards
-    gap = 5 * mm; cw = (W - 2 * M - 4 * gap) / 5; top = H - M - 42 * mm; ch = 104 * mm
+    gap = 5 * mm; cw = (W - 2 * M - 4 * gap) / 5; top = H - M - 42 * mm; ch = 90 * mm
     for i, (t, txt) in enumerate(STEPS):
         x = M + i * (cw + gap)
         c.setFillColor(LIGHT); c.rect(x, top - ch, cw, ch, fill=1, stroke=0)
@@ -66,14 +66,18 @@ def draw(c):
     # check and troubleshooting
     y = top - ch - 8 * mm
     tips = [
+        '<b>Before you start: no KORG driver.</b> Twenty Engine works with Windows\' own MIDI driver; KORG\'s USB-MIDI driver can stop the LEDs and the sound from working right. '
+        'If it is installed: <b>Settings &gt; Apps</b>, uninstall <b>KORG USB-MIDI Driver</b> (every entry); then <b>Device Manager &gt; Sound, video and game controllers</b>, '
+        'right-click <b>KORG MS-20 Controller</b> &gt; <b>Uninstall device</b> and tick <b>Delete the driver software for this device</b>. Restart and plug the MS-20ic in again.',
         '<b>Check:</b> the plugin\'s window says "The sound is recorded with the regions" once it has found the port.',
         '<b>Takes recorded before the setup</b> play with the panel\'s sound, as before. Takes recorded from now on keep theirs.',
         '<b>Several Twenty Engine tracks:</b> the track you last played on is the one that records its sound.',
         '<b>Nothing changed?</b> Check the port name (Twenty Engine Panel, with spaces), that loopMIDI is running, and that the track input is all MIDI inputs.',
     ]
     fr = Frame(M, M - 2 * mm, W - 2 * M, y - M + 2 * mm, 0, 0, 0, 0, showBoundary=0)
-    fr.addFromList([Paragraph(t, body) for t in tips] + [Paragraph('loopMIDI is free software by Tobias Erichsen, not part of Twenty Engine. '
-                   'MS-20 is a trademark of KORG Inc.; Twenty Engine is an independent project.', small)], c)
+    story = [Paragraph(t, body) for t in tips] + [Paragraph('loopMIDI is free software by Tobias Erichsen, not part of Twenty Engine. '
+             'MS-20 is a trademark of KORG Inc.; Twenty Engine is an independent project.', small)]
+    fr.addFromList([KeepInFrame(W - 2 * M, y - M + 2 * mm, story, mode='shrink')], c)   # never drops a line
 
 
 from reportlab.pdfgen import canvas

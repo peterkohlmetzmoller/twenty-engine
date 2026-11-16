@@ -508,6 +508,12 @@ story.append(p('<b>Installing the plugin.</b> Mac: if macOS says it cannot check
                'System Settings &gt; Privacy &amp; Security and click <b>Open Anyway</b>. Windows: if "Windows protected your PC" appears, '
                'click <b>More info</b> &gt; <b>Run anyway</b>. Then restart your music software.', 'small'))
 story.append(Spacer(1, 3))
+story.append(p('<b>Windows: no KORG driver.</b> Twenty Engine works with Windows\' own MIDI driver; KORG\'s USB-MIDI driver can stop the '
+               'LEDs and the sound from working right. If it is installed, remove it: <b>Settings &gt; Apps</b>: uninstall '
+               '<b>KORG USB-MIDI Driver</b> (every entry). Then <b>Device Manager &gt; Sound, video and game controllers</b>: right-click '
+               '<b>KORG MS-20 Controller</b> &gt; <b>Uninstall device</b>, tick <b>Delete the driver software for this device</b>. '
+               'Restart and plug the MS-20ic in again: it now shows as <b>MS-20 Controller</b> (Generic USB Audio).', 'small'))
+story.append(Spacer(1, 3))
 story.append(p('Wiring and step-by-step installation are in the separate <b>build guide</b>. '
                'Twenty Engine is free software under the GNU GPL v3, built on Axoloti/Ksoloti, PJRC Teensy, iPlug2 and the VST 3 SDK. '
                'MS-20 is a trademark of KORG Inc.; this is an independent project, not affiliated with or endorsed by KORG.', 'cap'))
@@ -537,7 +543,8 @@ story.append(side(
 story.append(Spacer(1, 4))
 story.append(p('<b>Other DAWs and Windows.</b> Tested in Logic; REAPER should work the same way. In Ableton Live and other DAWs, and on Windows, '
                'the plugin plays like any synth: from the track, with the panel\'s sound. To keep a part\'s sound there, freeze or bounce the track. '
-               'Windows: add it to an instrument track with the MS-20ic as its MIDI input, and for the panel LEDs don\'t enable the MS-20ic as a MIDI output in your DAW.', 'small'))
+               'Windows: add it to an instrument track with the MS-20ic as its MIDI input, and for the panel LEDs don\'t enable the MS-20ic as a MIDI output in your DAW. '
+               'With the free loopMIDI, Windows keeps each take\'s sound too: see the <b>Windows quick guide</b>.', 'small'))
 
 doc = BaseDocTemplate(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'TwentyEngine_Manual.pdf'), pagesize=PAGE,
                       leftMargin=M, rightMargin=M, topMargin=14 * mm, bottomMargin=14 * mm,
