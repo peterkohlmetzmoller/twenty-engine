@@ -300,6 +300,35 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 #endif
 }
 
+// ---- VST3: the MS-20ic's power-on report through the DAW ----
+// When the iC is switched on (volume knob) it reports everything at once: "power on" (CC 99/98/6 = 6/0/127), the
+// switch, every knob, every cable. Through a VST3 host these arrive as one block of parameter changes; iPlug2
+// (patched, tools/patch_iplug2.py) puts them back in time order and asks here first. A block with this many
+// different controllers on channel 1 can only be that report: a clean "power on" goes first, so the engine takes
+// the panel as the sound, lights the LEDs (light show) and the switch check sees it - even if the host lost the
+// iC's own "power on" in the crowd. The numbers are kept for the plugin window (test builds).
+static std::atomic<int> gBurstPts{0}, gBurstCCs{0}, gBurstMax{0}, gBurstSame{0}, gBurstOn{0}, gBursts{0};
+bool TE_MidiBlock(int points, int distinctCCs, int maxPerCC, bool sameOffsets)
+{
+  if (points < 8) return false;
+  gBurstPts.store(points); gBurstCCs.store(distinctCCs); gBurstMax.store(maxPerCC); gBurstSame.store(sameOffsets ? 1 : 0);
+  gBursts.fetch_add(1);
+  if (distinctCCs < 16) { gBurstOn.store(0); return false; }
+  static std::chrono::steady_clock::time_point last{};
+  const auto now = std::chrono::steady_clock::now();
+  const bool fresh = now - last > std::chrono::milliseconds(1500);   // one report, maybe spread over two blocks
+  last = now;
+  gBurstOn.store(fresh ? 1 : 2);
+  return fresh;
+}
+static bool BurstText(char* out, int n)
+{
+  if (!gBursts.load()) return false;
+  snprintf(out, n, "Last burst: %d msgs, %d CCs, max %d/CC, %s  \xC2\xB7  %s", gBurstPts.load(), gBurstCCs.load(), gBurstMax.load(),
+           gBurstSame.load() ? "same time" : "timed", gBurstOn.load() == 1 ? "power on sent" : (gBurstOn.load() == 2 ? "power on (again)" : "no power on"));
+  return true;
+}
+
 // ---- Windows: a reversed SWITCH ----
 // The MS-20ic's SWITCH arrives as channel pressure: 127 pressed, 0 released. Some units send it the other way
 // round (0 pressed, 127 released). The iC reports the switch position when it is switched on (volume knob
@@ -462,7 +491,7 @@ void TwentyEngine::PaintStatus(HDC wdc)
   // takes line (Instrument) or where the sound is kept
   char tk[192];
 #if TWENTY_STUDIO
-  tk[0] = 0; StudioDiag(tk, sizeof(tk));
+  tk[0] = 0; if (!BurstText(tk, sizeof(tk))) StudioDiag(tk, sizeof(tk));   // test build: what the power-on report looked like
 #else
   const int takes = RecallTakes();
   if (!RecallOn()) snprintf(tk, sizeof(tk), "Performance recall off: needs Windows 11 MIDI Services");
