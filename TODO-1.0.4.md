@@ -19,3 +19,8 @@ Plan:
 - MG TRI OUT follows the WAVEFORM knob (same wave as the internal MG), like the original MS-20 and Korg's plugin. MG SQ OUT stays square (S&H clock).
 - Update the manual line "MG TRI OUT and MG SQ OUT on the patch panel always give triangle and square".
 - Debug with the user: Mac or Windows, iC or host knobs, anything in TOTAL, MG FREQUENCY position.
+
+## Teensy: key click setting (ohm, Nov 2026)
+- User finds the key click too loud on the Teensy edition. Add `KEY_CLICK` (0.0 .. 1.0) to the SETTINGS block in TwentyEngineTeensy.ino, set in setup() after core->init():
+  `core->root.PExch[PARAM_INDEX_Filter__Macro_clicknoise].value = (int32_t)(KEY_CLICK * 134217727.f);` (default 12582912 = about 0.09).
+- Maybe a panel combo for it on all hardware editions.
