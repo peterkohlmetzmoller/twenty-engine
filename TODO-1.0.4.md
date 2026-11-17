@@ -20,7 +20,6 @@ Plan:
 - Update the manual line "MG TRI OUT and MG SQ OUT on the patch panel always give triangle and square".
 - Debug with the user: Mac or Windows, iC or host knobs, anything in TOTAL, MG FREQUENCY position.
 
-## Teensy: key click setting (ohm, Nov 2026)
-- User finds the key click too loud on the Teensy edition. Add `KEY_CLICK` (0.0 .. 1.0) to the SETTINGS block in TwentyEngineTeensy.ino, set in setup() after core->init():
-  `core->root.PExch[PARAM_INDEX_Filter__Macro_clicknoise].value = (int32_t)(KEY_CLICK * 134217727.f);` (default 12582912 = about 0.09).
-- Maybe a panel combo for it on all hardware editions.
+## Teensy: key click setting and extra switches (ohm, Nov 2026) - done on main
+- KEY_CLICK (0 off, 6 standard, 64 max, same scale as the plugin) and SWITCH_NEXT / PREV / PANEL / MONO pins in the SETTINGS block. Default = unchanged behaviour. Compiles in CI; messages checked on the desktop engine.
+- Guide: manual/teensy_guide.py. Rebuild the shipped .hex with the next release.
