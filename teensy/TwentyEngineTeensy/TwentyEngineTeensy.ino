@@ -19,6 +19,14 @@
 #define MS20_OSF 2          // oscillators: 2 = 96 kHz oversampling (cleaner high notes), 1 = as on the Ksoloti (less CPU)
 static const float DRIFT = 0.5f;   // analog drift 0.0 .. 1.0: 0 = as on the Ksoloti, 1 = loose vintage poly
 static const float HEADPHONE_VOLUME = 0.8f;   // 0.0 .. 1.0
+static const float KEY_CLICK = 6.0f;   // key click on every note: 0 = off, 6 = standard, 64 = max (same scale as the plugin's Key Click)
+
+// Extra switches on free Teensy pins: wire each switch from its pin to GND. -1 = not used.
+// Free with the audio board: 0-5, 9, 14, 16, 17, 22, 24-41 (the audio board uses 7, 8, 18-21, 23).
+static const int SWITCH_NEXT  = -1;    // next sound (memory keys 1..36)
+static const int SWITCH_PREV  = -1;    // previous sound
+static const int SWITCH_PANEL = -1;    // back to the knobs (as switch + top C)
+static const int SWITCH_MONO  = -1;    // mono on / off (as the cable KBD CV OUT -> VCO1+2 CV IN)
 // ============================================
 
 #include <Audio.h>
@@ -168,6 +176,49 @@ void fromIC(uint8_t type, uint8_t ch, uint8_t d1, uint8_t d2) {
   else usbMIDI.send(type, d1, d2, ch, 0);
 }
 
+// ---------------- extra switches (SETTINGS at the top) ----------------
+// Each switch sends the engine the same MIDI the iC would, so it works exactly like the panel.
+static const int NSW = 4;
+static const int swPin[NSW] = {SWITCH_NEXT, SWITCH_PREV, SWITCH_PANEL, SWITCH_MONO};
+static bool swDown[NSW];
+static uint32_t swTime[NSW];
+
+static void recallSound(int n) {                 // as: hold the momentary switch, tap memory key n (36 = top C = panel)
+  queueMidi(0xD0, 127, 0);
+  delay(5);                                      // the keyboard is silent once the engine has seen the switch (next audio block)
+  queueMidi(0x90, 48 + n, 100);
+  queueMidi(0x80, 48 + n, 0);                    // short press: recall on release
+  delay(5);
+  queueMidi(0xD0, 0, 0);
+}
+
+static void switchPressed(int i) {
+  int cur = core->o_Patch_Memory.inmem;          // sound in use: 0..35, -1 = the knobs
+  if (i == 0) recallSound(cur < 0 ? 0 : (cur + 1) % 36);
+  else if (i == 1) recallSound(cur < 0 ? 35 : (cur + 35) % 36);
+  else if (i == 2) recallSound(36);
+  else if (i == 3) {                             // patch cable event: CC 99 = 4 connect / 5 disconnect, CC 98 / 6 = the jacks
+    queueMidi(0xB0, 99, core->o_PatchBay.monof ? 5 : 4);
+    queueMidi(0xB0, 98, 31);                     // KBD CV OUT
+    queueMidi(0xB0, 6, 25);                      // VCO1+2 CV IN
+  }
+}
+
+static void setupSwitches() {
+  for (int i = 0; i < NSW; i++) if (swPin[i] >= 0) pinMode(swPin[i], INPUT_PULLUP);
+}
+
+static void readSwitches() {
+  for (int i = 0; i < NSW; i++) {
+    if (swPin[i] < 0) continue;
+    bool d = digitalRead(swPin[i]) == LOW;
+    if (d != swDown[i] && millis() - swTime[i] > 30) {   // 30 ms debounce
+      swDown[i] = d; swTime[i] = millis();
+      if (d) switchPressed(i);
+    }
+  }
+}
+
 // ---------------- setup / loop ----------------
 void setup() {
   Serial.begin(115200);
@@ -183,6 +234,7 @@ void setup() {
   g_drift = DRIFT;
   core = new EngineCore();
   core->init();
+  core->root.PExch[PARAM_INDEX_Filter__Macro_clicknoise].value = (int32_t)(KEY_CLICK * 2097152.f);   // 64 = full scale
   g_sysexSender = onSysex;
   g_sysexUser = nullptr;
 
@@ -191,6 +243,7 @@ void setup() {
   bool loaded = loadMemories();
 
   myusb.begin();
+  setupSwitches();
   engineReady = true;
 
   Serial.println("Twenty Engine (Teensy 4.1)");
@@ -202,6 +255,7 @@ void setup() {
 
 void loop() {
   myusb.Task();
+  readSwitches();
 
   // iC -> engine + computer
   while (ic.read()) {

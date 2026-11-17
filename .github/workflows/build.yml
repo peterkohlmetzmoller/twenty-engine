@@ -21,7 +21,7 @@ env:
 jobs:
   # ---------------- Mac: AU + VST3, universal (Apple Silicon + Intel) ----------------
   build-mac:
-    if: ${{ !inputs.artifacts_run }}
+    if: ${{ !inputs.artifacts_run && github.ref_name != 'teensy-settings' }}
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
@@ -233,7 +233,7 @@ jobs:
 
   # ---------------- Windows: VST3 (64-bit), checked with Steinberg's validator ----------------
   build-windows:
-    if: ${{ !inputs.artifacts_run }}
+    if: ${{ !inputs.artifacts_run && github.ref_name != 'teensy-settings' }}
     runs-on: windows-2022
     defaults:
       run:
@@ -419,7 +419,7 @@ jobs:
   # ---------------- Teensy 4.1 firmware (.hex for the Teensy Loader) ----------------
   # ---------------- Daisy Patch SM firmware (beta) ----------------
   build-daisy:
-    if: ${{ !inputs.artifacts_run }}
+    if: ${{ !inputs.artifacts_run && github.ref_name != 'teensy-settings' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
