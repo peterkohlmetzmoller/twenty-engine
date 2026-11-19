@@ -31,3 +31,4 @@ Plan:
 - Delay: wet level capped at about 0.62 (bw = mx^2 * 0.62 in BBD_Delay); make it louder or a setting.
 - Sounds remember their cables (used until a cable is touched)? Design decision.
 - Make VCO1+2 CV IN a real pitch input for both VCOs, and INITIAL GAIN active (VCA open).
+- Régis follow-up: also a PANEL button (has 5 momentary buttons, may add more) -> one function list, any function on any pin. Wheel calibrated to 0 at rest; wants wheel vibrato OFF (uses wheel as patch source). Cables in presets: yes please, plus a "cables only" combo that reads the current cables into the recalled sound. He'll make a YouTube video of the update (@studi_ohm).
