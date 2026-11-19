@@ -23,3 +23,11 @@ Plan:
 ## Teensy: key click setting and extra switches (ohm, Nov 2026) - done on main
 - KEY_CLICK (0 off, 6 standard, 64 max, same scale as the plugin) and SWITCH_NEXT / PREV / PANEL / MONO pins in the SETTINGS block. Default = unchanged behaviour. Compiles in CI; messages checked on the desktop engine.
 - Guide: manual/teensy_guide.py. Rebuild the shipped .hex with the next release.
+
+## Régis feature list (Teensy user, Nov 2026) - promised as an update
+- Function switch: a separate button does all the momentary-switch shortcuts; the iC switch then only acts as the original (patch bay SWITCH). Engine change, all editions (option).
+- Buttons: ESP layer toggle, mono/poly (as the KBD CV -> VCO1+2 CV cable), tap tempo (as SWITCH -> ESP SIGNAL IN), retrigger (MS20_Voices multitrig, exists, default off).
+- Wheel: faster smoothing (mws += 0.004 per tick at 3 kHz = about 80 ms); setting to turn wheel vibrato off. Ask Régis what his new wheel pot sends at rest.
+- Delay: wet level capped at about 0.62 (bw = mx^2 * 0.62 in BBD_Delay); make it louder or a setting.
+- Sounds remember their cables (used until a cable is touched)? Design decision.
+- Make VCO1+2 CV IN a real pitch input for both VCOs, and INITIAL GAIN active (VCA open).
