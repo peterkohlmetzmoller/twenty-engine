@@ -33,3 +33,7 @@ Plan:
 - Make VCO1+2 CV IN a real pitch input for both VCOs, and INITIAL GAIN active (VCA open).
 - Régis follow-up: also a PANEL button (has 5 momentary buttons, may add more) -> one function list, any function on any pin. Wheel calibrated to 0 at rest; wants wheel vibrato OFF (uses wheel as patch source). Cables in presets: yes please, plus a "cables only" combo that reads the current cables into the recalled sound. He'll make a YouTube video of the update (@studi_ohm).
 - Open questions for cables-in-presets: (1) when does a stored patch stop applying - suggestion: as soon as any cable is touched; (2) old saved sounds have no cables - suggestion: they keep using the plugged-in cables.
+- Régis, more ideas (19 Nov):
+  - TRIG LED shows the delay time (blinks at the delay rate) instead of "stored sound"; mode indicator could be solid = panel. (PEAK already blinks the arp tempo.)
+  - Pickup for the ESP knobs when switching layers (delay <-> arp), so a knob doesn't jump (e.g. delay time after changing arp rate).
+  - Arp on both oscillators: already there in mono (KBD CV OUT -> VCO1+2 CV IN + arp: VCO1 plays the arp too). Poly arp: VCO1 organ chord, VCO2 arp. Maybe a poly option where both arp.
