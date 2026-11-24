@@ -511,7 +511,7 @@ struct Jack { int id; float px, py; const char* label; int kind; int src; int pa
 static const Jack kJacks[35] = {
   {0, 235, 310, "TOTAL", 2, 0, PARAM_INDEX_PatchBay_total}, {5, 410, 310, "FREQ", 2, 0, PARAM_INDEX_PatchBay_freq},
   {9, 560, 310, "EXT\nSIGNAL IN", 0, 0, -1}, {13, 700, 310, "HPF\nCUTOFF", 2, 0, PARAM_INDEX_PatchBay_hpf},
-  {17, 850, 310, "LPF\nCUTOFF", 2, 0, PARAM_INDEX_PatchBay_lpf}, {21, 1005, 310, "INITIAL\nGAIN", 0, 0, -1},
+  {17, 850, 310, "LPF\nCUTOFF", 2, 0, PARAM_INDEX_PatchBay_lpf}, {21, 1005, 310, "INITIAL\nGAIN", 5, 0, PARAM_INDEX_Patch__State_ig},
   {29, 1405, 185, "SIGNAL OUT", 0, 0, -1}, {30, 1405, 315, "PHONES", 0, 0, -1},
   {1, 235, 465, "MG TRI\nOUT", 1, 1, -1}, {6, 490, 465, "MG SQ\nOUT", 1, 2, -1}, {10, 610, 465, "EG1\nOUT", 1, 3, -1},
   {22, 1070, 465, "EG2\nREV OUT", 1, 6, -1}, {24, 1160, 555, "VCO2\nCV IN", 2, 0, PARAM_INDEX_PatchBay_vco2freq},
@@ -548,6 +548,13 @@ public:
     {
       const Jack& j = kJacks[i];
       if (j.kind == 2 && d)
+      {
+        const int s = (int)std::lround(d->GetParam(j.param)->Value());
+        if (s >= 1 && s <= 12)
+          for (int o = 0; o < 35; o++)
+            if (kJacks[o].kind == 1 && kJacks[o].src == s && (s != 8 || (kJacks[o].id == 23) == (mHost->NoisePick(i) == 1))) { v.push_back({i, o}); break; }
+      }
+      else if (j.kind == 5 && d)   // a jack the engine follows by cable messages; the engine shows its source in a parameter
       {
         const int s = (int)std::lround(d->GetParam(j.param)->Value());
         if (s >= 1 && s <= 12)
@@ -628,7 +635,8 @@ public:
     if (h >= 0)
     {
       std::string s(kJacks[h].label); for (char& c : s) if (c == '\n') c = ' ';
-      static const char* kWhat[5] = { "  \xC2\xB7  not used yet", "  \xC2\xB7  output", "  \xC2\xB7  input", "  \xC2\xB7  patch KBD CV OUT here for mono", "  \xC2\xB7  patch SWITCH here for tap tempo" };
+      static const char* kWhat[6] = { "  \xC2\xB7  not used yet", "  \xC2\xB7  output", "  \xC2\xB7  input", "  \xC2\xB7  patch KBD CV OUT here for mono", "  \xC2\xB7  patch SWITCH here for tap tempo",
+                                      "  \xC2\xB7  input: the last note keeps sounding at this level (a drone)" };
       SetInfo(s + kWhat[kJacks[h].kind]);
     }
   }
@@ -646,7 +654,9 @@ private:
   void Disconnect(int in)
   {
     const Jack& j = kJacks[in];
-    if (j.kind == 2) SetInput(j.param, 0); else if (j.kind == 3) mHost->SetCableFlag(0, false); else if (j.kind == 4) mHost->SetCableFlag(1, false);
+    if (j.kind == 2) SetInput(j.param, 0);
+    else if (j.kind == 5) { for (const Cable& cb : Cables()) if (cb.in == in) mHost->PatchCable(kJacks[cb.out].id, j.id, false); }
+    else if (j.kind == 3) mHost->SetCableFlag(0, false); else if (j.kind == 4) mHost->SetCableFlag(1, false);
   }
   void Connect(int a, int b)
   {
@@ -655,6 +665,7 @@ private:
     if (kJacks[out].kind != 1 || kJacks[in].kind < 2) return;   // output to output, or a jack that does nothing yet
     const Jack& o = kJacks[out]; const Jack& i = kJacks[in];
     if (i.kind == 2) { if (o.src == 8) mHost->SetNoisePick(in, o.id == 23 ? 1 : 0); SetInput(i.param, o.src); }
+    else if (i.kind == 5) { if (o.src == 8) mHost->SetNoisePick(in, o.id == 23 ? 1 : 0); mHost->PatchCable(o.id, i.id, true); }
     else if (i.kind == 3 && o.id == 31) mHost->SetCableFlag(0, true);   // the engine's mono mode: KBD CV only
     else if (i.kind == 4 && o.id == 33) mHost->SetCableFlag(1, true);   // tap tempo: SWITCH only
   }

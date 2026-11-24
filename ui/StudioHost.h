@@ -19,6 +19,7 @@ struct PatchHost {
   // -1 = not available (no host clock)
   virtual int ArpSync() const { return -1; }
   virtual void SetArpSync(int) {}
-  virtual void CopyLog() {}                              // the bug log: to the clipboard (and a file)
+  virtual void CopyLog() {}
+  virtual void PatchCable(int outJack, int inJack, bool on) {}   // the MS-20ic's own cable message (jack numbers as it sends them)                              // the bug log: to the clipboard (and a file)
 };
 }

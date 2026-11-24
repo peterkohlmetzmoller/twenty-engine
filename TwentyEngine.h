@@ -79,6 +79,8 @@ public:
   int ArpSync() const override { return mArpSync.load(); }
   void SetArpSync(int v) override { mArpSync.store(v > 0 ? 1 : 0); }
   void CopyLog() override { CopyLogToClipboard(); }
+  void PatchCable(int outJack, int inJack, bool on) override
+  { if (on) UiCable(4, outJack, inJack); else { UiCable(5, outJack, inJack); UiCable(5, inJack, inJack); UiCable(5, outJack, outJack); } }
 #endif
   int PanelSource() const { return mPanelSrc.load(); }       // UI: 0 unknown, 1 from memory (MS20PANEL.BIN), 2 read from the controller
 #ifdef _WIN32
