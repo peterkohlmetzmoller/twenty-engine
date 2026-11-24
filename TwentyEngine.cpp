@@ -628,6 +628,11 @@ std::string TwentyEngine::BugLog()
 #else
   { char pv[32] = ""; size_t n = sizeof(pv); if (sysctlbyname("kern.osproductversion", pv, &n, nullptr, 0) == 0) snprintf(os, sizeof(os), "macOS %s", pv); }
 #endif
+  char burst[160] = "none seen";
+  if (gBursts.load() > 0)
+    snprintf(burst, sizeof(burst), "%d messages, %d CCs, max %d per CC, %s, %s (%d seen)", gBurstPts.load(), gBurstCCs.load(), gBurstMax.load(),
+             gBurstSame.load() ? "same time" : "timed",
+             gBurstOn.load() == 1 ? "power on sent" : (gBurstOn.load() == 2 ? "power on (again)" : "no power on"), gBursts.load());
   const time_t t = time(nullptr); char when[32]; strftime(when, sizeof(when), "%Y-%m-%d %H:%M", localtime(&t));
   snprintf(b, sizeof(b),
     "Twenty Engine bug log  \xC2\xB7  %s\n"
@@ -639,13 +644,12 @@ std::string TwentyEngine::BugLog()
     "Controller:  input %s, LED output %s, panel %s\n"
     "Switch:      %s\n"
     "Memories:    %sMS20MEM.BIN\n"
-    "Last power-on report: %d messages, %d CCs, max %d per CC, %s, %s (%d seen)\n\n",
+    "MS-20ic power-on report: %s\n\n",
     when, PLUG_NAME, PLUG_VERSION_STR, GetAPIStr(), host.Get(), hv.Get(), os, GetSampleRate(), GetBlockSize(),
     mLed.KnobsDirect() ? "direct" : "through the DAW", mLed.Connected() ? "open" : "not open",
     PanelSource() == 2 ? "read from the iC" : (PanelSource() == 1 ? "from memory" : "unknown"),
     LogSwitchReversed() ? "reversed" : "normal", mDataDir,
-    gBurstPts.load(), gBurstCCs.load(), gBurstMax.load(), gBurstSame.load() ? "same time" : "timed",
-    gBurstOn.load() == 1 ? "power on sent" : (gBurstOn.load() == 2 ? "power on (again)" : "no power on"), gBursts.load());
+    burst);
   s = b;
   s += "What happened (newest last):\n";
   for (const std::string& l : mLogRing) { s += l; s += "\n"; }
@@ -1007,7 +1011,11 @@ void TwentyEngine::OnIdle()
     { const int64_t f = FocusCell()->load(); if (f != mDbgFocus) { Dbg("FOCUS: id %lld plays from the controller (this copy: %lld)%s", (long long)f, (long long)mFocusId, f == mFocusId ? "  <- THIS ONE" : ""); mDbgFocus = f; } }
     DbgBlk bk; while (mDbgBlkQ.pop(bk)) Dbg("BLOCK clk %lld ppq %.3f frames %d %s  stream msgs %d applied %d%s%s  resets %d  host param sets %d  peak %.3f  memory used %d (holds %d)",
       (long long)bk.clk, bk.ppq, bk.frames, bk.running ? "RUN " : "STOP", bk.streamN, bk.applied, bk.own ? " OWN-snapshot" : "", bk.foreign ? " REGION-snapshot" : "", bk.resets, bk.hostSets, bk.peak, bk.memUsed, bk.memN);
-    DbgEv e; while (mDbgQ.pop(e)) Dbg("HOST sets param %d '%s' = %.2f  (source %d)", e.idx, kParamInfo[e.idx].label, e.raw / 2097152.0, e.src); }
+    // the host setting parameters: a few one by one; a whole preset, project or undo as one line
+    { DbgEv ev[16]; int n = 0, more = 0; DbgEv e;
+      while (mDbgQ.pop(e)) { if (n < 16) ev[n++] = e; else more++; }
+      if (n + more > 8) Dbg("HOST set %d parameters at once (a preset, the project or an undo)", n + more);
+      else for (int i = 0; i < n; i++) Dbg("HOST sets %s = %.2f", GetParam(ev[i].idx)->GetName(), ev[i].raw / 2097152.0); } }
 #if TWENTY_STUDIO
   // 1a. Automation: the transport has started: the whole panel through the port, behind a new snapshot number.
   //     A recording track records it (a take starts with its sound); otherwise it is only echoed back and ignored.
