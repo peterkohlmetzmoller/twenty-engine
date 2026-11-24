@@ -218,9 +218,13 @@ private:
   ArpClock clk; long long clkLastStep = -1000000;
   std::atomic<int> pinIdx{-1}; std::atomic<int32_t> pinVal{0};
   // the memory table survives an engine reset (sample-rate change) like the parameters do
+  // (1.1: the sounds' own cables too - a reset used to drop them until the file was read again)
   int32_t memKeep[sizeof(((O_Patch_Memory *)0)->_mem) / sizeof(int32_t)]; uint8_t validKeep[sizeof(((O_Patch_Memory *)0)->_valid)];
-  void saveMemTable() { memcpy(memKeep, core->o_Patch_Memory._mem, sizeof(memKeep)); memcpy(validKeep, core->o_Patch_Memory._valid, sizeof(validKeep)); }
-  void restoreMemTable() { memcpy(core->o_Patch_Memory._mem, memKeep, sizeof(memKeep)); memcpy(core->o_Patch_Memory._valid, validKeep, sizeof(validKeep)); }
+  int32_t cabKeep[sizeof(((O_Patch_Memory *)0)->_cab) / sizeof(int32_t)]; uint8_t hascKeep[sizeof(((O_Patch_Memory *)0)->_hasc)];
+  void saveMemTable() { memcpy(memKeep, core->o_Patch_Memory._mem, sizeof(memKeep)); memcpy(validKeep, core->o_Patch_Memory._valid, sizeof(validKeep));
+                        memcpy(cabKeep, core->o_Patch_Memory._cab, sizeof(cabKeep)); memcpy(hascKeep, core->o_Patch_Memory._hasc, sizeof(hascKeep)); }
+  void restoreMemTable() { memcpy(core->o_Patch_Memory._mem, memKeep, sizeof(memKeep)); memcpy(core->o_Patch_Memory._valid, validKeep, sizeof(validKeep));
+                           memcpy(core->o_Patch_Memory._cab, cabKeep, sizeof(cabKeep)); memcpy(core->o_Patch_Memory._hasc, hascKeep, sizeof(hascKeep)); }
 
   static void onSysex(const uint8_t *b, int len, void *user) {
     MS20Host *h = (MS20Host *)user; LedMsg m; m.len = len > 16 ? 16 : len;

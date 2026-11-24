@@ -52,6 +52,8 @@ int main() {
   printf("6. The file keeps the cables (new instance)\n");
   { MS20Host h; h.reset(48000); CHECK(h.loadMemories(dir), "file loaded"); run(h, 0.05);
     tapKey(h, 5); CHECK(P(h, OVR) == 1 && P(h, LPF) == 1 && P(h, MONO) == 1, "sound 6 comes back with its cables");
+    h.reset(44100); run(h, 0.05); tapKey(h, 36); tapKey(h, 5);   // the host resets (sample rate, Logic's start): the sounds keep their cables
+    CHECK(P(h, OVR) == 1 && P(h, LPF) == 1 && P(h, MONO) == 1, "after a reset (new sample rate) sound 6 still has its cables");
     FILE *f = fopen("./cabtest/MS20MEM.BIN", "rb"); int32_t hd[4] = {0}; if (f) { fread(hd, 4, 4, f); fseek(f, 0, SEEK_END); long sz = ftell(f); fclose(f);
       printf("     header %08X NS=%d NP=%d NC=%d, %ld bytes\n", hd[0], hd[1], hd[2], hd[3], sz);
       CHECK(hd[0] == 0x4D533231 && hd[3] == 15 && sz == 16 + 36 * (29 + 2 + 15) * 4, "'MS21' file, 15 cable values per sound (with VCA IN)"); } }
