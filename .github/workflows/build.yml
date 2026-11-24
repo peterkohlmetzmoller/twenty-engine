@@ -67,6 +67,7 @@ jobs:
           clang++ -std=c++17 -O2 -w -o region_test region_test.cpp && ./region_test
           clang++ -std=c++17 -O2 -w -o panel_test panel_test.cpp && ./panel_test
           clang++ -std=c++17 -O2 -w -o mem_test mem_test.cpp && ./mem_test
+          clang++ -std=c++17 -O2 -w -o v11_test v11_test.cpp && ./v11_test
 
       - name: Configure
         run: cmake -S . -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DIPLUG_DEPLOY_PLUGINS=OFF
