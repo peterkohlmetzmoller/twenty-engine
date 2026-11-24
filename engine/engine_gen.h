@@ -3,7 +3,7 @@
 #include "ksoloti_host.h"
 namespace ms20 {
 
-static const int NPARAMS = 62;
+static const int NPARAMS = 63;
 static const int PARAM_INDEX_MS20__Voices_vco1wave = 0;
 static const int PARAM_INDEX_MS20__Voices_vco1oct = 1;
 static const int PARAM_INDEX_MS20__Voices_pw = 2;
@@ -66,6 +66,7 @@ static const int PARAM_INDEX_Patch__State_c12 = 58;
 static const int PARAM_INDEX_Patch__State_mono = 59;
 static const int PARAM_INDEX_Patch__State_wheel = 60;
 static const int PARAM_INDEX_Patch__State_ovr = 61;
+static const int PARAM_INDEX_Patch__State_ig = 62;
 struct rootc { ParameterExchange_t PExch[NPARAMS]; };
 
 struct O_MS20_Voices {
@@ -96,6 +97,7 @@ struct O_MS20_Voices {
   int32_t inlet_memarm;
   int32_t inlet_wheelout;
   int32_t inlet_vco12cv;
+  int32_t inlet_igain;
   int32_t outlet_vco1[BUFSIZE];
   int32_t outlet_vco2[BUFSIZE];
   int32_t outlet_arp[BUFSIZE];
@@ -124,7 +126,7 @@ int32_t vn[NV];int vg[NV],vk[NV],vd[NV],vs[NV];uint32_t va[NV],vh[NV];
 uint32_t acnt,rng,drng,holdt;float pk,cc_pw,pws,ln;int hp,btn_dub,rp,btn_phys;
 float mw,mws,vph; // mod wheel vibrato
 uint32_t lon;int cid;int vc[NV];uint8_t vu[NV];
-volatile bool mono_on;int mg_was,mhp;float mtg,mpos,p1a; /* mono mode (KBD CV -> VCO1+2 CV IN patched) */ /* latch: chord id per voice, vu = release when its key goes up */
+volatile bool mono_on;int dv; /* drone voice: the last note played */int mg_was,mhp;float mtg,mpos,p1a; /* mono mode (KBD CV -> VCO1+2 CV IN patched) */ /* latch: chord id per voice, vu = release when its key goes up */
 // ---- Multibend polyglide (pedal steel legato, from the Kontakt script) ----
 static const int SD=4;                       // held-key stack per string
 uint8_t stk[NV][SD];int sc[NV];uint32_t vt[NV],vlt[NV],kclk;
@@ -211,7 +213,7 @@ if((st==MIDI_NOTE_ON)&&(data2>0)&&marm){
   if(tv==-1){uint32_t ma=0xFFFFFFFF;for(int i=0;i<NV;i++){if(va[i]<ma){ma=va[i];tv=i;}}}
   if(tv>=0){
    vn[tv]=data1;vg[tv]=1;vk[tv]=1;vd[tv]=(data2>=120)?1:0;vs[tv]=1;vh[tv]=holdt;va[tv]=++acnt;rp=1;
-   vp[tv]=np;tg[tv]=np;gon[tv]=false;stk[tv][0]=data1;sc[tv]=1;vt[tv]=kclk;vlt[tv]=++acnt;vc[tv]=cid;vu[tv]=0;  // new attack: no glide
+   vp[tv]=np;tg[tv]=np;dv=tv;gon[tv]=false;stk[tv][0]=data1;sc[tv]=1;vt[tv]=kclk;vlt[tv]=++acnt;vc[tv]=cid;vu[tv]=0;  // new attack: no glide
   }
  }
  }
@@ -259,7 +261,7 @@ for(int i=0;i<NV;i++){ph1[i]=i*0.125f;ph2[i]=0.31f+i*0.0625f;inc1[i]=inc2[i]=0.0
 drng=24681357U;for(int i=0;i<NV;i++){drng=drng*196314165U+907633515U;dtn[i]=(int32_t)drng*2.93e-5f;drng=drng*196314165U+907633515U;dtn2[i]=(int32_t)drng*2.93e-5f;drf[i]=drt[i]=0.f;} // static detune +/-3 cents per VCO (2^21 = 1 semitone)
 for(int i=0;i<NV;i++){sc[i]=0;vt[i]=vlt[i]=0;tg[i]=gs[i]=ginc[i]=gmix[i]=0.f;gpos[i]=1.f;gon[i]=false;}kclk=0;porta=0.f;
 lon=0;cid=0;for(int i=0;i<NV;i++){vc[i]=0;vu[i]=0;}
-mono_on=false;mg_was=0;mhp=0;mtg=mpos=0.f;p1a=0.f;
+mono_on=false;dv=0;mg_was=0;mhp=0;mtg=mpos=0.f;p1a=0.f;
 nh=na=0;ap=60.f;am=amp=mode=0;acc=0;ledp=0;arng=1357911U;ai=ao=0;aup=zk=true;p2=0.f;drf2=drt2=0.f;
          
 for(int i=0;i<1;i++){kn_s[i]=0.f;kn_l[i]=0x7FFFFFFF;kn_o[i]=0;}kn_r=2654468715U;kn_f=1;
@@ -358,7 +360,8 @@ if(mono_on){
   tg[0]=mpos;gon[0]=false;ln=mpos;rp=0;
  }else{vg[0]=0;mg_was=0;}
 }
-int act=0,ag=0;
+float igl=0.f;if(inlet_igain!=(int32_t)0x80000000){igl=inlet_igain*7.4505806e-9f;if(igl<0.f)igl=0.f;if(igl>1.f)igl=1.f;}   /* INITIAL GAIN: drone level */
+int dvx=mono_on?0:dv;int act=0,ag=0;
 for(int v=0;v<NV;v++){
  drng=drng*196314165U+907633515U;if((drng>>20)==0)drt[v]=(int32_t)drng*7.8e-6f;drf[v]+=0.0005f*(drt[v]-drf[v]); // slow drift, +/-0.8 cent
  if(vg[v])ag=1;                                     // velocity no longer triggers the dub splash
@@ -370,6 +373,7 @@ for(int v=0;v<NV;v++){
  }else{
   ve[v]=vg[v]?1.f:0.f; // organ gate: on/off, the srate smoother only removes the click
  }
+ if(igl>0.f&&v==dvx){if(vs[v]==0)vs[v]=3;if(ve[v]<igl)ve[v]=igl;}   /* INITIAL GAIN patched: the last note's voice never closes below the drone level */
  if(ve[v]>0.f||vgn[v]>0.00005f){
   act++;
   if(gon[v]){gpos[v]+=ginc[v];if(gpos[v]>=1.f){gpos[v]=1.f;gon[v]=false;}vp[v]=gs[v]+(tg[v]-gs[v])*gcurve(gpos[v],gmix[v]);} // polyglide
@@ -885,6 +889,7 @@ struct O_PatchBay {
   int32_t outlet_poweron;
   int32_t outlet_wheelout;
   int32_t outlet_vco12cv;
+  int32_t outlet_igain;
 
 // ---- MS-20 iC patch bay ----
 // Outputs carry NORMAL when an input is unpatched, so the receiving module keeps its own MS-20 normal source.
@@ -894,15 +899,15 @@ static const int OPEN=13;    // plug in the input, other end not connected: norm
 int8_t jack[35];int8_t lk[35];int monof;int pwr,pon; /* volume knob power switch: state, and a counter that steps on every switch-on */ /* monof: KBD CV OUT patched into VCO1+2 CV IN */ /* lk: jack is part of a cable connection */             // NRPN jack number -> >0 source id (output jack), <0 -(destination+1) (input jack), 0 unknown
 int pidx[NDEST];
 int wplug,sel12; /* a plug in WHEEL OUT; the source in VCO1+2 CV IN (not a parameter: 0 normal) */
-int psel[NDEST+1],pmono,pwplug,lrseq,pubc12,pubmono,pubwheel; /* the real panel's cables (psel[10] = VCO1+2 CV IN); ovr seen last tick; last values written to Patch_State */
+int psel[NDEST+2],pmono,pwplug,lrseq,pubc12,pubmono,pubwheel,selig,pubig; /* the real panel's cables (psel[10] = VCO1+2 CV IN); ovr seen last tick; last values written to Patch_State */
 int32_t src[14];
 int m99,m98,m6;bool h99,h98,h6;int ev99,ev98,ev6;
 uint32_t nrng;int32_t shval;int pclk;
 void setsel(int d,int v){if(d>=0&&d<NDEST)PExParameterChange(&parent->PExch[pidx[d]],v,0xFFFD);} // same call as Ksoloti's own CC assignment -> selector moves in the editor
-void setd(int d,int v){if(d<0||d>NDEST)return;if(d==NDEST&&v==OPEN)v=0;psel[d]=v;if(d==10)sel12=v;else setsel(d,v);}   /* destination 10 = VCO1+2 CV IN; psel = the real panel */
+void setd(int d,int v){if(d<0||d>NDEST+1)return;if(d>=NDEST&&v==OPEN)v=0;psel[d]=v;if(d==10)sel12=v;else if(d==11)selig=v;else setsel(d,v);}   /* 11 = INITIAL GAIN */   /* destination 10 = VCO1+2 CV IN; psel = the real panel */
 void setps(const char*,int i,int v){PExParameterChange(&parent->PExch[i],v,0xFFFD);}
-void restorePhys(){for(int d=0;d<NDEST;d++)setsel(d,psel[d]);sel12=psel[NDEST];monof=pmono;wplug=pwplug;   /* back to the real panel's cables */
- setps(0,PARAM_INDEX_Patch__State_c12,sel12);setps(0,PARAM_INDEX_Patch__State_mono,monof);setps(0,PARAM_INDEX_Patch__State_wheel,wplug);pubc12=sel12;pubmono=monof;pubwheel=wplug;}
+void restorePhys(){for(int d=0;d<NDEST;d++)setsel(d,psel[d]);sel12=psel[NDEST];selig=psel[NDEST+1];monof=pmono;wplug=pwplug;   /* back to the real panel's cables */
+ setps(0,PARAM_INDEX_Patch__State_c12,sel12);setps(0,PARAM_INDEX_Patch__State_mono,monof);setps(0,PARAM_INDEX_Patch__State_wheel,wplug);pubc12=sel12;pubmono=monof;pubwheel=wplug;setps(0,PARAM_INDEX_Patch__State_ig,selig);pubig=selig;}
 void patchEvent(int t,int a,int b){
  if(t==6){int on=(a!=b)?1:0;if(on&&!pwr)pon++;pwr=on;return;}   /* 6 = volume knob power switch: 6/0/127 on, 6/0/0 off */
  if(t!=4&&t!=5)return;                 // 4 = connect / plug in, 5 = disconnect / plug out
@@ -947,7 +952,7 @@ if((status&0xF0)==MIDI_CONTROL_CHANGE){
 void initOs(){
 
 for(int i=0;i<35;i++){jack[i]=0;lk[i]=0;}monof=0;pwr=1;pon=0;wplug=0;sel12=0;
-for(int d=0;d<=NDEST;d++)psel[d]=0;pmono=pwplug=0;lrseq=0;pubc12=pubmono=pubwheel=-1;
+for(int d=0;d<=NDEST+1;d++)psel[d]=0;pmono=pwplug=0;lrseq=0;selig=0;pubc12=pubmono=pubwheel=pubig=-1;
 // ---- jack table: confirmed on the MS-20 iC (one cable from TOTAL through every jack) ----
 // outputs
 jack[1]=1;    // MG triangle out
@@ -971,11 +976,12 @@ jack[17]=-5;  // LPF CUTOFF in
 jack[14]=-6;  // VCA CONTROL in
 jack[18]=-7;  // EG1 TRIG in
 jack[25]=-11; // VCO1+2 CV in (KBD CV here = mono mode)
+jack[21]=-12; // INITIAL GAIN in (drone)
 jack[26]=-8;  // KBD TRIG in (EG2 trigger)
 jack[2]=-9;   // S&H in
 jack[4]=-10;  // S&H clock in
 // not routed: 3 ESP signal in, 8 amp out, 9 ext signal in, 12 VCA in, 15 BPF out, 16 VCA out, 20 F-V out,
-//             21 initial gain, 28 ESP env out, 29 signal out, 30 phones, 34 ESP trig out
+//             28 ESP env out, 29 signal out, 30 phones, 34 ESP trig out
 // Index names spelled out (works on every Ksoloti version). If you rename this object, change PatchBay below.
 pidx[0]=PARAM_INDEX_PatchBay_total;pidx[1]=PARAM_INDEX_PatchBay_freq;pidx[2]=PARAM_INDEX_PatchBay_vco2freq;
 pidx[3]=PARAM_INDEX_PatchBay_hpf;pidx[4]=PARAM_INDEX_PatchBay_lpf;pidx[5]=PARAM_INDEX_PatchBay_vca;
@@ -995,14 +1001,15 @@ initOs();
 // ---- a recalled sound's own cables (Patch_State ovr) or the real panel's ----
 {int ov=parent->PExch[PARAM_INDEX_Patch__State_ovr].value?1:0;
  if(inlet_rseq!=lrseq){lrseq=inlet_rseq;if(ov){restorePhys();setps(0,PARAM_INDEX_Patch__State_ovr,0);ov=0;}}   // the memory asks for the real panel's cables (panel, a sound without cables, cables only)
- int32_t c=parent->PExch[PARAM_INDEX_Patch__State_c12].value,m=parent->PExch[PARAM_INDEX_Patch__State_mono].value,w=parent->PExch[PARAM_INDEX_Patch__State_wheel].value;
- if(ov){sel12=c;monof=m;wplug=w;}               // the sound's own: the real panel stays in psel/pmono/pwplug
+ int32_t c=parent->PExch[PARAM_INDEX_Patch__State_c12].value,m=parent->PExch[PARAM_INDEX_Patch__State_mono].value,w=parent->PExch[PARAM_INDEX_Patch__State_wheel].value,g=parent->PExch[PARAM_INDEX_Patch__State_ig].value;
+ if(ov){sel12=c;monof=m;wplug=w;selig=g;}               // the sound's own: the real panel stays in psel/pmono/pwplug
  else{
   int sp[NDEST]={param_total,param_freq,param_vco2freq,param_hpf,param_lpf,param_vca,param_eg1trig,param_eg2trig,param_shin,param_shclock};
   for(int d=0;d<NDEST;d++)psel[d]=sp[d];        // follow the selectors (a host preset, the plugin window's cables)
   if(c!=pubc12){sel12=psel[NDEST]=c;pubc12=c;}else if(sel12!=pubc12){setps(0,PARAM_INDEX_Patch__State_c12,sel12);pubc12=sel12;}
   if(m!=pubmono){monof=pmono=m;pubmono=m;}else if(monof!=pubmono){setps(0,PARAM_INDEX_Patch__State_mono,monof);pubmono=monof;}
   if(w!=pubwheel){wplug=pwplug=w;pubwheel=w;}else if(wplug!=pubwheel){setps(0,PARAM_INDEX_Patch__State_wheel,wplug);pubwheel=wplug;}
+  if(g!=pubig){selig=psel[NDEST+1]=g;pubig=g;}else if(selig!=pubig){setps(0,PARAM_INDEX_Patch__State_ig,selig);pubig=selig;}
  }}
 outlet_mono=monof;outlet_power=pwr;outlet_poweron=pon;outlet_wheelout=wplug;
 // ---- sources (frac32 full scale = 1<<27) ----
@@ -1023,6 +1030,7 @@ outlet_total=r[0];outlet_freq=r[1];outlet_vco2freq=r[2];outlet_hpf=r[3];outlet_l
 // ---- last cable event, for reading jack numbers off the editor ----
 outlet_evtype=ev99;outlet_evjacka=ev98;outlet_evjackb=ev6;
 outlet_vco12cv=(sel12>0&&sel12<=OPEN&&sel12!=11)?src[sel12]:NORMAL;   /* KBD CV in VCO1+2 CV IN is mono mode, not pitch */
+outlet_igain=(selig>0&&selig<OPEN)?src[selig]:NORMAL;   /* INITIAL GAIN: drone level */
          
   for(int buffer_index=0;buffer_index<BUFSIZE;buffer_index++){
 
@@ -1384,13 +1392,13 @@ static const int BASE=48;          // MIDI note of the lowest iC key (slot 1): 4
 static const uint32_t ARMT=6000;   // 2 s (3000 control ticks per second): key hold to save
 static const int32_t MAGIC=0x4D533230; // 'MS20': knobs only (1.0)
 static const int32_t MAGIC2=0x4D533231; // 'MS21': knobs + cables (1.1)
-static const int NC=13;            // cable values per slot: the 10 PatchBay selectors, VCO1+2 CV IN, mono, WHEEL OUT
+static const int NC=14;            // cable values per slot: the 10 PatchBay selectors, VCO1+2 CV IN, mono, WHEEL OUT, INITIAL GAIN
 const int pidx[NP]={PARAM_INDEX_MS20__Voices_vco1wave,PARAM_INDEX_MS20__Voices_vco1oct,PARAM_INDEX_MS20__Voices_pw,PARAM_INDEX_MS20__Voices_portamento,PARAM_INDEX_MS20__Voices_vco2wave,PARAM_INDEX_MS20__Voices_vco2oct,PARAM_INDEX_MS20__Voices_vco2semi,PARAM_INDEX_EG1_delay,PARAM_INDEX_EG1_attack,PARAM_INDEX_EG1_release,PARAM_INDEX_EG1_amount,PARAM_INDEX_EG2_hold,PARAM_INDEX_EG2_attack,PARAM_INDEX_EG2_decay,PARAM_INDEX_EG2_sustain,PARAM_INDEX_EG2_release,PARAM_INDEX_EG2_lpfdepth,PARAM_INDEX_EG2_hpfdepth,PARAM_INDEX_Master__Mixer_vco1,PARAM_INDEX_Master__Mixer_vco2,PARAM_INDEX_Filter__Macro_hpfcut,PARAM_INDEX_Filter__Macro_hpfpeak,PARAM_INDEX_Filter__Macro_lpfcut,PARAM_INDEX_Filter__Macro_lpfpeak,PARAM_INDEX_MG__Morphing__LFO_rate,PARAM_INDEX_MG__Morphing__LFO_shape,PARAM_INDEX_MG__Morphing__LFO_pitchmod,PARAM_INDEX_MG__Morphing__LFO_lpfmod,PARAM_INDEX_MG__Morphing__LFO_hpfmod};
 const int8_t kind[NP]={2,2,0,0,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0};  // 0 knob 0..64, 1 knob -64..64, 2 rotary switch (4 positions)
 const uint8_t kcc[NP]={77,15,14,5,82,22,19,24,23,26,93,25,73,75,70,72,79,31,20,21,28,29,74,71,27,76,12,85,30};
 int32_t (*mem)[NP];uint8_t *valid;   // in SDRAM (internal RAM is full)
 int32_t (*cab)[NC];uint8_t *hasc;    // the sound's cables, and whether it has any (sounds saved before 1.1 and the factory sounds: no)
-const int cidx[NC]={PARAM_INDEX_PatchBay_total,PARAM_INDEX_PatchBay_freq,PARAM_INDEX_PatchBay_vco2freq,PARAM_INDEX_PatchBay_hpf,PARAM_INDEX_PatchBay_lpf,PARAM_INDEX_PatchBay_vca,PARAM_INDEX_PatchBay_eg1trig,PARAM_INDEX_PatchBay_eg2trig,PARAM_INDEX_PatchBay_shin,PARAM_INDEX_PatchBay_shclock,PARAM_INDEX_Patch__State_c12,PARAM_INDEX_Patch__State_mono,PARAM_INDEX_Patch__State_wheel};
+const int cidx[NC]={PARAM_INDEX_PatchBay_total,PARAM_INDEX_PatchBay_freq,PARAM_INDEX_PatchBay_vco2freq,PARAM_INDEX_PatchBay_hpf,PARAM_INDEX_PatchBay_lpf,PARAM_INDEX_PatchBay_vca,PARAM_INDEX_PatchBay_eg1trig,PARAM_INDEX_PatchBay_eg2trig,PARAM_INDEX_PatchBay_shin,PARAM_INDEX_PatchBay_shclock,PARAM_INDEX_Patch__State_c12,PARAM_INDEX_Patch__State_mono,PARAM_INDEX_Patch__State_wheel,PARAM_INDEX_Patch__State_ig};
 int lastcc[NP];int32_t cur[NP];bool lock[NP];
 bool btn,armed,saved,tapmode;uint32_t tk,tpress,kdown;int keyn,inmem;
 int fseq,fmask,fn;
@@ -1675,6 +1683,7 @@ struct O_Patch_State {
   int32_t param_mono;
   int32_t param_wheel;
   int32_t param_ovr;
+  int32_t param_ig;
 
   void ks_init(rootc *_parent){ parent=_parent;
 
@@ -1784,6 +1793,7 @@ struct EngineCore {
   int32_t net75;
   int32_t net76;
   int32_t net77;
+  int32_t net78;
   int32_t audioInL[BUFSIZE], audioOutL[BUFSIZE], audioOutR[BUFSIZE];
   void init(){
     this->~EngineCore(); new (this) EngineCore(); g_ks_rng = 0x12345678u;   // value-initialised: zeroed, constant tables kept
@@ -1849,6 +1859,7 @@ struct EngineCore {
     root.PExch[PARAM_INDEX_Patch__State_mono].value = 0;
     root.PExch[PARAM_INDEX_Patch__State_wheel].value = 0;
     root.PExch[PARAM_INDEX_Patch__State_ovr].value = 0;
+    root.PExch[PARAM_INDEX_Patch__State_ig].value = 0;
     o_MS20_Voices.ks_init(&root);
     o_EG1.ks_init(&root);
     o_EG2.ks_init(&root);
@@ -1893,6 +1904,7 @@ struct EngineCore {
     o_MS20_Voices.inlet_memarm = net69;
     o_MS20_Voices.inlet_wheelout = net75;
     o_MS20_Voices.inlet_vco12cv = net76;
+    o_MS20_Voices.inlet_igain = net78;
     o_MS20_Voices.ks_dsp();
     memcpy(net13, o_MS20_Voices.outlet_vco1, sizeof(int32buffer));
     memcpy(net14, o_MS20_Voices.outlet_vco2, sizeof(int32buffer));
@@ -2025,6 +2037,7 @@ struct EngineCore {
     net68 = o_PatchBay.outlet_poweron;
     net75 = o_PatchBay.outlet_wheelout;
     net76 = o_PatchBay.outlet_vco12cv;
+    net78 = o_PatchBay.outlet_igain;
     o_MS20iC_LEDs.inlet_rate = net43;
     o_MS20iC_LEDs.inlet_gate = net63;
     o_MS20iC_LEDs.inlet_arpstep = net22;
@@ -2091,6 +2104,7 @@ struct EngineCore {
     o_Patch_State.param_mono = root.PExch[PARAM_INDEX_Patch__State_mono].value;
     o_Patch_State.param_wheel = root.PExch[PARAM_INDEX_Patch__State_wheel].value;
     o_Patch_State.param_ovr = root.PExch[PARAM_INDEX_Patch__State_ovr].value;
+    o_Patch_State.param_ig = root.PExch[PARAM_INDEX_Patch__State_ig].value;
     o_Patch_State.ks_dsp();
   }
   void midi(uint8_t status,uint8_t data1,uint8_t data2){
@@ -2175,5 +2189,6 @@ static const ParamInfo kParamInfo[NPARAMS] = {
   {"PARAM_INDEX_Patch__State_mono","Patch_State","mono","Patch_State mono","int32",0,-1,1},
   {"PARAM_INDEX_Patch__State_wheel","Patch_State","wheel","Patch_State wheel","int32",0,-1,1},
   {"PARAM_INDEX_Patch__State_ovr","Patch_State","ovr","Patch_State ovr","int32",0,-1,1},
+  {"PARAM_INDEX_Patch__State_ig","Patch_State","ig","Patch_State ig","int32",0,-1,13},
 };
 } // namespace ms20

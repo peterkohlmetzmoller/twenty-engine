@@ -80,6 +80,23 @@ int main() {
     c->midi(0xB0, 7, 40); CHECK(c->o_PatchBay.pon == p0 + 1, "volume moves while on: nothing happens");
     delete c; }
 
+  printf("INITIAL GAIN: drone voice\n");
+  { auto level = [](EngineCore *c, double secs) { double e = 0; int n = 0; for (int b = 0; b < (int)(secs * 3000); b++) { c->process(); for (int i = 0; i < 16; i++) { double v = c->audioOutL[i] / 134217728.0; e += v * v; n++; } } return sqrt(e / n); };
+    EngineCore *c = fresh(); c->midi(0xB0, 74, 100);
+    c->midi(0x90, 60, 100); level(c, 0.5); c->midi(0x80, 60, 0); level(c, 3.0);
+    double silent = level(c, 0.5);
+    cable(c, 4, 27, 21); c->midi(0xB0, 1, 127);                // WHEEL OUT -> INITIAL GAIN, wheel up
+    double drone = level(c, 1.0);
+    c->midi(0x90, 67, 100); level(c, 0.3); c->midi(0x80, 67, 0); double after = level(c, 3.0);
+    c->midi(0xB0, 1, 0); level(c, 3.0); double off = level(c, 0.5);
+    printf("    level: no cable %.5f, drone %.4f, after a new note %.4f, wheel down %.5f\n", silent, drone, after, off);
+    CHECK(silent < 0.002, "no cable: silent after the release (only the delay tail)");
+    CHECK(drone > 0.01, "INITIAL GAIN patched, wheel up: the last note drones");
+    CHECK(after > 0.01, "a new note takes over the drone");
+    CHECK(off < 0.002, "source at zero: the drone closes");
+    CHECK(c->o_PatchBay.selig == 9, "INITIAL GAIN's source is the wheel");
+    delete c; }
+
   printf(fails ? "V11 CHECKS FAILED (%d)\n" : "ALL V11 CHECKS PASSED (%d failed)\n", fails);
   return fails ? 1 : 0;
 }
