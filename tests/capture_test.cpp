@@ -37,6 +37,25 @@ int main()
   printf("    last take: %s, %.2f s\n", cap.path().c_str() + strlen(dir), secs);
   CHECK(!memcmp(h, "RIFF", 4) && !memcmp(h + 8, "WAVE", 4) && h[34] == 24 && h[22] == 2, "a stereo 24-bit WAV");
   CHECK(secs > 2.4 && secs < 2.7, "the take: the note and two seconds of silence after it");
+
+  printf("The app quits in the middle of a take\n");
+  auto header = [&](const std::string& p, double* s) { FILE* g = fopen(p.c_str(), "rb"); unsigned char hh[44] = {0}; long sz = 0;
+    if (g) { if (fread(hh, 1, 44, g)) {} fseek(g, 0, SEEK_END); sz = ftell(g); fclose(g); }
+    const unsigned d = hh[40] | (hh[41] << 8) | (hh[42] << 16) | (hh[43] << 24); *s = d / 6.0 / sr; return sz == (long)d + 44; };
+  play(3.0, true, true);   // still sounding: the take is open
+  CHECK(cap.state() == 1, "a take is being recorded");
+  { double s3 = 0; header(cap.shownPath(), &s3); CHECK(s3 >= 1.9 && s3 <= 3.0, "while recording, the file's header follows every two seconds"); }
+  const std::string open1 = cap.shownPath();
+  cap.close();
+  { double s4 = 0; CHECK(header(open1, &s4) && s4 > 2.9 && s4 < 3.1, "close(): the take is a whole WAV of what was played"); }
+  { Capture c2; c2.setFolder(dir); c2.setKeepAll(true);
+    for (int b = 0; b < 200; b++) { for (int i = 0; i < 256; i++) { L[i] = 0.3f; R[i] = -0.3f; } c2.block(L, R, 256, false, b == 0, sr); if (b % 8 == 0) c2.idle(); }
+    c2.idle(); const std::string p2 = c2.shownPath();
+    // ... and the app goes away without close(): the destructor still leaves a playable file
+    struct Gone { Capture* c; std::string p; } g{&c2, p2};
+    (void)g; }
+  { int n = 0; double worst = 1; if (DIR* d = opendir(dir)) { while (dirent* e = readdir(d)) { std::string nm = e->d_name; if (nm.size() > 4 && nm.substr(nm.size() - 4) == ".wav") { double s5; if (header(std::string(dir) + nm, &s5)) n++; else worst = 0; } } closedir(d); }
+    CHECK(worst == 1 && n == 5, "every file on disk has the right sizes in its header (5 takes)"); }
   printf(fails ? "CAPTURE CHECKS FAILED (%d)\n" : "ALL CAPTURE CHECKS PASSED (%d failed)\n", fails);
   return fails ? 1 : 0;
 }

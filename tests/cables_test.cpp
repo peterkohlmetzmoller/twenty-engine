@@ -48,6 +48,12 @@ int main() {
     holdKey(h, 36);
     CHECK(P(h, OVR) == 0 && P(h, HPF) == 3 && P(h, LPF) == 0, "cables only: real cables");
     CHECK(P(h, CUT) == cut, "cables only: the knobs stay as recalled");
+    printf("5b. A host reset while the sound's own cables play (Logic resets at every start)\n");
+    tapKey(h, 5); CHECK(P(h, OVR) == 1 && P(h, LPF) == 1, "own-cable sound recalled");
+    h.reset(44100); run(h, 0.05);
+    cable(h, 4, 27, 27);                                  // touch a cable after the reset
+    CHECK(P(h, OVR) == 0 && P(h, HPF) == 3 && P(h, LPF) == 0 && P(h, WHL) == 1, "the real panel's cables come back whole (EG1 in HPF)");
+    cable(h, 5, 27, 27); h.reset(48000); run(h, 0.05);
   }
   printf("6. The file keeps the cables (new instance)\n");
   { MS20Host h; h.reset(48000); CHECK(h.loadMemories(dir), "file loaded"); run(h, 0.05);

@@ -19,6 +19,7 @@
 // writes the WAV file (idle(), every ~20 ms) and is the only one that touches files or the state it shows.
 #pragma once
 #include <atomic>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <stdint.h>
@@ -76,7 +77,7 @@ public:
     }
     if (mSt == IDLE) return;
     if (mLen > (int64_t)(sr * 1800.0)) { Ev(FINISH, 0); mSt = IDLE; return; }   // half an hour at most
-    for (int i = 0; i < n; i++) { mRing.push(L[i]); mRing.push(R[i]); }
+    for (int i = 0; i < n; i++) mRing.push2(L[i], R[i]);   // a frame whole or not at all: left and right never swap
     mPos += n; mLen += n;
   }
 
@@ -98,17 +99,25 @@ public:
       switch (e.type)
       {
         case START:   Open(e.sr); break;
-        case CONFIRM: if (mFile) { DropOld(); mShowing = 1; mPath = mCurPath; mDragged = false; mPeaks = mCurPeaks; } mConfirmed = true; break;
+        case CONFIRM: if (mFile) { DropOld(); mShowing = 1; SetPath(mCurPath); mDragged = false; mPeaks = mCurPeaks; } else mShowing = 3; mConfirmed = true; break;
         case DISCARD: CloseFile(true); break;
-        case FINISH:  if (mConfirmed) { CloseFile(false); mShowing = 2; mPruneDue = true; mTakes++; } else CloseFile(true); break;
+        case FINISH:  if (mConfirmed && mFile) { CloseFile(false); mShowing = 2; mPruneDue = true; mTakes++; } else CloseFile(true); break;
       }
     }
     Write(-1);   // everything else that is there
     if (mPruneDue) { mPruneDue = false; Prune(); }
   }
-  int state() const { return mShowing; }                 // 0 nothing, 1 recording, 2 ready to drag
+  // when the app quits (audio stopped): the take being recorded is finished where it is, as a playable file
+  void close()
+  {
+    idle();
+    if (mFile) { if (mConfirmed) { CloseFile(false); mTakes++; } else CloseFile(true); }
+  }
+  ~Capture() { if (mFile) { if (mConfirmed) Header((uint32_t)mFrames); fclose(mFile); mFile = nullptr; } }
+  int state() const { return mShowing; }                 // 0 nothing, 1 recording, 2 ready to drag, 3 the file could not be made
   double seconds() const { return mShowSecs; }
-  const std::string& path() const { return mPath; }
+  const std::string& path() const { return mPath; }       // the thread that calls idle()
+  std::string shownPath() const { std::lock_guard<std::mutex> g(mPathLock); return mPath; }   // any thread
   const std::vector<float>& peaks() const { return mPeaks; }   // one per 1024 frames, 0..1
   void dragged() { mDragged = true; }                     // in a project now: never deleted
 
@@ -129,7 +138,12 @@ private:
     static const int N = 1 << 20;
     std::vector<float> buf = std::vector<float>(N);
     std::atomic<int> h{0}, t{0};
-    void push(float v) { const int a = h.load(std::memory_order_relaxed), b = (a + 1) & (N - 1); if (b == t.load(std::memory_order_acquire)) return; buf[a] = v; h.store(b, std::memory_order_release); }
+    void push2(float l, float r)   // a stereo frame, or nothing when full
+    {
+      const int a = h.load(std::memory_order_relaxed), b = (a + 1) & (N - 1), c = (a + 2) & (N - 1), tt = t.load(std::memory_order_acquire);
+      if (b == tt || c == tt) return;
+      buf[a] = l; buf[b] = r; h.store(c, std::memory_order_release);
+    }
     int avail() const { return (h.load(std::memory_order_acquire) - t.load(std::memory_order_relaxed)) & (N - 1); }
     float pop() { const int a = t.load(std::memory_order_relaxed); const float v = buf[a]; t.store((a + 1) & (N - 1), std::memory_order_release); return v; }
   };
@@ -155,6 +169,9 @@ private:
     }
     if (o && mFile) fwrite(out, 1, o, mFile);
     if (mFile && mConfirmed && mSr > 0.0) mShowSecs = mFrames / mSr;
+    // the header follows every two seconds: a take cut off (the app killed, the computer off) still plays
+    if (mFile && mConfirmed && mSr > 0.0 && mFrames - mHdrFrames >= (int64_t)(mSr * 2.0))
+    { Header((uint32_t)mFrames); fseek(mFile, 0, SEEK_END); fflush(mFile); mHdrFrames = mFrames; }
   }
   static void Put24(uint8_t* p, float v)
   {
@@ -181,7 +198,7 @@ private:
       mCurPath = mDir + name + suf + ".wav";
       mFile = CreateNew(mCurPath.c_str());
     }
-    mSr = sr; mFrames = 0; mConfirmed = false; mCurPeaks.clear(); mPeakPos = 0; mPeakMax = 0.f;
+    mSr = sr; mFrames = 0; mHdrFrames = 0; mConfirmed = false; mCurPeaks.clear(); mPeakPos = 0; mPeakMax = 0.f;
     if (mFile) Header(0);
   }
   void Header(uint32_t frames)
@@ -246,13 +263,15 @@ private:
     }
   }
   void DropOld() { if (!mKeepAll && !mPath.empty() && !mDragged && mPath != mCurPath) remove(mPath.c_str()); }
+  void SetPath(const std::string& p) { std::lock_guard<std::mutex> g(mPathLock); mPath = p; }
 
   // audio thread
   int mSt = IDLE; bool mWasRunning = false; int64_t mQuiet = 0, mTail = 0, mPos = 0, mLen = 0;
   Ring mRing; Q<Event, 64> mEvents;
   // main thread
   std::string mDir, mCurPath, mPath; uint64_t mLimit = 0; bool mPruneDue = false;
-  FILE* mFile = nullptr; double mSr = 0.0; int64_t mFrames = 0, mMainPos = 0;
+  FILE* mFile = nullptr; double mSr = 0.0; int64_t mFrames = 0, mHdrFrames = 0, mMainPos = 0;
+  mutable std::mutex mPathLock;   // mPath: written by the idle()/main thread, shown by the window's thread
   bool mConfirmed = false, mDragged = false, mKeepAll = false; int mTakes = 0;
   int mShowing = 0; double mShowSecs = 0.0;
   std::vector<float> mPeaks, mCurPeaks; int mPeakPos = 0; float mPeakMax = 0.f;

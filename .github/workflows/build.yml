@@ -35,6 +35,7 @@ jobs:
           grep -q 'value \* 127.0 + 0.5' IPlug/IPlugMidi.h || { echo '::error::IPlugMidi.h rounding patch did not apply'; exit 1; }
           # VST3: all MIDI points of a block, in time order (the MS-20ic's power-on report, its three-part messages)
           python3 ../tools/patch_iplug2.py IPlug/VST3/IPlugVST3_ProcessorBase.cpp 2>/dev/null || python ../tools/patch_iplug2.py IPlug/VST3/IPlugVST3_ProcessorBase.cpp
+          python3 ../tools/patch_iplug2_app.py IPlug/APP/IPlugAPP_host.cpp 2>/dev/null || python ../tools/patch_iplug2_app.py IPlug/APP/IPlugAPP_host.cpp
           cd Dependencies/IPlug && rm -rf VST3_SDK
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake
@@ -343,6 +344,7 @@ jobs:
           grep -q 'value \* 127.0 + 0.5' IPlug/IPlugMidi.h || { echo '::error::IPlugMidi.h rounding patch did not apply'; exit 1; }
           # VST3: all MIDI points of a block, in time order (the MS-20ic's power-on report, its three-part messages)
           python3 ../tools/patch_iplug2.py IPlug/VST3/IPlugVST3_ProcessorBase.cpp 2>/dev/null || python ../tools/patch_iplug2.py IPlug/VST3/IPlugVST3_ProcessorBase.cpp
+          python3 ../tools/patch_iplug2_app.py IPlug/APP/IPlugAPP_host.cpp 2>/dev/null || python ../tools/patch_iplug2_app.py IPlug/APP/IPlugAPP_host.cpp
           cd Dependencies/IPlug && rm -rf VST3_SDK
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake vstgui4

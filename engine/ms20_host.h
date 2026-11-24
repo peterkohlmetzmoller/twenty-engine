@@ -55,9 +55,14 @@ public:
   // call when the sample rate changes or the plugin is reset (not realtime)
   void reset(double hostRate) {
     int32_t keep[NPARAMS]; bool had = inited;
-    if (had) { for (int i = 0; i < NPARAMS; i++) keep[i] = core->root.PExch[i].value; saveMemTable(); }
+    // the real panel's cables as the patch bay keeps them apart while a recalled sound plays with its own: a reset
+    // (sample rate change; Logic resets at every start) must not forget them, or touching a cable would pull them all
+    int keepPsel[sizeof(core->o_PatchBay.psel) / sizeof(int)]; int keepMono = 0, keepWheel = 0;
+    if (had) { for (int i = 0; i < NPARAMS; i++) keep[i] = core->root.PExch[i].value; saveMemTable();
+               memcpy(keepPsel, core->o_PatchBay.psel, sizeof(keepPsel)); keepMono = core->o_PatchBay.pmono; keepWheel = core->o_PatchBay.pwplug; }
     core->init();
-    if (had) { for (int i = 0; i < NPARAMS; i++) core->root.PExch[i].value = keep[i]; restoreMemTable(); }
+    if (had) { for (int i = 0; i < NPARAMS; i++) core->root.PExch[i].value = keep[i]; restoreMemTable();
+               memcpy(core->o_PatchBay.psel, keepPsel, sizeof(keepPsel)); core->o_PatchBay.pmono = keepMono; core->o_PatchBay.pwplug = keepWheel; }
     for (int i = 0; i < NPARAMS; i++) known[i] = core->root.PExch[i].value;
     inited = true;
     rate = hostRate; step = ENGINE_SR / hostRate;

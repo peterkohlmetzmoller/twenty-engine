@@ -377,7 +377,8 @@ public:
   LedPort()
   {
     if (snd_seq_open(&mOut, "default", SND_SEQ_OPEN_OUTPUT, 0) < 0) { mOut = nullptr; return; }
-    if (snd_seq_open(&mIn, "default", SND_SEQ_OPEN_INPUT, 0) < 0) { mIn = nullptr; return; }
+    // non-blocking: the reader drains what is there, then waits in poll() (100 ms) and sees when it has to stop
+    if (snd_seq_open(&mIn, "default", SND_SEQ_OPEN_INPUT, SND_SEQ_NONBLOCK) < 0) { mIn = nullptr; return; }
     // named like the Mac's own port: never taken for a Twenty Engine controller (Teensy, Ksoloti)
     snd_seq_set_client_name(mOut, "Twenty Engine Panel");
     snd_seq_set_client_name(mIn, "Twenty Engine Panel (in)");

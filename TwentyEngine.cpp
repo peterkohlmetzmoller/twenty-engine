@@ -30,6 +30,7 @@ extern "C" OSStatus LSOpenCFURLRef(CFURLRef inURL, CFURLRef* outLaunchedURL);   
 #endif
 #endif
 #include <string.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -59,6 +60,12 @@ static void OsName(char* os, int n)
 static bool OpenLink(const char* url)
 {
 #if defined(_WIN32)
+  if (!strstr(url, "://") && strncmp(url, "mailto:", 7))
+  {
+    // a folder (the takes): its path is in the system's code page, as getenv gave it (a user name like Søren)
+    std::string f(url); for (char& c : f) if (c == '/') c = '\\';
+    return (INT_PTR)ShellExecuteA(nullptr, "open", f.c_str(), nullptr, nullptr, SW_SHOWNORMAL) > 32;
+  }
   wchar_t w[2048];
   if (MultiByteToWideChar(CP_UTF8, 0, url, -1, w, 2048) <= 0) return false;
   return (INT_PTR)ShellExecuteW(nullptr, L"open", w, nullptr, nullptr, SW_SHOWNORMAL) > 32;
@@ -286,6 +293,7 @@ TwentyEngine::~TwentyEngine()
 {
 #if TWENTY_APP && IPLUG_DSP
   AppSaveState(true);
+  mCapture.close();   // the take being recorded: finished as it stands (the audio has stopped by now)
 #endif
   int64_t me = mFocusId;
   FocusCell()->compare_exchange_strong(me, 0);   // the next track played on takes over
@@ -343,6 +351,7 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 #if IPLUG_DSP && TWENTY_UI
   { static bool ccLoaded = false; if (!ccLoaded && mDataDir[0]) { char p[1200]; snprintf(p, sizeof(p), "%sccmap.txt", mDataDir); ms20::GlobalCcMap().load(p); ccLoaded = true; }
     mCcSaved = ms20::GlobalCcMap().changed.load(); }
+  (void)ModeSetting();   // mode.txt is read here, never first on the audio thread (IcModeNow in ProcessMidiMsg)
 #endif
 #if IPLUG_DSP
 #if TWENTY_STUDIO && !TWENTY_APP
@@ -451,6 +460,17 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 }
 
 // ---- VST3: the MS-20ic's power-on report through the DAW ----
+#if defined(APP_API)
+// the standalone app opens the MS-20ic itself: tools/patch_iplug2_app.py leaves it out of the app's MIDI settings
+bool TE_IsControllerPort(const char* name)
+{
+  if (!name) return false;
+  for (const char* p = name; *p; p++)
+    if (tolower((unsigned char)p[0]) == 'm' && tolower((unsigned char)p[1]) == 's' && p[2] == '-' && p[3] == '2' && p[4] == '0') return true;
+  return false;
+}
+#endif
+
 // When the iC is switched on (volume knob) it reports everything at once: "power on" (CC 99/98/6 = 6/0/127), the
 // switch, every knob, every cable. Through a VST3 host these arrive as one block of parameter changes; iPlug2
 // (patched, tools/patch_iplug2.py) puts them back in time order and asks here first. A block with this many
@@ -1398,17 +1418,16 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
   mRestoreOvr = -1;
 #endif
 #if IPLUG_DSP
-  // older projects (before recall) end here; anything that is not our block is left alone
-  if (pos >= 0 && pos + 4 <= chunk.Size())
+  // the takes block (always there since 1.0): read if it is ours, and skipped by its length either way, so the
+  // window's blocks after it are found whatever the takes held (another parameter count, a later version)
   {
-    int32_t n = 0;
-    const int p2 = chunk.Get(&n, pos);
-    if (p2 > 0 && n == 0) pos = p2;   // no takes (the usual case): the window's block follows
-    else if (p2 > 0 && n > 0 && p2 + n <= chunk.Size())
+    const int end = ms20::StateTakesEnd(chunk.GetData(), chunk.Size(), pos);
+    if (end > pos + 4)
     {
-      std::vector<uint8_t> b((size_t)n);
-      if (chunk.GetBytes(b.data(), n, p2) > 0 && mRecall.unserialize(b.data(), (size_t)n)) pos = p2 + n;
+      std::vector<uint8_t> b((size_t)(end - pos - 4));
+      if (chunk.GetBytes(b.data(), (int)b.size(), pos + 4) > 0) mRecall.unserialize(b.data(), b.size());
     }
+    if (end >= 0) pos = end;
   }
 #endif
 #if TWENTY_UI && IPLUG_DSP
@@ -1588,6 +1607,7 @@ void TwentyEngine::StudioDiag(char* out, int n) const
   const int st = mCapture.state(); const double s = mCapture.seconds();
   if (st == 1) snprintf(out, n, "Recording  %d:%02d  \xC2\xB7  every take is saved (click: the folder)", (int)s / 60, (int)s % 60);
   else if (st == 2) { const std::string& p = mCapture.path(); const size_t k = p.find_last_of("/\\"); snprintf(out, n, "Saved %s  \xC2\xB7  click: the folder", (k == std::string::npos ? p : p.substr(k + 1)).c_str()); }
+  else if (st == 3) snprintf(out, n, "Takes can't be saved: Music/Twenty Engine/Captures can't be written");
   else snprintf(out, n, "Every take is saved as a WAV in Music/Twenty Engine/Captures (click)");
   return;
 #endif

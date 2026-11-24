@@ -163,7 +163,7 @@ public:
     size_t at = 0; auto get = [&](void *dst, size_t k) { if (at + k > n) return false; memcpy(dst, p + at, k); at += k; return true; };
     char magic[4]; uint32_t np, nt;
     if (!get(magic, 4) || memcmp(magic, "TER3", 4) || !get(&np, 4) || !get(&nt, 4)) return false;
-    if (np != (uint32_t)NPARAMS || nt > (uint32_t)MAXTAKES) return false;
+    if (np > (uint32_t)NPARAMS || nt > (uint32_t)MAXTAKES) return false;   // fewer parameters: an older state (new ones come last)
     LaneData *d = new LaneData();
     for (uint32_t k = 0; k < nt; k++) {
       std::unique_ptr<Take> t(new Take()); uint32_t ne, nn;

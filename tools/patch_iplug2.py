@@ -27,8 +27,9 @@ new_head = """  IParameterChanges* paramChanges = data.inputParameterChanges;
   {
     int32 numParamsChanged = paramChanges->getParameterCount();
     // Twenty Engine: the block's MIDI points, put back in time order after the loop (see tools/patch_iplug2.py)
-    struct TEPoint { int32 offset; int32 k; int rank; int ctrlr; int channel; double value; };
-    static TEPoint tePts[2048]; int teN = 0, teMax = 0; bool teSame = false;
+    struct TEPoint { int32 offset; int32 k; int rank; int ctrlr; int channel; double value; int seq; };
+    // one buffer per thread (not per process): copies of the plugin on other tracks run on other threads at once
+    static thread_local TEPoint tePts[1024]; int teN = 0, teMax = 0; bool teSame = false;
     """
 assert s.count(old_head) == 1, 'head not found'
 s = s.replace(old_head, new_head)
@@ -58,14 +59,14 @@ new_cc = """              else if (idx >= kMIDICCParamStartIdx)
                 int ctrlr = index % kCountCtrlNumber;
                 if (numPoints > teMax) teMax = numPoints;
                 int32 prevOff = -1;
-                for (int32 pt = 0; pt < numPoints && teN < 2048; pt++)
+                for (int32 pt = 0; pt < numPoints && teN < 1024; pt++)
                 {
                   int32 o = 0; double v = 0.;
                   if (paramQueue->getPoint(pt, o, v) != kResultTrue) continue;
                   if (pt > 0 && o == prevOff) teSame = true;
                   prevOff = o;
                   const int rank = ctrlr == 99 ? 0 : (ctrlr == 98 ? 1 : (ctrlr == 6 ? 2 : 3));
-                  tePts[teN++] = TEPoint{o, pt, rank, ctrlr, channel, v};
+                  tePts[teN] = TEPoint{o, pt, rank, ctrlr, channel, v, teN}; teN++;
                 }
               }"""
 assert s.count(old_cc) == 1, 'cc block not found'
@@ -85,10 +86,11 @@ new_tail = """          }
     }
     if (teN > 0)
     {
-      std::stable_sort(tePts, tePts + teN, [](const TEPoint& a, const TEPoint& b) {
+      std::sort(tePts, tePts + teN, [](const TEPoint& a, const TEPoint& b) {   // in place: no allocation on the audio thread
         if (a.offset != b.offset) return a.offset < b.offset;
         if (a.k != b.k) return a.k < b.k;
-        return a.rank < b.rank;
+        if (a.rank != b.rank) return a.rank < b.rank;
+        return a.seq < b.seq;                                                   // arrival order: as stable as stable_sort
       });
       int distinct = 0; { bool seen[128] = {}; for (int j = 0; j < teN; j++) if (tePts[j].channel == 0 && tePts[j].ctrlr < 128 && !seen[tePts[j].ctrlr]) { seen[tePts[j].ctrlr] = true; distinct++; } }
       if (TE_MidiBlock(teN, distinct, teMax, teSame))   // the iC's power-on report: a clean "power on" first

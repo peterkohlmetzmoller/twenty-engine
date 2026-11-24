@@ -89,6 +89,7 @@ TwentyEnginePlugin::~TwentyEnginePlugin()
 {
   mRun.store(false);
   if (mIdle.joinable()) mIdle.join();
+  mCapture.close();   // the take being recorded: finished as it stands
   if (mPanelPath[0] && mPanelMem.changed() != mPanelSavedVer) mPanelMem.save(mPanelPath);
 }
 
@@ -310,7 +311,8 @@ void TwentyEnginePlugin::CaptureText(char* out, int n) const
 {
   const int st = mCapture.state(); const double s = mCapture.seconds();
   if (st == 1) snprintf(out, n, "Recording  %d:%02d  \xC2\xB7  every take is saved (click: the folder)", (int)s / 60, (int)s % 60);
-  else if (st == 2) { const std::string& p = mCapture.path(); const size_t k = p.find_last_of('/'); snprintf(out, n, "Saved %s  \xC2\xB7  click: the folder", (k == std::string::npos ? p : p.substr(k + 1)).c_str()); }
+  else if (st == 2) { const std::string p = mCapture.shownPath(); const size_t k = p.find_last_of('/'); snprintf(out, n, "Saved %s  \xC2\xB7  click: the folder", (k == std::string::npos ? p : p.substr(k + 1)).c_str()); }
+  else if (st == 3) snprintf(out, n, "Takes can't be saved: Music/Twenty Engine/Captures can't be written");
   else snprintf(out, n, "Every take is saved as a WAV in Music/Twenty Engine/Captures (click)");
 }
 
