@@ -273,8 +273,9 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       "Ring Bass", "Sine Thump", "Round Bass", "Wobble", "Glide Bass", "Phaser Bass", "Poly Strings", "Brass", "Organ", "Soft Keys",
       "Bell", "Glass Pad", "Sweep Pad", "Phaser Pad", "Clav", "Harpsi", "Vowel Pad", "Poly Synth", "Fourth Lead", "Square Lead",
       "Screamer", "Soft Flute", "Reed", "Theremin", "Rising Zap", "Laser", "Random Bleeps", "Wind", "Ring Metal", "Slow Swell" };
-    for (int n = 0; n <= 36; n++)
+    for (int idx = 0; idx <= 36; idx++)   // the panel first: it is what a new copy of the plugin plays
     {
+      const int n = idx == 0 ? 36 : idx - 1;
       char name[64];
       if (n == 36) snprintf(name, sizeof(name), "Panel (the knobs as they are)");
       else snprintf(name, sizeof(name), "%02d %s", n + 1, mHost->slotIsFactory(n) ? kFactory[n] : "User");
@@ -950,7 +951,7 @@ void TwentyEngine::OnIdle()
     if (--mCtlScan <= 0) { mCtlScan = 50; mController.store(LedPort::FindController()); }   // about once a second
     // the host's preset menu shows the memory recalled on the keys (or the panel)
     { const int m = mHost->memSlot(), shown = m >= 0 ? m : 36;
-      if (audio && shown != mPresetShown) { mPresetShown = shown; SetCurrentPresetIdx(shown); InformHostOfPresetChange(); } } }
+      if (audio && shown != mPresetShown) { mPresetShown = shown; SetCurrentPresetIdx(shown == 36 ? 0 : shown + 1); InformHostOfPresetChange(); } } }
 #endif
   // 1c. the controller's panel: a real start-up dump (volume switched on) makes it "read"; saved after a quiet second
   { const uint32_t pons = mPanelMem.powerOns(); if (pons != mPanelPons) { mPanelPons = pons; mPanelSrc.store(2); }

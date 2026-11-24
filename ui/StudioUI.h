@@ -282,6 +282,19 @@ public:
 };
 
 // ---------------------------------------------------------------- knob (panel.py knob(): rays, white cap, pointer)
+// Dragging a knob, as in Logic: up or right turns it up, down or left turns it down; the whole range takes about
+// 350 pixels (rotary switches 140); Shift or Ctrl = ten times finer; double-click = default. The mouse pointer is
+// never hidden or held in place (iPlug2's knob does that, and in virtual machines the pointer then kept moving the
+// knob after the button was let go).
+static double DragStep(float dX, float dY, const IMouseMod& m, double px)
+{
+  double d = ((double)dX - (double)dY) / px;
+  if (m.S || m.C) d *= 0.1;
+  return d;
+}
+static void DragBegin(IControl* c) { if (c->GetParamIdx() >= 0 && c->GetDelegate()) c->GetDelegate()->BeginInformHostOfParamChangeFromUI(c->GetParamIdx()); }
+static void DragEnd(IControl* c) { if (c->GetParamIdx() >= 0 && c->GetDelegate()) c->GetDelegate()->EndInformHostOfParamChangeFromUI(c->GetParamIdx()); }
+
 class PKnob : public IKnobControlBase
 {
 public:
@@ -311,7 +324,7 @@ public:
     {
       const Look lk = mLook(); mInfo = lk.info;
       // the wave sits between the two lowest scale marks (there is no mark straight below), the name right under it
-      const float top = mCY + mR * 1.5f, ww = 9.f * S, hh = 1.5f * S;   // below the lowest scale marks
+      const float top = mCY + mR * 1.5f + 1.3f * S, ww = 6.5f * S, hh = 1.1f * S;   // smaller, midway between PW and SCALE
       Morph(g, lk.morph, mCX - ww / 2, top, ww, hh);
       Txt(g, mCX, top + hh + 1.7f * S, lk.label.c_str(), 1.72f);
     }
@@ -325,12 +338,14 @@ public:
     }
   }
   void OnMouseOver(float x, float y, const IMouseMod& m) override { IKnobControlBase::OnMouseOver(x, y, m); Report(); SetDirty(false); }
-  void OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& m) override { IKnobControlBase::OnMouseDrag(x, y, dX, dY, m); Report(); }
+  void OnMouseDown(float, float, const IMouseMod&) override { mAcc = GetValue(); DragBegin(this); }
+  void OnMouseUp(float, float, const IMouseMod&) override { DragEnd(this); }
+  void OnMouseDrag(float, float, float dX, float dY, const IMouseMod& m) override { mAcc = Clip(mAcc + DragStep(dX, dY, m, 350.0), 0.0, 1.0); SetValue(mAcc); SetDirty(true); Report(); }
   void OnMouseOut() override { IKnobControlBase::OnMouseOut(); SetDirty(false); }
   bool IsHit(float x, float y) const override { return (x - mCX) * (x - mCX) + (y - mCY) * (y - mCY) <= mR * mR * 2.4f; }
   bool IsDirty() override { if (mLook && ++mTick >= 10) { mTick = 0; return true; } return IKnobControlBase::IsDirty(); }
 private:
-  int mTick = 0;
+  int mTick = 0; double mAcc = 0.0;
   void Report() { if (const IParam* p = GetParam()) { char b[96]; snprintf(b, sizeof(b), "%s  %.1f", mInfo.c_str(), p->Value()); SetInfo(b); } }
   float mCX, mCY, mR; std::string mLabel, mInfo, mFn; bool mAbove; std::vector<std::string> mZones; std::function<Look()> mLook;
 };
@@ -365,11 +380,17 @@ public:
     g.PathStroke(IPattern(kInk), mR * 0.13f, o);
     Txt(g, mCX, mCY + (mR / S * 1.25f + 1.7f) * S + 0.3f * S, mLabel.c_str(), 1.72f);
   }
-  void OnMouseDown(float x, float y, const IMouseMod& m) override { mDragged = false; IKnobControlBase::OnMouseDown(x, y, m); }
-  void OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& m) override { mDragged = true; IKnobControlBase::OnMouseDrag(x, y, dX, dY, m); }
-  void OnMouseUp(float x, float y, const IMouseMod& m) override
+  void OnMouseDown(float, float, const IMouseMod&) override { mDragged = false; mMoved = 0.f; mAcc = GetValue(); DragBegin(this); }
+  void OnMouseDrag(float, float, float dX, float dY, const IMouseMod& m) override
   {
-    IKnobControlBase::OnMouseUp(x, y, m);
+    mMoved += std::fabs(dX) + std::fabs(dY);
+    if (mMoved < 4.f) return;                          // a click that wobbles a pixel or two is still a click
+    mDragged = true;
+    mAcc = Clip(mAcc + DragStep(dX, dY, m, 140.0), 0.0, 1.0); SetValue(mAcc); SetDirty(true);
+  }
+  void OnMouseUp(float, float, const IMouseMod&) override
+  {
+    DragEnd(this);
     if (!mDragged && GetParam())   // a click steps to the next position
     {
       SetValue(GetParam()->ToNormalized((double)((Sel() + 1) % (int)mMarks.size())));
@@ -383,7 +404,7 @@ public:
   bool IsHit(float x, float y) const override { return (x - mCX) * (x - mCX) + (y - mCY) * (y - mCY) <= mR * mR * 3.2f; }
 private:
   int Sel() const { const IParam* p = GetParam(); return p ? std::max(0, std::min((int)mMarks.size() - 1, (int)std::lround(p->Value()))) : 0; }
-  float mCX, mCY, mR; std::string mLabel, mInfo; std::vector<std::string> mMarks; bool mDragged = false;
+  float mCX, mCY, mR; std::string mLabel, mInfo; std::vector<std::string> mMarks; bool mDragged = false; float mMoved = 0.f; double mAcc = 0.0;
 };
 
 // ---------------------------------------------------------------- ESP knobs
@@ -464,7 +485,9 @@ public:
     }
   }
   void OnMouseOver(float x, float y, const IMouseMod& m) override { IKnobControlBase::OnMouseOver(x, y, m); Report(); }
-  void OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& m) override { IKnobControlBase::OnMouseDrag(x, y, dX, dY, m); Report(); }
+  void OnMouseDown(float, float, const IMouseMod&) override { mAcc = GetValue(); DragBegin(this); }
+  void OnMouseUp(float, float, const IMouseMod&) override { DragEnd(this); }
+  void OnMouseDrag(float, float, float dX, float dY, const IMouseMod& m) override { mAcc = Clip(mAcc + DragStep(dX, dY, m, 350.0), 0.0, 1.0); SetValue(mAcc); SetDirty(true); Report(); }
   bool IsHit(float x, float y) const override { return (x - mCX) * (x - mCX) + (y - mCY) * (y - mCY) <= mR * mR * 2.4f; }
 private:
   void Report()
@@ -476,7 +499,7 @@ private:
     SetInfo(b);
   }
   float mCX, mCY, mR; const char* mHw;
-  Job mJob[3]; int mActive = 0, mZoneShown = -1, mSyncShown = -1;
+  Job mJob[3]; int mActive = 0, mZoneShown = -1, mSyncShown = -1; double mAcc = 0.0;
 public:
   PatchHost* mHost = nullptr;   // the RATE knob shows the division while SYNC is on
 };
@@ -649,8 +672,8 @@ public:
   DelayLatchButton(float cx, float cy) : IControl(IRECT(cx - 5.2f * S, cy - 2.4f * S, cx + 5.2f * S, cy + 2.4f * S)), mCX(cx), mCY(cy) {}
   void Draw(IGraphics& g) override
   {
-    const bool active = ArpZone(GetDelegate()) > 0, on = active && DelayLatch();
-    const IColor c = active ? kInk : kGrey;
+    const bool active = ArpZone(GetDelegate()) > 0, on = active ? DelayLatch() : true;   // poly: lit (the ESP knobs are the delay)
+    const IColor c = kInk;
     if (on) g.FillRect(kInk, mRECT);
     g.DrawRect(c, mRECT, nullptr, 0.38f * S);
     Txt(g, mCX, mCY + 0.62f * S, "DELAY", 1.6f, on ? kPaper : c);
@@ -835,7 +858,7 @@ inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller,
       switch (w)
       {
         case 0: return {"SINE \xE2\x86\x92 TRIANGLE", "VCO 1  \xC2\xB7  PW morphs the sine into a triangle", 0};
-        case 1: return {"PHASER", "VCO 1  \xC2\xB7  PW is the phaser depth on the saw (the MG sweeps it)", 1};
+        case 1: return {"PHASER AMOUNT", "VCO 1  \xC2\xB7  PHASER AMOUNT on the saw (the MG sweeps it)", 1};
         case 3: return {"WHITE \xE2\x86\x92 PINK", "VCO 1  \xC2\xB7  PW turns white noise into pink", 3};
         default: return {"PULSE WIDTH", "VCO 1  \xC2\xB7  PULSE WIDTH", 2};
       }
