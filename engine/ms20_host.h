@@ -111,6 +111,19 @@ public:
         while (ei < nev && ev[ei].te < (double)(produced + BUFSIZE)) {
           core->midi(ev[ei].s, ev[ei].d1, ev[ei].d2); ei++;
         }
+        { const int rq = recallReq.exchange(-1); if (rq >= 0) core->o_Patch_Memory.recall(rq); }   // a memory picked in the host
+        if (clk.beatsPerStep > 0.0)
+        {
+          // arp synced to the host's beat: a step each time the beat position crosses a division
+          const double p = clk.ppq0 + (double)k * clk.beatsPerSample;
+          const long long si = (long long)floor(p / clk.beatsPerStep + 1e-9);
+          if (si != clkLastStep) { core->o_MS20_Voices.ext_step = 1; clkLastStep = si; }
+          // the engine's own step period: a little longer than the division, so only the beat steps it
+          const double ticks = clk.beatsPerStep / (clk.beatsPerSample * rate) * 3000.0;
+          core->o_MS20_Voices.ext_aper = (uint32_t)(ticks + 2.0 > 4.0 ? ticks + 2.0 : 4.0);
+        }
+        else core->o_MS20_Voices.ext_aper = 0;
+        { const int pi = pinIdx.load(std::memory_order_relaxed); if (pi >= 0) core->root.PExch[pi].value = pinVal.load(std::memory_order_relaxed); }
         if (hook) hook->before(k);
         core->process();
         if (hook) hook->after(k);
@@ -162,6 +175,22 @@ public:
     if (core->o_Patch_Memory.savereq) { core->o_Patch_Memory.savereq = 0;
       if (core->o_Patch_Memory.saveFile()) core->o_Patch_Memory.flash(31, 5); else core->o_Patch_Memory.flash(12, 8); }   // saved: 5 x all LEDs, failed: 8 x PEAK+TRIG
   }
+  // audio thread, before process(): the arp's clock for this block. beatsPerStep 0 = the arp runs at its RATE knob.
+  // ppq0 = beat position at the block's first sample (free-running when the host is stopped: the caller counts).
+  struct ArpClock { double ppq0 = 0.0, beatsPerSample = 0.0, beatsPerStep = 0.0; };
+  void setArpClock(const ArpClock& c) { clk = c; if (c.beatsPerStep <= 0.0) clkLastStep = -1000000; }
+  // main thread: recall memory slot n (0..35; 36 = the panel), as switch + key does; applied in the next block
+  void requestRecall(int n) { if (n >= 0 && n <= 36) recallReq.store(n); }
+  void cancelRecall() { recallReq.store(-1); }
+  // a parameter held at one value whatever the knobs do (the Twenty Engine UI: BBD tone in the middle)
+  void pinParam(int idx, int32_t raw) { pinVal = raw; pinIdx = idx; }
+  // slot n still holds its factory sound (for the preset names)
+  bool slotIsFactory(int n) const {
+    O_Patch_Memory &m = core->o_Patch_Memory;
+    if (n < 0 || n >= O_Patch_Memory::NS || !m.valid[n]) return false;
+    for (int p = 0; p < O_Patch_Memory::NP; p++) if (m.mem[n][p] != m.facval(n, p)) return false;
+    return true;
+  }
   // main thread: forget a save request (a take playing back replays the save gesture: never overwrite the memory then)
   void dropMemorySave() { core->o_Patch_Memory.savereq = 0; }
 
@@ -185,6 +214,9 @@ private:
   float ebL[RB], ebR[RB];
   float kern[(PH + 1) * 2 * HW];
 
+  std::atomic<int> recallReq{-1};
+  ArpClock clk; long long clkLastStep = -1000000;
+  std::atomic<int> pinIdx{-1}; std::atomic<int32_t> pinVal{0};
   // the memory table survives an engine reset (sample-rate change) like the parameters do
   int32_t memKeep[sizeof(((O_Patch_Memory *)0)->_mem) / sizeof(int32_t)]; uint8_t validKeep[sizeof(((O_Patch_Memory *)0)->_valid)];
   void saveMemTable() { memcpy(memKeep, core->o_Patch_Memory._mem, sizeof(memKeep)); memcpy(validKeep, core->o_Patch_Memory._valid, sizeof(validKeep)); }

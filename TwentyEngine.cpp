@@ -12,6 +12,10 @@
 #if IPLUG_EDITOR && !defined(NO_IGRAPHICS)
 #include "IControls.h"
 #include "resources/font_data.h"
+#if TWENTY_UI
+#include "ui/StudioUI.h"
+#include "resources/font_cond.h"
+#endif
 #endif
 #include <string.h>
 #include <stdlib.h>
@@ -260,6 +264,28 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 #endif
   if (mPanelPath[0] && mPanelMem.load(mPanelPath)) mPanelSrc.store(1);   // the last panel: replayed when the controller connects
 #endif
+#if TWENTY_UI
+  // The host's preset menu (Logic's Setting menu): the 36 memories on the keys and the panel. Picking one recalls
+  // it as switch + key does. Each preset is only a marker ('TEMS' + slot): the sound itself stays in MS20MEM.BIN.
+  // A slot saved over on the keys is listed as "User" (the name is read when the plugin opens).
+  {
+    static const char* kFactory[36] = { "Punch Saw Bass", "Acid Reso", "Sub Pulse", "Wide Pulse Bass", "Octave Bass", "Fifth Bass",
+      "Ring Bass", "Sine Thump", "Round Bass", "Wobble", "Glide Bass", "Phaser Bass", "Poly Strings", "Brass", "Organ", "Soft Keys",
+      "Bell", "Glass Pad", "Sweep Pad", "Phaser Pad", "Clav", "Harpsi", "Vowel Pad", "Poly Synth", "Fourth Lead", "Square Lead",
+      "Screamer", "Soft Flute", "Reed", "Theremin", "Rising Zap", "Laser", "Random Bleeps", "Wind", "Ring Metal", "Slow Swell" };
+    for (int n = 0; n <= 36; n++)
+    {
+      char name[64];
+      if (n == 36) snprintf(name, sizeof(name), "Panel (the knobs as they are)");
+      else snprintf(name, sizeof(name), "%02d %s", n + 1, mHost->slotIsFactory(n) ? kFactory[n] : "User");
+      IByteChunk c; const int32_t magic = kMemPresetMagic, slot = n;
+      c.Put(&magic); c.Put(&slot);
+      MakePresetFromChunk(name, c);
+    }
+  }
+  // BBD tone: held in the middle (not on the panel)
+  mHost->pinParam(PARAM_INDEX_BBD__Delay_bbdfilter, 67108864);
+#endif
   // Same ranges as the Ksoloti editor shows them: knobs 0..64 (bipolar -64..64), selectors as integers.
   // Not automatable: the sound is played on the controller and stored by performance recall, not edited in the DAW.
 #if TWENTY_STUDIO
@@ -289,17 +315,27 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 
 #if IPLUG_EDITOR && !defined(NO_IGRAPHICS)
   mMakeGraphicsFunc = [&]() -> IGraphics* {
-#if defined(AU_API)
+#if defined(AU_API) && !TWENTY_UI
     const float auScale = 1.75f;   // the AU window (Logic) larger; the VST3 keeps its size
 #else
     const float auScale = 1.f;
 #endif
     return MakeGraphics(*this, PLUG_WIDTH, PLUG_HEIGHT, PLUG_FPS, GetScaleForScreen(PLUG_WIDTH, PLUG_HEIGHT) * auScale);
   };
+#if TWENTY_UI
+  // Twenty Engine UI: the MS-20 panel (ui/StudioUI.h)
+  mLayoutFunc = [&](IGraphics* pGraphics) {
+    pGraphics->LoadFont("Cond", (void*)kCondTTF, (int)sizeof(kCondTTF));      // DejaVu Sans Condensed: the font of the panel pictures
+    pGraphics->LoadFont("CondB", (void*)kCondBTTF, (int)sizeof(kCondBTTF));
+    pGraphics->LoadFont("CondI", (void*)kCondITTF, (int)sizeof(kCondITTF));
+    te_ui::Layout(pGraphics, this, [this]() { return Controller(); }, [this](char* out, int n) { StudioDiag(out, n); });
+  };
+#else
   mLayoutFunc = [&](IGraphics* pGraphics) {
     pGraphics->LoadFont("Roboto-Regular", (void*)kRobotoTTF, (int)sizeof(kRobotoTTF));
     pGraphics->AttachControl(new StatusControl(pGraphics->GetBounds(), this));
   };
+#endif
 #endif
 }
 
@@ -558,6 +594,12 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   // one being played on, so this copy sends its sound into the port (one copy at a time)
   if (!mLed.KnobsDirect() && (msg.mStatus & 0xF0) == 0x90 && msg.mData2 > 0 && !mWinInTake) FocusCell()->store(mFocusId);
 #endif
+#if TWENTY_UI
+  // played from any keyboard: channel pressure is the MS-20ic's momentary switch only when one is connected
+  // (a keyboard's aftertouch would otherwise hold the switch: silent keys, memory mode)
+  if ((msg.mStatus & 0xF0) == 0xD0 && mController.load() == 0) return;
+  if (!mLed.KnobsDirect()) WatchCable(msg.mStatus, msg.mData1, msg.mData2);
+#endif
 #ifdef _WIN32
   if (!mLed.KnobsDirect())   // Windows: the track plays the live engine
   {
@@ -628,6 +670,9 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   if (direct && !mWasDirect && HasFocus()) mPanelMem.replay([this](uint8_t st, uint8_t d1, uint8_t d2) { mHost->midi(0, st, d1, d2); });
   mWasDirect = direct;
   if (direct) DrainController();
+#if TWENTY_UI
+  { uint32_t m; while (mUiMidi.pop(m)) mHost->midi(0, (uint8_t)(m >> 16), (uint8_t)(m >> 8), (uint8_t)m); }
+#endif
 #if TWENTY_STUDIO
   // Automation: the region's settings that arrived for this block, onto the engine that plays the track
   {
@@ -702,6 +747,20 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   {
     const int n = (nFrames - done > 512) ? 512 : nFrames - done;
     mRecall.setChunkOffset(done);
+#if TWENTY_UI
+    {
+      // arp SYNC: steps on the DAW's beat divisions (free-running at the DAW tempo while it is stopped)
+      // SYNC on: the RATE knob picks the division (te_ui::SyncZone)
+      const int sy = mArpSync.load();
+      const double bps = (sr > 0.0 && tempo > 0.0) ? tempo / 60.0 / sr : 0.0;
+      if (done == 0) { if (running) mArpPpq = GetPPQPos(); }
+      ms20::MS20Host::ArpClock c;
+      if (sy > 0 && bps > 0.0) { c.ppq0 = mArpPpq; c.beatsPerSample = bps; c.beatsPerStep = te_ui::kSyncBeats[te_ui::SyncZone(mHost->getParamRaw(PARAM_INDEX_MS20__Voices_arprate) / 134217728.0)]; }
+      mHost->setArpClock(c);
+      if (twoEngines) mPlay->setArpClock(c);
+      mArpPpq += n * bps;
+    }
+#endif
     mHost->process(mScratchL, mScratchR, n);
     if (twoEngines)
     {
@@ -740,6 +799,26 @@ void TwentyEngine::OnParamChange(int paramIdx, EParamSource source, int sampleOf
   if (!mFromEngine && source == kHost && mRunningA.load()) { mDiagHost++; mDiagHostBits.fetch_or(1ull << (paramIdx & 63)); }
   if (mFromEngine) return;   // the engine already has this value (it made the change)
   const int32_t raw = ToRaw(paramIdx, GetParam(paramIdx)->Value());
+#if TWENTY_UI
+  if (source != kUI) { mHostSetMs[paramIdx] = ms20::ParamStream<kNumParams>::NowMs(); mUiShown[paramIdx] = raw; }
+  if (source == kPresetRecall)
+  {
+    // a preset from the host's menu (or the project as saved): the window shows it, so the live engine plays it,
+    // and a region being recorded gets it
+    mHost->setParamRaw(paramIdx, raw);
+    if (PanelPort::Get().Ok() && (HasFocus() || !mLed.KnobsDirect())) StreamSend(paramIdx, raw);
+  }
+  if (source == kUI)
+  {
+    // a knob in the window: the live engine, as the MS-20ic's knob would; out through the port (recorded into
+    // the region); for a moment the region does not take it back (the knob is being held)
+    mUiTouchMs[paramIdx].store(ms20::ParamStream<kNumParams>::NowMs());
+    mUiShown[paramIdx] = raw;
+    mHost->setParamRaw(paramIdx, raw);
+    if (PanelPort::Get().Ok() && (HasFocus() || !mLed.KnobsDirect())) StreamSend(paramIdx, raw);
+    return;
+  }
+#endif
 #if TWENTY_STUDIO
   // Automation: the host's values (DAW automation, a loaded project) play on the playback engine; with one engine
   // (no direct connection to the controller) on the live engine too.
@@ -762,6 +841,10 @@ void TwentyEngine::StreamApply(int slot, int32_t raw)
   // audio thread, before the engines run: the engine that plays the track (playback engine, or the only one)
   ms20::MS20Host* e = mLed.KnobsDirect() ? mPlay.get() : mHost.get();
   mStreamApplied++;
+#if TWENTY_UI
+  if (slot < kNumParams && e == mHost.get() && ms20::ParamStream<kNumParams>::NowMs() - mUiTouchMs[slot].load() < 1500) return;
+  if (slot >= kNumParams && e == mHost.get()) mCableFlag[slot == ms20::ParamStream<kNumParams>::SLOT_MONO ? 0 : 1].store(raw != 0);
+#endif
   if (slot < kNumParams) { e->setParamQuiet(slot, raw); return; }
   // the mono and tap cables are cable events in the engine: replay the cable
   const bool mono = slot == ms20::ParamStream<kNumParams>::SLOT_MONO;
@@ -827,6 +910,26 @@ void TwentyEngine::OnIdle()
     mFromEngine = false;
 #endif
   }
+#if TWENTY_UI
+  // 1b. the window's knobs follow the live engine (an MS-20ic, a region playing back with one engine, a memory),
+  //     except one being held in the window
+  { const int64_t now = ms20::ParamStream<kNumParams>::NowMs();
+    const int64_t clk = mClock; const bool audio = clk != mUiClkSeen; mUiClkSeen = clk;   // only while the engine runs
+    for (int i = 0; audio && i < kNumParams; i++)
+    {
+      const int32_t v = mHost->getParamRaw(i);
+      if (v == mUiShown[i] || now - mUiTouchMs[i].load() < 1500 || now - mHostSetMs[i] < 500) continue;   // held, or the host's value on its way
+      mUiShown[i] = v;
+      mFromEngine = true;
+      GetParam(i)->Set(FromRaw(i, v));
+      SendParameterValueFromDelegate(i, GetParam(i)->GetNormalized(), true);
+      mFromEngine = false;
+    }
+    if (--mCtlScan <= 0) { mCtlScan = 50; mController.store(LedPort::FindController()); }   // about once a second
+    // the host's preset menu shows the memory recalled on the keys (or the panel)
+    { const int m = mHost->memSlot(), shown = m >= 0 ? m : 36;
+      if (audio && shown != mPresetShown) { mPresetShown = shown; SetCurrentPresetIdx(shown); InformHostOfPresetChange(); } } }
+#endif
   // 1c. the controller's panel: a real start-up dump (volume switched on) makes it "read"; saved after a quiet second
   { const uint32_t pons = mPanelMem.powerOns(); if (pons != mPanelPons) { mPanelPons = pons; mPanelSrc.store(2); }
     const uint32_t v = mPanelMem.changed();
@@ -846,8 +949,8 @@ void TwentyEngine::OnIdle()
         if ((a == 31 && b == 25) || (a == 25 && b == 31)) m = true;
         if ((a == 33 && b == 3) || (a == 3 && b == 33)) t = true;
       }
-      if (m != mStreamMono) { mStreamMono = m; StreamSend(ms20::ParamStream<kNumParams>::SLOT_MONO, m); }
-      if (t != mStreamTap) { mStreamTap = t; StreamSend(ms20::ParamStream<kNumParams>::SLOT_TAP, t); }
+      if (m != mPanelMono) { mPanelMono = m; if (m != mStreamMono) { mStreamMono = m; StreamSend(ms20::ParamStream<kNumParams>::SLOT_MONO, m); } }
+      if (t != mPanelTap) { mPanelTap = t; if (t != mStreamTap) { mStreamTap = t; StreamSend(ms20::ParamStream<kNumParams>::SLOT_TAP, t); } }
     }
   }
 #endif
@@ -861,7 +964,15 @@ void TwentyEngine::OnIdle()
   if (--mRescan <= 0) { mLed.Rescan(); mRescan = 100; }   // every ~2 s: finds the iC when it is plugged in later
   LedMsg m;
   const bool ledsHere = HasFocus() || !mLed.KnobsDirect();   // the LEDs follow the copy that plays from the controller
-  while (mHost->popLed(m)) if (ledsHere) mLed.Send(m.b, m.len);
+  while (mHost->popLed(m))
+  {
+    if (ledsHere) mLed.Send(m.b, m.len);
+#if TWENTY_UI
+    // the window's LEDs: F0 42 40 6E 01 01 <led> <3F on / 1F off> F7
+    if (m.len >= 8 && m.b[0] == 0xF0 && m.b[5] == 0x01 && m.b[6] < 5)
+    { const int bit = 1 << m.b[6]; int v = mUiLeds.load(); v = (m.b[7] == 0x3F) ? (v | bit) : (v & ~bit); mUiLeds.store(v); }
+#endif
+  }
 }
 #endif
 
@@ -875,11 +986,29 @@ bool TwentyEngine::SerializeState(IByteChunk& chunk) const
   chunk.Put(&n);
   if (n > 0) chunk.PutBytes(b.data(), n);
 #endif
+#if TWENTY_UI && IPLUG_DSP
+  // the window's cable states (mono, tap tempo) and which noise jack each noise cable comes from
+  const int32_t magic = 0x54455531, mono = mCableFlag[0].load(), tap = mCableFlag[1].load();   // 'TEU1'
+  chunk.Put(&magic); chunk.Put(&mono); chunk.Put(&tap); chunk.PutBytes(mNoise, 35);
+  const int32_t magic2 = 0x54455532, sync = mArpSync.load();   // 'TEU2': arp sync
+  chunk.Put(&magic2); chunk.Put(&sync);
+#endif
   return true;
 }
 
 int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
 {
+#if TWENTY_UI && IPLUG_DSP
+  // a memory from the preset menu: recall it on the live engine (the knobs follow the engine)
+  if (chunk.Size() == startPos + 8)
+  {
+    int32_t magic = 0, slot = -1; int q = chunk.Get(&magic, startPos);
+    if (q > 0 && magic == kMemPresetMagic && chunk.Get(&slot, q) > 0 && slot >= 0 && slot <= 36) { mHost->requestRecall(slot); mPresetShown = slot; return startPos + 8; }
+  }
+  // the whole sound (a project, a preset saved in the host): it wins over a memory picked by name just before
+  // (AU: the host restores the preset of that name first, then this state)
+  mHost->cancelRecall();
+#endif
   int pos = UnserializeParams(chunk, startPos);
 #if IPLUG_DSP
   // older projects (before recall) end here; anything that is not our block is left alone
@@ -892,6 +1021,23 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
       std::vector<uint8_t> b((size_t)n);
       if (chunk.GetBytes(b.data(), n, p2) > 0 && mRecall.unserialize(b.data(), (size_t)n)) pos = p2 + n;
     }
+  }
+#endif
+#if TWENTY_UI && IPLUG_DSP
+  if (pos >= 0 && pos + 12 + 35 <= chunk.Size())
+  {
+    int32_t magic = 0, mono = 0, tap = 0; int q = chunk.Get(&magic, pos);
+    if (q > 0 && magic == 0x54455531)
+    {
+      q = chunk.Get(&mono, q); q = chunk.Get(&tap, q);
+      if (q > 0) q = chunk.GetBytes(mNoise, 35, q);
+      if (q > 0) { SetCableFlag(0, mono != 0); SetCableFlag(1, tap != 0); pos = q; }
+    }
+  }
+  if (pos >= 0 && pos + 8 <= chunk.Size())
+  {
+    int32_t magic = 0, sync = 0; int q = chunk.Get(&magic, pos);
+    if (q > 0 && magic == 0x54455532 && chunk.Get(&sync, q) > 0) { mArpSync.store(sync > 0 ? 1 : 0); pos = q + 4; }
   }
 #endif
   return pos;
@@ -925,6 +1071,9 @@ void TwentyEngine::DrainController()
       continue;
     }
     if (on) mHeldDirect[d1] = (uint8_t)((s & 0x0F) + 1); else if (off) mHeldDirect[d1] = 0;
+#if TWENTY_UI
+    WatchCable(s, d1, d2);
+#endif
     const bool late = mRecall.directMsg(s, d1, d2);   // the host's copy of this key came first
     if (late) mPlay->midi(0, (uint8_t)(0x80 | (s & 0x0F)), d1, 0);   // silence the host's copy on the playback engine
     mHost->midi(0, s, d1, d2);
@@ -952,6 +1101,41 @@ void TwentyEngine::Claim(const IMidiMsg& msg)
   mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);
 #endif
 }
+
+#if TWENTY_UI
+// ---- the panel window (ui/StudioUI.h) ----
+// the two cables that are not parameters: KBD CV -> VCO 1+2 CV IN (mono) and SWITCH -> ESP SIGNAL IN (tap tempo).
+// The engine gets the MS-20ic's own messages: connect (4, a, b), or disconnect (5, a, b) plus both plugs out.
+void TwentyEngine::SetCableFlag(int which, bool on)
+{
+  which &= 1;
+  const int a = which ? 33 : 31, b = which ? 3 : 25;
+  mCableFlag[which].store(on);
+  if (on) UiCable(4, a, b);
+  else { UiCable(5, a, b); UiCable(5, b, b); UiCable(5, a, a); }
+  // into the region like the MS-20ic's cable
+  bool& cur = which ? mStreamTap : mStreamMono;
+  if (cur != on && PanelPort::Get().Ok() && (HasFocus() || !mLed.KnobsDirect()))
+  { cur = on; StreamSend(which ? ms20::ParamStream<kNumParams>::SLOT_TAP : ms20::ParamStream<kNumParams>::SLOT_MONO, on); }
+}
+
+// audio thread: follow the MS-20ic's cable messages (CC 99 type, CC 98 / CC 6 the jacks) for the window
+void TwentyEngine::WatchCable(uint8_t s, uint8_t d1, uint8_t d2)
+{
+  if ((s & 0xF0) != 0xB0) return;
+  if (d1 == 99) { mCw99 = d2; mCwH99 = true; mCwH98 = false; return; }
+  if (d1 == 98) { mCw98 = d2; mCwH98 = true; return; }
+  if (d1 != 6 || !mCwH99 || !mCwH98) return;
+  mCwH99 = mCwH98 = false;
+  const int t = mCw99, a = mCw98, b = d2;
+  for (int w = 0; w < 2; w++)
+  {
+    const int o = w ? 33 : 31, i = w ? 3 : 25;
+    if ((a == o && b == i) || (a == i && b == o)) { if (t == 4) mCableFlag[w].store(true); else if (t == 5) mCableFlag[w].store(false); }
+    if (t == 5 && a == b && (a == o || a == i)) mCableFlag[w].store(false);
+  }
+}
+#endif
 
 void TwentyEngine::StudioDiag(char* out, int n) const
 {

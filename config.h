@@ -3,7 +3,7 @@
 // TWENTY_STUDIO: the engine that keeps the sound in the region (engine/paramstream.h) - the release engine.
 // (0 builds the older two-engine "Instrument" with performance recall, kept in the code for reference.)
 #define TWENTY_STUDIO 1
-#define PLUG_NAME "Twenty Engine"
+#define PLUG_NAME "Twenty Engine MS-20ic"
 #define PLUG_MFR "Peter Kohlmetz Moller"
 #define PLUG_VERSION_HEX 0x00010003
 #define PLUG_VERSION_STR "1.0.3"
