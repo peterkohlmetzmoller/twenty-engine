@@ -684,7 +684,7 @@ private:
 class DelayLatchButton : public IControl
 {
 public:
-  DelayLatchButton(float cx, float cy) : IControl(IRECT(cx - 5.2f * S, cy - 2.4f * S, cx + 5.2f * S, cy + 2.4f * S)), mCX(cx), mCY(cy) {}
+  DelayLatchButton(float cx, float cy, PatchHost* ph) : IControl(IRECT(cx - 5.2f * S, cy - 2.4f * S, cx + 5.2f * S, cy + 2.4f * S)), mCX(cx), mCY(cy), mHost(ph) {}
   void Draw(IGraphics& g) override
   {
     const bool active = ArpZone(GetDelegate()) > 0, on = active ? DelayLatch() : true;   // poly: lit (the ESP knobs are the delay)
@@ -704,6 +704,7 @@ public:
   {
     if (ArpZone(GetDelegate()) == 0) return;
     DelayLatch() = !DelayLatch();
+    if (mHost) mHost->SetEspLatch(DelayLatch());   // the iC's ESP knobs follow the latch too
     Info(); SetDirty(false);
   }
   void OnMouseOver(float, float, const IMouseMod&) override { Info(); }
@@ -713,7 +714,28 @@ private:
     if (ArpZone(GetDelegate()) == 0) SetInfo("DELAY  \xC2\xB7  in poly the ESP knobs already set the delay");
     else SetInfo(DelayLatch() ? "DELAY  \xC2\xB7  on: the ESP knobs set the delay (click for the arp)" : "DELAY  \xC2\xB7  click: the ESP knobs set the delay while the arp runs (as holding SWITCH)");
   }
-  float mCX, mCY; int mShown = -1;
+  float mCX, mCY; int mShown = -1; PatchHost* mHost;
+};
+
+// RETRIG (VCO multitrig): every new key starts the envelopes again - in mono also legato keys (the MS-20's
+// multiple trigger), in poly EG 2 on every key. In the PORTAMENTO box: it shapes how legato playing sounds.
+class RetrigButton : public IControl
+{
+public:
+  RetrigButton(float cx, float cy) : IControl(IRECT(cx - 4.6f * S, cy - 1.6f * S, cx + 4.6f * S, cy + 1.6f * S), PARAM_INDEX_MS20__Voices_multitrig), mCX(cx), mCY(cy) {}
+  void Draw(IGraphics& g) override
+  {
+    const bool on = GetValue() > 0.5;
+    if (on) g.FillRect(kInk, mRECT);
+    g.DrawRect(kInk, mRECT, nullptr, 0.3f * S);
+    Txt(g, mCX, mCY + 0.5f * S, "RETRIG", 1.45f, on ? kPaper : kInk);
+  }
+  void OnMouseDown(float, float, const IMouseMod&) override { SetValue(GetValue() > 0.5 ? 0.0 : 1.0); SetDirty(true); Info(); }
+  void OnMouseOver(float, float, const IMouseMod&) override { Info(); }
+private:
+  void Info() { SetInfo(GetValue() > 0.5 ? "RETRIG  \xC2\xB7  on: every new key starts the envelopes again (also legato in mono)"
+                                         : "RETRIG  \xC2\xB7  off: legato keys only change the pitch (click: every key starts the envelopes)"); }
+  float mCX, mCY;
 };
 
 // SYNC switch (the plugin only): the arp steps on the DAW's beat and the RATE knob picks the division
@@ -965,6 +987,7 @@ inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller,
   }
   g->AttachControl(new PRotary(X(COLX[0]), Yd(RC), PARAM_INDEX_MS20__Voices_vco1oct, "SCALE", "VCO 1 SCALE", {"32'", "16'", "8'", "4'"}));
   knob(0, RD, PARAM_INDEX_MS20__Voices_portamento, "TIME", "PORTAMENTO  \xC2\xB7  Multibend glide in poly");
+  g->AttachControl(new RetrigButton(X(COLX[0]), Yd(81.2f)));   // under TIME: mono legato is portamento and retrigger
   g->AttachControl(new PRotary(X(COLX[1]), Yd(RA), PARAM_INDEX_MS20__Voices_vco2wave, "WAVEFORM", "VCO 2 WAVEFORM", {"w:tri", "w:saw", "w:sq", "s:RING"}));
   knob(1, RB, PARAM_INDEX_MS20__Voices_vco2semi, "PITCH", "VCO 2 PITCH");
   g->AttachControl(new PRotary(X(COLX[1]), Yd(RC), PARAM_INDEX_MS20__Voices_vco2oct, "SCALE", "VCO 2 SCALE", {"16'", "8'", "4'", "2'"}));
@@ -1005,7 +1028,7 @@ inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller,
   g->AttachControl(new EspKnob(RX(640), ey, "HIGH CUT FREQ", {PARAM_INDEX_BBD__Delay_feedback, "FEEDBACK"}, {PARAM_INDEX_MS20__Voices_arpoct, "OCTAVES"}, none));
   g->AttachControl(new EspKnob(RX(820), ey, "CV ADJUST", {PARAM_INDEX_BBD__Delay_wowflutter, "WOW / FLUTTER"}, {PARAM_INDEX_MS20__Voices_arporder, "ORDER"}, none));
   g->AttachControl(new EspKnob(RX(1000), ey, "THRESHOLD LEVEL", {PARAM_INDEX_BBD__Delay_drywet, "DELAY AMOUNT"}, none, none));   // BBD tone: held in the middle
-  g->AttachControl(new DelayLatchButton(RX(1160), ey));
+  g->AttachControl(new DelayLatchButton(RX(1160), ey, ph));
   if (ph && ph->ArpSync() >= 0) g->AttachControl(new SyncButton(RX(1340), ey, ph));   // only where there is a DAW clock
   // status bar
   StatusBar* bar = new StatusBar(IRECT(0, Yd(PH) + 10.f, (float)kW, Yd(PH) + 10.f + BARH), ph, controller, diag);

@@ -30,5 +30,6 @@ struct PatchHost {
   virtual void CopyLog() {}                                      // the bug log: to the clipboard (and a file)
   virtual void MailLog() {}                                      // a new email to the support address, the setup filled in
   virtual void PatchCable(int outJack, int inJack, bool on) {}   // the MS-20ic's own cable message (jack numbers as it sends them)
+  virtual void SetEspLatch(bool on) {}                           // the DELAY latch: the iC's ESP knobs follow it (engine CC 105)
 };
 }

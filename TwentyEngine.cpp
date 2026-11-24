@@ -440,7 +440,7 @@ bool TE_MidiBlock(int points, int distinctCCs, int maxPerCC, bool sameOffsets)
 }
 
 // ---- the data folder (every copy and project): Mac ~/Library/Application Support/Twenty Engine/,
-//      Windows %APPDATA%\Twenty Engine\
+//      Windows %APPDATA%\Twenty Engine (folder)
 [[maybe_unused]] static void DataDirPath(char* d, size_t n)
 {
 #ifdef _WIN32

@@ -72,7 +72,7 @@ public:
   // ---- the panel window (ui/StudioUI.h); main thread
   int Controller() const { return mController.load(); }      // 0 none, 1 MS-20ic, 2 Ksoloti, 3 Teensy
   // mono (KBD CV -> VCO 1+2 CV IN) as the engine has it (also a recalled sound's or preset's own cable); tap tempo
-  bool CableFlag(int which) const override { return (which & 1) ? mCableFlag[1].load() : mHost->getParamRaw(PARAM_INDEX_Patch__State_mono) != 0; }
+  bool CableFlag(int which) const override { return (which & 1) ? mCableFlag[1].load() : mHost->getParamRaw(ms20::PARAM_INDEX_Patch__State_mono) != 0; }
   void SetCableFlag(int which, bool on) override;
   int NoisePick(int j) const override { return (j >= 0 && j < 35) ? mNoise[j] : 0; }
   void SetNoisePick(int j, int pick) override { if (j >= 0 && j < 35) mNoise[j] = (uint8_t)pick; }
@@ -85,6 +85,7 @@ public:
   int ModeSetting() const override;
   void SetModeSetting(int m) override;
   bool IcMode() const override;
+  void SetEspLatch(bool on) override { UiMidi(0xB0, 105, on ? 127 : 0); }
   void PatchCable(int outJack, int inJack, bool on) override
   { if (on) UiCable(4, outJack, inJack); else { UiCable(5, outJack, inJack); UiCable(5, inJack, inJack); UiCable(5, outJack, outJack); } }
 #endif

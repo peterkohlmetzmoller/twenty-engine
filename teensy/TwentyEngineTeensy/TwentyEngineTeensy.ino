@@ -21,12 +21,34 @@ static const float DRIFT = 0.5f;   // analog drift 0.0 .. 1.0: 0 = as on the Kso
 static const float HEADPHONE_VOLUME = 0.8f;   // 0.0 .. 1.0
 static const float KEY_CLICK = 3.0f;   // key click on every note: 0 = off, 3 = standard, 64 = max (same scale as the plugin's Key Click)
 
-// Extra switches on free Teensy pins: wire each switch from its pin to GND. -1 = not used.
+// Extra buttons on free Teensy pins: wire each button from its pin to GND (momentary buttons).
 // Free with the audio board: 0-5, 9, 14, 16, 17, 22, 24-41 (the audio board uses 7, 8, 18-21, 23).
-static const int SWITCH_NEXT  = -1;    // next sound (memory keys 1..36)
+// Give each button a function in BUTTONS below (remove the // in front of a line to use it). Any function on any pin:
+//   NEXT       next sound (memory keys 1..36)
+//   PREV       previous sound
+//   PANEL      back to the knobs (as switch + top C)
+//   MONO       mono on / off (as the cable KBD CV OUT -> VCO1+2 CV IN)
+//   ESP_LAYER  the ESP knobs on the delay layer on / off (as holding the switch, but it stays)
+//   TAP        tap tempo: tap the delay time (arp on: the arp tempo, taps = quarter notes)
+//   RETRIG     retrigger on / off: every new key starts the envelopes again (also legato in mono)
+//   FUNCTION   the function switch: hold it + tap a key = recall a sound, + hold a key 2 s = save,
+//              hold it = ESP delay layer, tap it = tap tempo (with the cable SWITCH -> ESP SIGNAL IN).
+//              With a FUNCTION button the iC's own momentary switch is only the patch bay SWITCH.
+enum ButtonFunction { NEXT, PREV, PANEL, MONO, ESP_LAYER, TAP, RETRIG, FUNCTION };
+struct Button { int pin; ButtonFunction fn; };
+static const Button BUTTONS[] = {
+  // { 2, FUNCTION },
+  // { 3, NEXT },
+  // { 4, PREV },
+  // { 5, PANEL },
+  // { 9, ESP_LAYER },
+  { -1, NEXT }                         // (keep this last line: it is not a button)
+};
+// The four settings from 1.0.x still work (-1 = not used):
+static const int SWITCH_NEXT  = -1;    // next sound
 static const int SWITCH_PREV  = -1;    // previous sound
-static const int SWITCH_PANEL = -1;    // back to the knobs (as switch + top C)
-static const int SWITCH_MONO  = -1;    // mono on / off (as the cable KBD CV OUT -> VCO1+2 CV IN)
+static const int SWITCH_PANEL = -1;    // back to the knobs
+static const int SWITCH_MONO  = -1;    // mono on / off
 // ============================================
 
 #include <Audio.h>
@@ -164,57 +186,91 @@ bool saveMemories() {
 
 // ---------------- MIDI thru ----------------
 bool memArmed = false;                           // momentary switch held = keys pick memory slots
+static bool espLatch = false, hasFunction = false; // extra buttons: ESP layer latch; a FUNCTION button is wired
 
 void fromIC(uint8_t type, uint8_t ch, uint8_t d1, uint8_t d2) {
   uint8_t status = type | ((ch - 1) & 0x0F);
   queueMidi(status, d1, d2);                     // to the engine
 
-  if (type == 0xD0) memArmed = (d1 > 0) && !core->o_Patch_Memory.tapmode;
+  if (type == 0xD0 && !hasFunction) memArmed = (d1 > 0) && !core->o_Patch_Memory.tapmode;   // with a FUNCTION button, that one arms the keys
   // to the computer: memory keys become CC 102 (down) / 103 (up) so a DAW doesn't play them
   if (memArmed && type == 0x90 && d2 > 0) usbMIDI.sendControlChange(102, d1, ch);
   else if (memArmed && (type == 0x80 || type == 0x90)) usbMIDI.sendControlChange(103, d1, ch);
   else usbMIDI.send(type, d1, d2, ch, 0);
 }
 
-// ---------------- extra switches (SETTINGS at the top) ----------------
-// Each switch sends the engine the same MIDI the iC would, so it works exactly like the panel.
-static const int NSW = 4;
-static const int swPin[NSW] = {SWITCH_NEXT, SWITCH_PREV, SWITCH_PANEL, SWITCH_MONO};
-static bool swDown[NSW];
-static uint32_t swTime[NSW];
+// ---------------- extra buttons (SETTINGS at the top) ----------------
+// Each button sends the engine MIDI, as the iC's panel would (the same engine as the plugin and the Ksoloti):
+// CC 104 = the function switch, CC 105 = the ESP layer latch, CC 106 = a tap; retrigger is a parameter.
+static const int NSW_MAX = 24;
+static int nsw = 0;
+static int swPin[NSW_MAX];
+static ButtonFunction swFn[NSW_MAX];
+static bool swDown[NSW_MAX];
+static uint32_t swTime[NSW_MAX];
+
+
+static void swMsg(bool down) {                   // the switch the memory listens to: the FUNCTION button's (CC 104) or the iC's
+  if (hasFunction) queueMidi(0xB0, 104, down ? 127 : 0); else queueMidi(0xD0, down ? 127 : 0, 0);
+}
 
 static void recallSound(int n) {                 // as: hold the momentary switch, tap memory key n (36 = top C = panel)
-  queueMidi(0xD0, 127, 0);
+  swMsg(true);
   delay(5);                                      // the keyboard is silent once the engine has seen the switch (next audio block)
   queueMidi(0x90, 48 + n, 100);
   queueMidi(0x80, 48 + n, 0);                    // short press: recall on release
   delay(5);
-  queueMidi(0xD0, 0, 0);
+  swMsg(false);
 }
 
-static void switchPressed(int i) {
+static void buttonChanged(ButtonFunction fn, bool down) {
+  if (fn == FUNCTION) {                          // held: as the momentary switch (memory keys, delay layer, taps)
+    queueMidi(0xB0, 104, down ? 127 : 0);
+    memArmed = down && !core->o_Patch_Memory.tapmode;
+    return;
+  }
+  if (!down) return;                             // the others act on the press
   int cur = core->o_Patch_Memory.inmem;          // sound in use: 0..35, -1 = the knobs
-  if (i == 0) recallSound(cur < 0 ? 0 : (cur + 1) % 36);
-  else if (i == 1) recallSound(cur < 0 ? 35 : (cur + 35) % 36);
-  else if (i == 2) recallSound(36);
-  else if (i == 3) {                             // patch cable event: CC 99 = 4 connect / 5 disconnect, CC 98 / 6 = the jacks
-    queueMidi(0xB0, 99, core->o_PatchBay.monof ? 5 : 4);
-    queueMidi(0xB0, 98, 31);                     // KBD CV OUT
-    queueMidi(0xB0, 6, 25);                      // VCO1+2 CV IN
+  switch (fn) {
+    case NEXT:  recallSound(cur < 0 ? 0 : (cur + 1) % 36); break;
+    case PREV:  recallSound(cur < 0 ? 35 : (cur + 35) % 36); break;
+    case PANEL: recallSound(36); break;
+    case MONO:                                   // patch cable event: CC 99 = 4 connect / 5 disconnect, CC 98 / 6 = the jacks
+      queueMidi(0xB0, 99, core->o_PatchBay.monof ? 5 : 4);
+      queueMidi(0xB0, 98, 31);                   // KBD CV OUT
+      queueMidi(0xB0, 6, 25);                    // VCO1+2 CV IN
+      break;
+    case ESP_LAYER: espLatch = !espLatch; queueMidi(0xB0, 105, espLatch ? 127 : 0); break;
+    case TAP: queueMidi(0xB0, 106, 127); break;
+    case RETRIG: {
+      volatile int32_t &mt = core->root.PExch[PARAM_INDEX_MS20__Voices_multitrig].value;
+      mt = mt ? 0 : 1;
+      core->o_Patch_Memory.flash(mt ? 8 : 4, 1);  // TRIG LED blinks once: on, PEAK LED: off
+      break;
+    }
+    default: break;
   }
 }
 
+static void addButton(int pin, ButtonFunction fn) {
+  if (pin < 0 || nsw >= NSW_MAX) return;
+  swPin[nsw] = pin; swFn[nsw] = fn; swDown[nsw] = false; swTime[nsw] = 0; nsw++;
+  if (fn == FUNCTION) hasFunction = true;
+}
+
 static void setupSwitches() {
-  for (int i = 0; i < NSW; i++) if (swPin[i] >= 0) pinMode(swPin[i], INPUT_PULLUP);
+  for (const Button &b : BUTTONS) addButton(b.pin, b.fn);
+  addButton(SWITCH_NEXT, NEXT); addButton(SWITCH_PREV, PREV); addButton(SWITCH_PANEL, PANEL); addButton(SWITCH_MONO, MONO);
+  for (int i = 0; i < nsw; i++) pinMode(swPin[i], INPUT_PULLUP);
+  if (hasFunction) queueMidi(0xB0, 104, 0);      // a function switch from the start: the iC's switch is the patch bay SWITCH only
 }
 
 static void readSwitches() {
-  for (int i = 0; i < NSW; i++) {
-    if (swPin[i] < 0) continue;
+  for (int i = 0; i < nsw; i++) {
     bool d = digitalRead(swPin[i]) == LOW;
     if (d != swDown[i] && millis() - swTime[i] > 30) {   // 30 ms debounce
       swDown[i] = d; swTime[i] = millis();
-      if (d) switchPressed(i);
+      buttonChanged(swFn[i], d);
     }
   }
 }

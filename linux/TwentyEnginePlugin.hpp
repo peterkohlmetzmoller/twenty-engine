@@ -39,6 +39,7 @@ public:
   void SetNoisePick(int j, int pick) override { if (j >= 0 && j < 35) mNoise[j] = (uint8_t)pick; }
   void SwitchDown(bool down) override { UiMidi(0xD0, down ? 127 : 0, 0); }
   int Leds() const override { return mUiLeds.load(); }
+  void SetEspLatch(bool on) override { UiMidi(0xB0, 105, on ? 127 : 0); }
   void PatchCable(int outJack, int inJack, bool on) override
   { if (on) UiCable(4, outJack, inJack); else { UiCable(5, outJack, inJack); UiCable(5, inJack, inJack); UiCable(5, outJack, outJack); } }
   // the bug log: what happened lately with the setup; LOG copies it (the window puts it on the clipboard) and saves

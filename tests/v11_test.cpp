@@ -123,6 +123,79 @@ int main() {
     CHECK(c->o_PatchBay.selvin == 0 && c->o_PatchBay.src[5] == 0, "VCA IN unplugged: nothing in the VCA");
     delete c; }
 
+  printf("Retrigger in mono\n");
+  { int edges[2];
+    for (int mt = 0; mt < 2; mt++) { EngineCore *c = fresh();
+      cable(c, 4, 31, 25); run(c, 0.01);                                   // mono
+      c->root.PExch[PARAM_INDEX_MS20__Voices_multitrig].value = mt;
+      int e = 0, pg = 0; auto tick = [&](int n) { for (int i = 0; i < n; i++) { c->process(); int g = c->o_MS20_Voices.outlet_polygate ? 1 : 0; if (g && !pg) e++; pg = g; } };
+      c->midi(0x90, 57, 100); tick(1500); c->midi(0x90, 60, 100); tick(1500); c->midi(0x90, 62, 100); tick(1500);   // legato: three keys held
+      edges[mt] = e; delete c; }
+    printf("    keyboard gate starts: %d with retrigger off, %d with retrigger on (three legato keys)\n", edges[0], edges[1]);
+    CHECK(edges[0] == 1, "retrigger off: legato keys only change the pitch (one attack)");
+    CHECK(edges[1] == 3, "retrigger on: every new key attacks again (EG 1 and EG 2 see the gate start)"); }
+
+  printf("ESP knobs: pickup after a layer change\n");
+  { EngineCore *c = fresh();
+    c->root.PExch[PARAM_INDEX_MS20__Voices_arpmode].value = 30 << 21; run(c, 0.01);   // arp on: CC 88 = arp rate
+    const int T = PARAM_INDEX_BBD__Delay_time;
+    c->root.PExch[T].value = 63 << 20;                                       // delay time where the knob is not
+    c->midi(0xB0, 88, 100); run(c, 0.01);
+    CHECK(c->root.PExch[PARAM_INDEX_MS20__Voices_arprate].value == (100 << 20), "arp layer: the knob sets the arp rate");
+    c->midi(0xD0, 127, 0); run(c, 0.01);                                     // switch held: CC 88 = delay time
+    c->midi(0xB0, 88, 101); run(c, 0.01);
+    CHECK(c->root.PExch[T].value == (63 << 20), "delay layer: the knob does not jump the delay time to the arp rate's position");
+    c->midi(0xB0, 88, 70); run(c, 0.01);
+    CHECK(c->root.PExch[T].value == (63 << 20), "moving towards it: still not");
+    c->midi(0xB0, 88, 60); run(c, 0.01);
+    CHECK(c->root.PExch[T].value == (60 << 20), "passed the delay time's value: the knob has it");
+    c->midi(0xB0, 88, 40); run(c, 0.01);
+    CHECK(c->root.PExch[T].value == (40 << 20), "and follows from then on");
+    c->midi(0xD0, 0, 0); run(c, 0.01);                                       // released: CC 88 = arp rate again (was 100)
+    c->midi(0xB0, 88, 41); run(c, 0.01);
+    CHECK(c->root.PExch[PARAM_INDEX_MS20__Voices_arprate].value == (100 << 20), "back on the arp layer: the arp rate waits for the knob too");
+    cable(c, 6, 0, 0); run(c, 0.01); cable(c, 6, 0, 127); run(c, 0.01);      // volume off and on: the panel is read
+    c->midi(0xB0, 88, 42); run(c, 0.01);
+    CHECK(c->root.PExch[PARAM_INDEX_MS20__Voices_arprate].value == (42 << 20), "power on: every knob is where it is (no pickup)");
+    delete c; }
+
+  printf("ESP layer latch (CC 105) and the function switch (CC 104)\n");
+  { EngineCore *c = fresh();
+    c->root.PExch[PARAM_INDEX_MS20__Voices_arpmode].value = 30 << 21; run(c, 0.01);
+    CHECK(c->o_ESP_Layer.outlet_layerb == 0, "arp on: the ESP knobs set the arp");
+    c->midi(0xB0, 105, 127); run(c, 0.01);
+    CHECK(c->o_ESP_Layer.outlet_layerb == 1, "latch on: the delay layer, no switch held");
+    c->midi(0xB0, 105, 0); run(c, 0.01);
+    CHECK(c->o_ESP_Layer.outlet_layerb == 0, "latch off: the arp again");
+    c->midi(0xB0, 104, 127); run(c, 0.01);
+    CHECK(c->o_Patch_Memory.armed && c->o_ESP_Layer.outlet_layerb == 1, "function switch held: memory keys armed, delay layer");
+    c->midi(0xB0, 104, 0); run(c, 0.01);
+    c->midi(0xD0, 127, 0); run(c, 0.01);
+    CHECK(!c->o_Patch_Memory.armed && c->o_ESP_Layer.outlet_layerb == 0, "with a function switch, the iC's switch no longer arms memory or holds the layer");
+    CHECK(c->o_MS20_Voices.outlet_button == 1, "... it is the patch bay SWITCH");
+    c->midi(0xD0, 0, 0); run(c, 0.01);
+    delete c; }
+
+  printf("Tap tempo button (CC 106)\n");
+  { EngineCore *c = fresh(); const int T = PARAM_INDEX_BBD__Delay_time; const int32_t before = c->root.PExch[T].value;
+    for (int k = 0; k < 4; k++) { c->midi(0xB0, 106, 127); run(c, 0.5); }      // four taps, 0.5 s apart
+    const double ms = (1400.0 + (0.45 * (c->root.PExch[T].value / 134217728.0) + 0.55 * pow(c->root.PExch[T].value / 134217728.0, 2)) * 126000.0) / 48.0;
+    printf("    delay time after four taps 0.5 s apart: %.0f ms\n", ms);
+    CHECK(c->root.PExch[T].value != before && fabs(ms - 500.0) < 15.0, "the taps set the delay time (no tap cable needed)");
+    delete c; }
+
+  printf("TRIG LED: the delay time\n");
+  { int fl[2], dt = 0;
+    for (int k = 0; k < 2; k++) { EngineCore *c = fresh();
+      c->root.PExch[PARAM_INDEX_BBD__Delay_drywet].value = k ? (40 << 21) : 0;
+      c->root.PExch[PARAM_INDEX_BBD__Delay_time].value = 10 << 21;
+      run(c, 0.2); dt = c->o_BBD_Delay.outlet_dtick;
+      int f = 0, pw = 0; for (int i = 0; i < 6000; i++) { c->process(); int w = c->o_MS20iC_LEDs.want[3]; if (w && !pw) f++; pw = w; }
+      fl[k] = f; delete c; }
+    printf("    delay %d ticks (%.0f ms): %d flashes in 2 s with DELAY AMOUNT up, %d with it down\n", dt, dt / 3.0, fl[1], fl[0]);
+    CHECK(fl[0] == 0, "DELAY AMOUNT down: the TRIG LED stays dark");
+    CHECK(dt > 0 && fl[1] >= 6000 / dt - 1 && fl[1] <= 6000 / dt + 1, "DELAY AMOUNT up: one flash per repeat"); }
+
   printf(fails ? "V11 CHECKS FAILED (%d)\n" : "ALL V11 CHECKS PASSED (%d failed)\n", fails);
   return fails ? 1 : 0;
 }
