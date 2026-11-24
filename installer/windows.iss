@@ -9,7 +9,7 @@ DefaultDirName={commoncf64}\VST3
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 Uninstallable=yes
-UninstallDisplayName=Twenty Engine (VST3)
+UninstallDisplayName=Twenty Engine (VST3: Twenty Engine UI and Twenty Engine MS-20ic)
 LicenseFile=resources\license.txt
 InfoBeforeFile=resources\welcome_win.txt
 OutputDir=..
@@ -27,13 +27,15 @@ Type: filesandordirs; Name: "{commoncf64}\VST3\TwentyEngineStudio.vst3"
 
 [Files]
 Source: "..\out\TwentyEngine.vst3\*"; DestDir: "{commoncf64}\VST3\TwentyEngine.vst3"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\out\TwentyEngineUI.vst3\*"; DestDir: "{commoncf64}\VST3\TwentyEngineUI.vst3"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{commoncf64}\VST3\TwentyEngine.vst3"
+Type: filesandordirs; Name: "{commoncf64}\VST3\TwentyEngineUI.vst3"
 Type: filesandordirs; Name: "{commoncf64}\VST3\TwentyEngineAutomation.vst3"
 
 [Run]
 Filename: "https://www.tobias-erichsen.de/software/loopmidi.html"; Description: "Open the loopMIDI download page (free; keeps each take's sound - add a port named Twenty Engine Panel)"; Flags: postinstall shellexec skipifsilent unchecked nowait
 
 [Messages]
-FinishedLabel=Twenty Engine is installed. Rescan plugins in your music software (or restart it), then add it to an instrument track with the MS-20ic as its MIDI input.
+FinishedLabel=Twenty Engine is installed: Twenty Engine UI (with the panel window, with or without an MS-20ic) and Twenty Engine MS-20ic (the classic plugin). Rescan plugins in your music software (or restart it).
