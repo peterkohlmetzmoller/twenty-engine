@@ -82,7 +82,7 @@ public:
   int mNrpnMsb = -1, mNrpnLsb = -1, mSwRaw = -1;   // the switch: "power on" seen, its report (ProcessMidiMsg)
   int64_t mPowerOnClk = -1, mSwRawClk = -1;
 #endif
-#if IPLUG_EDITOR && defined(_WIN32)
+#if IPLUG_EDITOR && defined(_WIN32) && defined(NO_IGRAPHICS)
   // Windows: the window is drawn with plain GDI instead of OpenGL (some graphics drivers, e.g. in virtual
   // machines, crashed the OpenGL window)
   void* OpenWindow(void* pParent) override;

@@ -6,6 +6,12 @@ if(NOT DEFINED IPLUG2_DIR)
   set(IPLUG2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/iPlug2" CACHE PATH "iPlug2 root directory")
 endif()
 
+# Twenty Engine UI on Windows: the panel drawn by Skia on the CPU (no OpenGL, which crashed with some drivers and
+# in virtual machines). Needs iPlug2's prebuilt Skia (Dependencies/Build, see the Windows build workflow).
+if(WIN32 AND PROJECT_NAME STREQUAL "TwentyEngineUI")
+  set(IGRAPHICS_BACKEND "SKIA" CACHE STRING "IGraphics drawing backend" FORCE)
+  set(IGRAPHICS_RENDERER "CPU" CACHE STRING "IGraphics renderer" FORCE)
+endif()
 include(${IPLUG2_DIR}/iPlug2.cmake)
 find_package(iPlug2 REQUIRED)
 
@@ -25,7 +31,7 @@ endif()
 # Windows: no IGraphics (its OpenGL window crashed with some drivers, e.g. in virtual machines); the plugin
 # draws the same status window itself with GDI (TwentyEngine.cpp).
 set(TWENTY_DEFS "")
-if(WIN32)
+if(WIN32 AND NOT PROJECT_NAME STREQUAL "TwentyEngineUI")
   set(TWENTY_UI UI NONE)
   list(APPEND TWENTY_DEFS NO_IGRAPHICS)
 else()

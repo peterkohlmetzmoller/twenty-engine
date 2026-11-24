@@ -400,7 +400,7 @@ static void SaveSwitch()   // main thread (OnIdle, the window)
 }
 #endif
 
-#if IPLUG_EDITOR && defined(_WIN32)
+#if IPLUG_EDITOR && defined(_WIN32) && defined(NO_IGRAPHICS)
 // ---- Windows: the status window with GDI (same content as StatusControl, no OpenGL) ----
 #if TWENTY_STUDIO
 static const char* kStatusClass = "TwentyEngineAutomationStatus";
