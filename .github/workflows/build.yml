@@ -108,6 +108,7 @@ jobs:
           killall -9 AudioComponentRegistrar || true
           sleep 2
           auval -v aumu Tw2U Pkmo
+          echo "console user: $(stat -f%Su /dev/console)"; ls ~/Library/Audio/Presets/Peter\ Kohlmetz\ Moller/Twenty\ Engine\ UI/ 2>/dev/null | head -3 || true
           UVST3=$(find build-ui -name "TwentyEngineUI.vst3" -type d | head -1)
           codesign --force --deep -s - "$UVST3"
           cp -R "$UCOMP" "$UVST3" out-ui/
@@ -153,6 +154,7 @@ jobs:
         run: |
           VER=$(grep -E '#define PLUG_VERSION_STR' config.h | sed -E 's/.*"(.*)".*/\1/')
           mkdir -p pkgroot/au pkgroot/vst3
+          python3 tools/make_aupresets.py TwentyEngine.cpp config.h installer/scripts/presets
           cp -R out/TwentyEngine.component out-ui/TwentyEngineUI.component pkgroot/au/
           cp -R out/TwentyEngine.vst3 out-ui/TwentyEngineUI.vst3 pkgroot/vst3/
           pkgbuild --root pkgroot/au --identifier com.peterkohlmetzmoller.twentyengine.au --version "$VER" \

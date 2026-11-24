@@ -11,6 +11,14 @@ if [ -n "$USER_NAME" ] && [ "$USER_NAME" != "root" ]; then
     rm -rf "$USER_HOME/Library/Audio/Plug-Ins/VST3/TwentyEngineAutomation.vst3"
     rm -rf "$USER_HOME/Library/Audio/Plug-Ins/Components/TwentyEngineStudio.component"   # test builds, before the rename
     rm -rf "$USER_HOME/Library/Audio/Plug-Ins/VST3/TwentyEngineStudio.vst3"
+    # Twenty Engine UI's sounds as preset files, for hosts that only list files (Ableton Live, Push).
+    # Each one recalls a memory slot; the user's own preset files there are left alone.
+    SRC="$(dirname "$0")/presets"
+    DST="$USER_HOME/Library/Audio/Presets/Peter Kohlmetz Moller/Twenty Engine UI"
+    if [ -d "$SRC" ]; then
+      mkdir -p "$DST" && cp -f "$SRC"/*.aupreset "$DST"/ 2>/dev/null
+      chown -R "$USER_NAME" "$USER_HOME/Library/Audio/Presets/Peter Kohlmetz Moller" 2>/dev/null
+    fi
   fi
 fi
 rm -rf "/Library/Audio/Plug-Ins/Components/TwentyEngineStudio.component" "/Library/Audio/Plug-Ins/VST3/TwentyEngineStudio.vst3"
