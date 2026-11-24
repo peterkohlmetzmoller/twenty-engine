@@ -21,7 +21,7 @@ env:
 jobs:
   # ---------------- Mac: AU + VST3, universal (Apple Silicon + Intel) ----------------
   build-mac:
-    if: ${{ !inputs.artifacts_run }}
+    if: ${{ !inputs.artifacts_run && github.ref_name != 'nrpn' }}   # nrpn test: Windows only
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +33,8 @@ jobs:
           # VST3 delivers MIDI CC as 0..1; iPlug2 truncates value*127 (29 can become 28): round instead
           perl -pi -e 's/mData2 = \(int\) \(value \* 127\.0\);/mData2 = (int) (value * 127.0 + 0.5);/' IPlug/IPlugMidi.h
           grep -q 'value \* 127.0 + 0.5' IPlug/IPlugMidi.h || { echo '::error::IPlugMidi.h rounding patch did not apply'; exit 1; }
+          # VST3: all MIDI points of a block, in time order (the MS-20ic's power-on report, its three-part messages)
+          python3 ../tools/patch_iplug2.py IPlug/VST3/IPlugVST3_ProcessorBase.cpp 2>/dev/null || python ../tools/patch_iplug2.py IPlug/VST3/IPlugVST3_ProcessorBase.cpp
           cd Dependencies/IPlug && rm -rf VST3_SDK
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake
@@ -302,6 +304,8 @@ jobs:
           # VST3 delivers MIDI CC as 0..1; iPlug2 truncates value*127 (29 can become 28): round instead
           perl -pi -e 's/mData2 = \(int\) \(value \* 127\.0\);/mData2 = (int) (value * 127.0 + 0.5);/' IPlug/IPlugMidi.h
           grep -q 'value \* 127.0 + 0.5' IPlug/IPlugMidi.h || { echo '::error::IPlugMidi.h rounding patch did not apply'; exit 1; }
+          # VST3: all MIDI points of a block, in time order (the MS-20ic's power-on report, its three-part messages)
+          python3 ../tools/patch_iplug2.py IPlug/VST3/IPlugVST3_ProcessorBase.cpp 2>/dev/null || python ../tools/patch_iplug2.py IPlug/VST3/IPlugVST3_ProcessorBase.cpp
           cd Dependencies/IPlug && rm -rf VST3_SDK
           git clone -q https://github.com/steinbergmedia/vst3sdk.git --branch $VST3_TAG --depth=1 VST3_SDK
           cd VST3_SDK && git submodule update -q --init pluginterfaces base public.sdk cmake vstgui4
@@ -406,6 +410,15 @@ jobs:
           gh release view $V -R ${{ github.repository }} > /dev/null 2>&1 || \
             gh release create $V -R ${{ github.repository }} --draft --title "Twenty Engine $V" --notes "Release build (draft: only you can see it)." --target main
           gh release upload $V TwentyEngine-Setup.exe --clobber -R ${{ github.repository }}
+      - name: Power-on test build on its own draft release
+        if: github.ref_name == 'nrpn'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view nrpn-test -R ${{ github.repository }} > /dev/null 2>&1 || \
+            gh release create nrpn-test -R ${{ github.repository }} --draft --title "Power-on test (Windows)" --notes "Test build (draft)." --target nrpn || true
+          gh release upload nrpn-test TwentyEngine-Setup.exe --clobber -R ${{ github.repository }}
 
   # ---------------- the plugins in other hosts: pluginval and REAPER (Windows) ----------------
   daw-test-windows:
