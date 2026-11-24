@@ -47,10 +47,11 @@ def draw(c):
     c.setFont('Cond', 22); c.setFillColor(INK); c.drawString(M, H - M - 8 * mm, 'Windows: keep each take\'s sound')
     c.setStrokeColor(RED); c.setLineWidth(0.8); c.line(M, H - M - 10.5 * mm, M + 120 * mm, H - M - 10.5 * mm)
     c.setFillColor(RED); c.rect(M, H - M - 12 * mm, 3 * mm, 3 * mm, fill=1, stroke=0)
-    c.setFont('CondB', 10); c.setFillColor(GREY); c.drawRightString(W - M, H - M - 8 * mm, 'TWENTY ENGINE  ·  1.0.3')
+    c.setFont('CondB', 10); c.setFillColor(GREY); c.drawRightString(W - M, H - M - 8 * mm, 'TWENTY ENGINE  ·  1.1')
     intro = Paragraph('On a Mac the plugin keeps every take\'s sound by itself. Windows 10 does not let a plugin make a MIDI port of '
                       'its own, so it uses one made with the free <b>loopMIDI</b>. Setup takes two minutes and is done once. '
-                      'Without it, Twenty Engine plays the panel\'s sound like any synth.', body)
+                      'Without it, Twenty Engine plays the panel\'s sound like any synth. This is for <b>Twenty Engine MS-20ic</b>, '
+                      'and for <b>Twenty Engine UI</b> in MS-20ic mode.', body)
     f = Frame(M, H - M - 36 * mm, W - 2 * M, 22 * mm, 0, 0, 0, 0, showBoundary=0); f.addFromList([intro], c)
     # five steps in a row of cards
     gap = 5 * mm; cw = (W - 2 * M - 4 * gap) / 5; top = H - M - 42 * mm; ch = 90 * mm

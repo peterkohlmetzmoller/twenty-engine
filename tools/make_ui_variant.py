@@ -73,4 +73,25 @@ edit_all('resources/TwentyEngineUI-macOS-MainMenu.xib', 'title="Hide TwentyEngin
 edit_all('resources/TwentyEngineUI-macOS-MainMenu.xib', 'title="Quit TwentyEngineUI"', 'title="Quit Twenty Engine"')
 edit_all('resources/TwentyEngineUI-macOS-MainMenu.xib', 'title="TwentyEngineUI"', 'title="Twenty Engine"')
 edit_all('resources/main.rc', 'CAPTION "TwentyEngineUI"', 'CAPTION "Twenty Engine"')
+# the app's menus (Windows: main.rc, Mac: main.rc_mac_menu): no developer menu (live edit, control bounds, FPS,
+# screenshot), no "Read Manual" (it only said "See the manual")
+for rc in ('resources/main.rc', 'resources/main.rc_mac_menu'):
+  edit_all(rc, '''    POPUP "&Debug"
+    BEGIN
+        MENUITEM "&Live Edit Mode\\tCtrl+E",     ID_LIVE_EDIT
+        MENUITEM "&Show Control Bounds\\tCtrl+B", ID_SHOW_BOUNDS
+        MENUITEM "&Show Drawn Area\\tCtrl+D",    ID_SHOW_DRAWN
+        MENUITEM "&Show FPS\\tCtrl+F",           ID_SHOW_FPS
+        MENUITEM SEPARATOR
+        MENUITEM "&Save Screenshot\\tCtrl+Shift+S", ID_SCREENSHOT
+    END
+''', '')
+  edit_all(rc, '''        MENUITEM "&Read Manual",                ID_HELP
+''', '')
+edit_all('resources/main.rc', '''    "B",            ID_SHOW_BOUNDS,         VIRTKEY, CONTROL, NOINVERT
+    "D",            ID_SHOW_DRAWN,          VIRTKEY, CONTROL, NOINVERT
+    "F",            ID_SHOW_FPS,            VIRTKEY, CONTROL, NOINVERT
+    "E",            ID_LIVE_EDIT,           VIRTKEY, CONTROL, NOINVERT
+    "S",            ID_SCREENSHOT,          VIRTKEY, CONTROL, SHIFT, NOINVERT
+''', '')   # and their keyboard shortcuts (Windows)
 print('Twenty Engine UI source in', out)

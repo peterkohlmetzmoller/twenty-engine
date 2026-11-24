@@ -1,4 +1,4 @@
-# teensy_guide.py - Teensy edition: key click and extra switches (same look as the manual)
+# teensy_guide.py - Teensy edition: key click and buttons (same look as the manual)
 # python3 manual/teensy_guide.py out.pdf
 import sys
 from reportlab.pdfbase import pdfmetrics
@@ -18,7 +18,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import (BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer, Table, TableStyle,
                                 Preformatted, KeepTogether)
 
-OUT = sys.argv[1] if len(sys.argv) > 1 else 'TwentyEngine_Teensy_KeyClick_Switches.pdf'
+OUT = sys.argv[1] if len(sys.argv) > 1 else 'TwentyEngine_Teensy_KeyClick_Buttons.pdf'
 W, H = A4; M = 18 * mm
 RED = HexColor('#d8322a'); INK = HexColor('#151515'); GREY = HexColor('#777777'); LIGHT = HexColor('#f2f2f0')
 REPO = 'https://github.com/peterkohlmetzmoller/twenty-engine'
@@ -67,19 +67,21 @@ def table(rows, widths):
 SETTINGS = '''// ================= SETTINGS =================
 ...
 static const float KEY_CLICK = 3.0f;   // 0 = off, 3 = standard, 64 = max
-
-static const int SWITCH_NEXT  = -1;    // next sound
-static const int SWITCH_PREV  = -1;    // previous sound
-static const int SWITCH_PANEL = -1;    // back to the knobs
-static const int SWITCH_MONO  = -1;    // mono on / off
-// ============================================'''
+...
+static const Button BUTTONS[] = {
+  // { 2, FUNCTION },
+  // { 3, NEXT },
+  { -1, NEXT }                         // (keep this last line: it is not a button)
+};'''
 
 EXAMPLE = '''static const float KEY_CLICK = 0.0f;   // no click
-
-static const int SWITCH_NEXT  = 2;
-static const int SWITCH_PREV  = 3;
-static const int SWITCH_PANEL = 4;
-static const int SWITCH_MONO  = 5;'''
+static const Button BUTTONS[] = {
+  { 2, FUNCTION },
+  { 3, PREV },
+  { 4, NEXT },
+  { 5, RETRIG },
+  { -1, NEXT }                         // (keep this last line: it is not a button)
+};'''
 
 story = []
 story += [Paragraph('Key click', h1),
@@ -115,47 +117,55 @@ story += [Paragraph('Changing the Teensy settings', h1),
                     'about 2 ms. Everything else is the same. To match ours, set AUDIO_BLOCK_SAMPLES to 16 in AudioStream.h '
                     'of the Teensy 4 core.', small)]
 
-sw = [Paragraph('Extra switches', h1),
-      Paragraph('Up to four push buttons on free Teensy pins. Each one sends the engine the same message the MS-20ic would, '
-                'so it does exactly what the panel does.', body),
-      table([['<b>Setting</b>', '<b>Does the same as</b>'],
-             ['<b>SWITCH_NEXT</b>', 'Hold the switch + tap the next memory key. From the knobs it goes to sound 1, after 36 back to 1.'],
-             ['<b>SWITCH_PREV</b>', 'Hold the switch + tap the previous memory key. From the knobs it goes to sound 36.'],
-             ['<b>SWITCH_PANEL</b>', 'Hold the switch + tap top C: back to the knobs.'],
-             ['<b>SWITCH_MONO</b>', 'Plugging / pulling the cable KBD CV OUT → VCO1+2 CV IN: mono on / off.']],
-            [38 * mm, W - 2 * M - 38 * mm]),
-      Spacer(1, 4 * mm),
+sw = [Paragraph('Buttons', h1),
+      Paragraph('Push buttons on free Teensy pins, as many as you like, each with its own function. Give each button a line in '
+                '<b>BUTTONS</b>: its pin and what it does. Remove the <b>//</b> in front of a line to use it.', body),
+      table([['<b>Function</b>', '<b>What the button does</b>'],
+             ['<b>FUNCTION</b>', 'A function switch of its own. Hold it + tap a key: recall a sound; hold it + hold a key 2 s: save; '
+                                 'hold it: the ESP knobs\' delay layer; with the tap cable (SWITCH → ESP SIGNAL IN) its taps set the tempo. '
+                                 'The iC\'s momentary switch then only does what you patch SWITCH to.'],
+             ['<b>NEXT</b>', 'Next sound (as switch + the next memory key). From the knobs it goes to sound 1, after 36 back to 1.'],
+             ['<b>PREV</b>', 'Previous sound. From the knobs it goes to sound 36.'],
+             ['<b>PANEL</b>', 'Back to the knobs (as switch + top C).'],
+             ['<b>MONO</b>', 'Mono on / off (as plugging or pulling KBD CV OUT → VCO1+2 CV IN).'],
+             ['<b>ESP_LAYER</b>', 'The ESP knobs on the delay layer, and they stay there until you press it again (as holding the switch, '
+                                  'but the keys keep playing).'],
+             ['<b>TAP</b>', 'Tap tempo without the tap cable: two taps set the delay time; with the arp on, taps are quarter notes.'],
+             ['<b>RETRIG</b>', 'Retrigger on / off: in mono every new key starts the envelopes again, also when you play legato '
+                               '(the MS-20\'s multiple trigger). TRIG blinks once: on. PEAK blinks once: off.']],
+            [26 * mm, W - 2 * M - 26 * mm]),
+      Spacer(1, 2 * mm),
       Paragraph('Wiring', h2),
-      Paragraph('One leg of each button to its pin, the other leg to <b>GND</b>. No resistor needed: the Teensy\'s own pull-up is on. '
+      Paragraph('Use push buttons (momentary), not on/off switches. One leg of each button to its pin, the other leg to <b>GND</b>. No resistor needed: the Teensy\'s own pull-up is on. '
                 'Free pins with the audio board: <b>0-5, 9, 14, 16, 17, 22, 24-41</b>. The audio board uses 7, 8, 18-21 and 23.', body),
       Paragraph('Example', h2),
-      Paragraph('Buttons on pins 2 to 5, and no key click:', body),
+      Paragraph('A function switch on pin 2, previous / next sound on 3 and 4, retrigger on 5, and no key click:', body),
       box(Preformatted(EXAMPLE, code)), Spacer(1, 3 * mm),
       Paragraph('Good to know', h2),
       Paragraph('• All LEDs blink once when a sound is recalled, as with the keys.<br/>'
                 '• With a cable from SWITCH to ESP SIGNAL IN (tap tempo), the memory is off, so NEXT, PREV and PANEL do nothing. '
                 'Same as on the panel.<br/>'
                 '• The real mono cable still works too. The MONO button always switches to the other state.<br/>'
-                '• Use push buttons (momentary). On/off toggle switches would need a flip down and up per step.', body)]
-story += [KeepTogether(sw)]
-story += [Spacer(1, 6 * mm),
-          Paragraph('Twenty Engine is free software (GPL v3): you are welcome to change it. MS-20 is a trademark of KORG Inc.; '
-                    'Twenty Engine is an independent project.', small)]
+                '• The 1.0.x settings SWITCH_NEXT, _PREV, _PANEL and _MONO (further down in SETTINGS) still work.', body)]
+story += sw
+
 
 
 def deco(c, doc):
     c.saveState()
     if doc.page == 1:
-        c.setFont('Cond', 22); c.setFillColor(INK); c.drawString(M, H - M - 8 * mm, 'Key click and extra switches')
+        c.setFont('Cond', 22); c.setFillColor(INK); c.drawString(M, H - M - 8 * mm, 'Key click and buttons')
         c.setStrokeColor(RED); c.setLineWidth(0.8); c.line(M, H - M - 10.5 * mm, M + 120 * mm, H - M - 10.5 * mm)
         c.setFillColor(RED); c.rect(M, H - M - 12 * mm, 3 * mm, 3 * mm, fill=1, stroke=0)
     c.setFont('CondB', 9); c.setFillColor(GREY); c.drawRightString(W - M, H - M + 2 * mm, 'TWENTY ENGINE  ·  TEENSY 4.1')
     c.setFont('Cond', 8.5); c.drawRightString(W - M, M - 8 * mm, str(doc.page))
+    c.setFont('Cond', 7.2); c.drawString(M, M - 8 * mm, 'Twenty Engine is free software (GPL v3): you are welcome to change it. '
+                                         'MS-20 is a trademark of KORG Inc.; Twenty Engine is an independent project.')
     c.restoreState()
 
 
 doc = BaseDocTemplate(OUT, pagesize=A4, leftMargin=M, rightMargin=M, topMargin=M, bottomMargin=M,
-                      title='Twenty Engine - Teensy edition: key click and switches', author='Peter Kohlmetz Moller')
+                      title='Twenty Engine - Teensy edition: key click and buttons', author='Peter Kohlmetz Moller')
 first = Frame(M, M, W - 2 * M, H - 2 * M - 16 * mm, 0, 0, 0, 0, id='f1')
 later = Frame(M, M, W - 2 * M, H - 2 * M, 0, 0, 0, 0, id='f2')
 doc.addPageTemplates([PageTemplate('first', [first], onPage=deco, autoNextPageTemplate='later'),

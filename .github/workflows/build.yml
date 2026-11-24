@@ -400,6 +400,13 @@ jobs:
         run: |
           Compress-Archive -Path out/TwentyEngine.vst3 -DestinationPath TwentyEngine-VST3-Windows.zip
 
+      - name: A screen as big as a user's for the app's picture (the runner's is 1024 x 768, smaller than the window)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Get-CimInstance Win32_VideoController | Select-Object CurrentHorizontalResolution, CurrentVerticalResolution | Format-Table
+
       - name: Build and validate Twenty Engine UI (VST3, the panel window)
         run: |
           # iPlug2's prebuilt Skia (the panel is drawn by Skia on the CPU on Windows), placed where iPlug2's CMake looks

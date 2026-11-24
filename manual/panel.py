@@ -213,14 +213,14 @@ def RY(py): return (1140 - py) * RSY
 # (jack no, px, py, label, role)
 JACKS = [
     (0, 235, 310, 'TOTAL', 'in'), (5, 410, 310, 'FREQ', 'in'), (9, 560, 310, 'EXT\nSIGNAL IN', None),
-    (13, 700, 310, 'HPF\nCUTOFF', 'in'), (17, 850, 310, 'LPF\nCUTOFF', 'in'), (21, 1005, 310, 'INITIAL\nGAIN', None),
+    (13, 700, 310, 'HPF\nCUTOFF', 'in'), (17, 850, 310, 'LPF\nCUTOFF', 'in'), (21, 1005, 310, 'INITIAL\nGAIN', 'in'),
     (29, 1405, 185, 'SIGNAL OUT', None), (30, 1405, 315, 'PHONES', None),
     (1, 235, 465, 'MG TRI\nOUT', 'out'), (6, 490, 465, 'MG SQ\nOUT', 'out'), (10, 610, 465, 'EG1\nOUT', 'out'),
     (22, 1070, 465, 'EG2\nREV OUT', 'out'), (24, 1160, 555, 'VCO2\nCV IN', 'in'), (25, 1280, 480, 'VCO1+2\nCV IN', 'mono'),
     (31, 1400, 480, 'KBD\nCV OUT', 'out'),
     (4, 365, 590, 'S&H\nCLOCK', 'in'), (11, 610, 590, 'EG1\nREV OUT', 'out'), (14, 725, 590, 'VCA\nCTRL IN', 'in'),
     (18, 915, 590, 'EG1\nTRIG IN', 'in'), (26, 1280, 600, 'KBD\nTRIG IN', 'in'), (32, 1400, 600, 'KBD\nTRIG OUT', 'out'),
-    (2, 245, 710, 'S&H IN', 'in'), (7, 490, 710, 'S&H OUT', 'out'), (12, 610, 710, 'VCA IN', None), (16, 795, 710, 'VCA OUT', None),
+    (2, 245, 710, 'S&H IN', 'in'), (7, 490, 710, 'S&H OUT', 'out'), (12, 610, 710, 'VCA IN', 'in'), (16, 795, 710, 'VCA OUT', 'out'),
     (19, 915, 710, 'PINK', 'out'), (23, 1150, 710, 'WHITE', 'out'), (27, 1270, 710, 'WHEEL', 'out'), (33, 1390, 710, 'SWITCH', 'out'),
     (3, 250, 900, 'SIGNAL IN', 'mono'), (8, 490, 900, 'AMP OUT', None), (15, 730, 900, 'BPF OUT', None),
     (20, 965, 900, 'F-V OUT', None), (28, 1265, 900, 'ENV OUT', None), (34, 1385, 900, 'TRIG OUT', None),
@@ -234,7 +234,7 @@ LEDS = {'A': (COLX[5] - 1.5, Y(47.0)), 'B': (COLX[6] + 3.2, Y(36.6)), 'C': (RX(1
 LEDLAB = {'A': 'RATE', 'B': 'EG', 'C': 'PEAK', 'D': 'TRIG', 'E': ''}
 
 
-def draw_panel(c, callouts=False, colorjacks=False, jacknums=False, ledcallouts=False, leds_on=('A', 'B', 'C', 'E')):
+def draw_panel(c, callouts=False, colorjacks=False, jacknums=False, ledcallouts=False, leds_on=('A', 'B', 'C', 'E'), cables=()):
     # body
     c.setFillColor(PANEL); c.setStrokeColor(EDGE); c.setLineWidth(0.8)
     c.rect(0, 0, PW, PH, stroke=1, fill=1)
@@ -327,6 +327,21 @@ def draw_panel(c, callouts=False, colorjacks=False, jacknums=False, ledcallouts=
             c.setFillColor(ACCENT); c.setFont(FONTB, 1.7); c.drawCentredString(x + dx, y + dy - 0.6, k)
     # signal arrow to output
     arrow(c, [(RX(1300), RY(185)), (RX(1370), RY(185))])
+    # patch cables (jack number pairs), drawn over everything
+    pos = {n: (RX(px), RY(py)) for n, px, py, lab, role in JACKS}
+    for a, b in cables:
+        draw_cable(c, pos[a], pos[b])
+
+
+CABLE = HexColor('#d8322a')
+def draw_cable(c, a, b):
+    (x1, y1), (x2, y2) = a, b
+    sag = min(2.0 + math.hypot(x2 - x1, y2 - y1) * 0.12, 4.5)   # a cable hangs a little below each plug
+    for col, w in ((white, 1.5), (CABLE, 0.85)):
+        c.setStrokeColor(col); c.setLineWidth(w); c.setLineCap(1)
+        p = c.beginPath(); p.moveTo(x1, y1); p.curveTo(x1, y1 - sag, x2, y2 - sag, x2, y2); c.drawPath(p, stroke=1, fill=0)
+    c.setFillColor(CABLE)
+    for x, y in (a, b): c.circle(x, y, 1.0, stroke=0, fill=1)
 
 
 def _jack_draw(c, x, y, lab, st, num):
