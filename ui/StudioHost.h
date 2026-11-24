@@ -19,5 +19,6 @@ struct PatchHost {
   // -1 = not available (no host clock)
   virtual int ArpSync() const { return -1; }
   virtual void SetArpSync(int) {}
+  virtual void CopyLog() {}                              // the bug log: to the clipboard (and a file)
 };
 }

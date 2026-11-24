@@ -1,4 +1,6 @@
 #pragma once
+#include <deque>
+#include <string>
 
 #include "IPlug_include_in_plug_hdr.h"
 // Twenty Engine: the live engine plays from the MS-20ic; the sound is recorded into the region as MIDI
@@ -76,6 +78,7 @@ public:
   int Leds() const override { return mUiLeds.load(); }
   int ArpSync() const override { return mArpSync.load(); }
   void SetArpSync(int v) override { mArpSync.store(v > 0 ? 1 : 0); }
+  void CopyLog() override { CopyLogToClipboard(); }
 #endif
   int PanelSource() const { return mPanelSrc.load(); }       // UI: 0 unknown, 1 from memory (MS20PANEL.BIN), 2 read from the controller
 #ifdef _WIN32
@@ -90,6 +93,7 @@ public:
   void PaintStatus(HDC dc);
   static LRESULT CALLBACK StatusWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp);
   HWND mStatusWnd = nullptr;
+  unsigned long long mLogCopiedMs = 0;   // "Log copied" for a few seconds
 #endif
 
 private:
@@ -169,5 +173,14 @@ private:
   ms20::SpscQueue<DbgMidi, 2048> mDbgMidiQ;
   FILE* mDbg = nullptr; int mDbgLines = 0; int mDbgSlot = -2; int mDbgResetsSeen = 0; int mDbgEngine = 0;
   void Dbg(const char* fmt, ...);
+public:
+  // ---- the bug log (main thread): what happened lately, with the setup, to copy into an email
+  std::string BugLog();
+  bool SaveLog(char* pathOut, int n);    // TwentyEngine-log.txt next to the memories
+  void CopyLogToClipboard();             // UI builds: clipboard + file; classic builds: the file (+ clipboard on Windows)
+private:
+  std::deque<std::string> mLogRing;
+  char mDataDir[1024] = "";
+  int mLogBursts = 0, mLogDirect = -1, mLogLed = -1, mLogRev = -1;
 #endif
 };

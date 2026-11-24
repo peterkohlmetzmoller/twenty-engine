@@ -1,5 +1,9 @@
 #include "TwentyEngine.h"
 #include <chrono>
+#include <time.h>
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
 #ifndef _WIN32
 #include <unistd.h>
 #include <fcntl.h>
@@ -44,6 +48,12 @@ public:
     return IControl::IsDirty();
   }
 
+  // "Copy log" (top right): the bug log to the clipboard, for an email
+  IRECT LogRect() const { const IRECT in = mRECT.GetPadded(-22.f); return IRECT(in.R - 70.f, in.T, in.R, in.T + 16.f); }
+  void OnMouseDown(float x, float y, const IMouseMod&) override
+  {
+    if (mPlug && LogRect().Contains(x, y)) { mPlug->CopyLogToClipboard(); mCopied = 90; SetDirty(false); }
+  }
   // double-click on the takes line: forget the recorded takes (they are only the settings, the MIDI stays)
   void OnMouseDblClick(float x, float y, const IMouseMod& mod) override
   {
@@ -62,6 +72,8 @@ public:
     g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE INSTRUMENT", in);
 #endif
 
+    g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Far, EVAlign::Top), mCopied > 0 ? "Log copied" : "Copy log", LogRect());
+    if (mCopied > 0) mCopied--;
     static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy" };
     const bool on = mController > 0;
     const IRECT row = in.GetFromBottom(18.f);
@@ -114,6 +126,7 @@ private:
   int mTakes = -1;
   int mPanel = -1;
   int mFocus = -1;
+  int mCopied = 0;
   int mFrames = 0;
 };
 #endif
@@ -241,6 +254,7 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       snprintf(dir, sizeof(dir), "%s/Twenty Engine/", base);
       MakeDir(dir);
       mHost->loadMemories(dir);
+      snprintf(mDataDir, sizeof(mDataDir), "%s", dir);
       snprintf(mPanelPath, sizeof(mPanelPath), "%sMS20PANEL.BIN", dir);
       /* beta diagnostics log (off): char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug.txt", dir); mDbg = fopen(lp, "w"); */
     }
@@ -251,6 +265,7 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
       char parent[1024]; snprintf(parent, sizeof(parent), "%s/Library/Application Support", home);
       MakeDir(parent); MakeDir(dir);
       mHost->loadMemories(dir);
+      snprintf(mDataDir, sizeof(mDataDir), "%s", dir);
       snprintf(mPanelPath, sizeof(mPanelPath), "%sMS20PANEL.BIN", dir);
       // diagnostics log (off in releases): TwentyEngine-debug-<process>-<copy>.txt
       // { char lp[1100]; snprintf(lp, sizeof(lp), "%sTwentyEngine-debug-%d-%d.txt", dir, (int)getpid(), mId); mDbg = fopen(lp, "w"); }
@@ -400,6 +415,14 @@ static void SaveSwitch()   // main thread (OnIdle, the window)
   if (p[0]) if (FILE* f = fopen(p, "w")) { fputs(SwitchReversed() ? "reversed\n" : "normal\n", f); fclose(f); }
 }
 #endif
+static bool LogSwitchReversed()   // for the bug log (only Windows can detect a reversed switch so far)
+{
+#ifdef _WIN32
+  return SwitchReversed();
+#else
+  return false;
+#endif
+}
 
 #if IPLUG_EDITOR && defined(_WIN32) && defined(NO_IGRAPHICS)
 // ---- Windows: the status window with GDI (same content as StatusControl, no OpenGL) ----
@@ -458,6 +481,7 @@ LRESULT CALLBACK TwentyEngine::StatusWndProc(HWND h, UINT msg, WPARAM wp, LPARAM
     {
       const int x = (short)LOWORD(lp), y = (short)HIWORD(lp);
       if (p && y >= PLUG_HEIGHT - 44 && x >= PLUG_WIDTH / 2) { SetSwitchReversed(!SwitchReversed()); SaveSwitch(); InvalidateRect(h, nullptr, FALSE); }
+      else if (p && y <= 42 && x >= PLUG_WIDTH - 110) { p->CopyLogToClipboard(); p->mLogCopiedMs = GetTickCount64(); InvalidateRect(h, nullptr, FALSE); }   // "Copy log"
       return 0;
     }
     case WM_LBUTTONDBLCLK:   // double-click on the takes line: forget the recorded takes
@@ -500,6 +524,9 @@ void TwentyEngine::PaintStatus(HDC wdc)
 #else
   DrawUtf8(dc, "TWENTY ENGINE INSTRUMENT", RECT{L, T - 4, R, T + 24}, DT_LEFT | DT_TOP | DT_SINGLELINE);
 #endif
+  { HFONT fl = StatusFont(12); HGDIOBJ of = SelectObject(dc, fl); SetTextColor(dc, dim);
+    DrawUtf8(dc, GetTickCount64() - mLogCopiedMs < 3000 ? "Log copied" : "Copy log", RECT{R - 90, T - 4, R, T + 14}, DT_RIGHT | DT_TOP | DT_SINGLELINE);
+    SelectObject(dc, of); DeleteObject(fl); SetTextColor(dc, ink); }
 
   static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy" };
   const int controller = LedPort::FindController();
@@ -572,8 +599,90 @@ double TwentyEngine::FromRaw(int idx, int32_t raw)
 
 void TwentyEngine::Dbg(const char* fmt, ...)
 {
+  char line[640]; va_list a; va_start(a, fmt); vsnprintf(line, sizeof(line), fmt, a); va_end(a);
+  // the bug log: always the last 600 lines (main thread)
+  {
+    const time_t t = time(nullptr); struct tm lt;
+#ifdef _WIN32
+    localtime_s(&lt, &t);
+#else
+    localtime_r(&t, &lt);
+#endif
+    char ts[16]; strftime(ts, sizeof(ts), "%H:%M:%S", &lt);
+    mLogRing.push_back(std::string(ts) + "  " + line);
+    while (mLogRing.size() > 600) mLogRing.pop_front();
+  }
   if (!mDbg || mDbgLines > 20000) return;
-  va_list a; va_start(a, fmt); vfprintf(mDbg, fmt, a); va_end(a); fputc('\n', mDbg); fflush(mDbg); mDbgLines++;
+  fputs(line, mDbg); fputc('\n', mDbg); fflush(mDbg); mDbgLines++;
+}
+
+std::string TwentyEngine::BugLog()
+{
+  std::string s; char b[1400];
+  WDL_String host, hv; GetHostStr(host); GetHostVersionStr(hv);
+  char os[96] = "unknown";
+#ifdef _WIN32
+  { typedef LONG (WINAPI *RtlGetVersionFn)(OSVERSIONINFOW*); OSVERSIONINFOW v = {}; v.dwOSVersionInfoSize = sizeof(v);
+    if (HMODULE nt = GetModuleHandleA("ntdll.dll")) if (auto f = (RtlGetVersionFn)GetProcAddress(nt, "RtlGetVersion")) if (f(&v) == 0)
+      snprintf(os, sizeof(os), "Windows %lu.%lu build %lu", v.dwMajorVersion, v.dwMinorVersion, v.dwBuildNumber); }
+#else
+  { char pv[32] = ""; size_t n = sizeof(pv); if (sysctlbyname("kern.osproductversion", pv, &n, nullptr, 0) == 0) snprintf(os, sizeof(os), "macOS %s", pv); }
+#endif
+  const time_t t = time(nullptr); char when[32]; strftime(when, sizeof(when), "%Y-%m-%d %H:%M", localtime(&t));
+  snprintf(b, sizeof(b),
+    "Twenty Engine bug log  \xC2\xB7  %s\n"
+    "Please email it to twentyenginesupport@gmail.com with a few words about what happened.\n\n"
+    "Plugin:      %s %s (%s)\n"
+    "Host:        %s %s\n"
+    "System:      %s\n"
+    "Sample rate: %.0f Hz, block %d\n"
+    "Controller:  input %s, LED output %s, panel %s\n"
+    "Switch:      %s\n"
+    "Memories:    %sMS20MEM.BIN\n"
+    "Last power-on report: %d messages, %d CCs, max %d per CC, %s, %s (%d seen)\n\n",
+    when, PLUG_NAME, PLUG_VERSION_STR, GetAPIStr(), host.Get(), hv.Get(), os, GetSampleRate(), GetBlockSize(),
+    mLed.KnobsDirect() ? "direct" : "through the DAW", mLed.Connected() ? "open" : "not open",
+    PanelSource() == 2 ? "read from the iC" : (PanelSource() == 1 ? "from memory" : "unknown"),
+    LogSwitchReversed() ? "reversed" : "normal", mDataDir,
+    gBurstPts.load(), gBurstCCs.load(), gBurstMax.load(), gBurstSame.load() ? "same time" : "timed",
+    gBurstOn.load() == 1 ? "power on sent" : (gBurstOn.load() == 2 ? "power on (again)" : "no power on"), gBursts.load());
+  s = b;
+  s += "What happened (newest last):\n";
+  for (const std::string& l : mLogRing) { s += l; s += "\n"; }
+  return s;
+}
+
+bool TwentyEngine::SaveLog(char* pathOut, int n)
+{
+  if (!mDataDir[0]) return false;
+  char p[1200]; snprintf(p, sizeof(p), "%sTwentyEngine-log.txt", mDataDir);
+  FILE* f = fopen(p, "wb"); if (!f) return false;
+  const std::string s = BugLog(); fwrite(s.data(), 1, s.size(), f); fclose(f);
+  if (pathOut && n > 0) snprintf(pathOut, n, "%s", p);
+  return true;
+}
+
+void TwentyEngine::CopyLogToClipboard()
+{
+  Dbg("LOG copied by the user");
+  const std::string s = BugLog();
+  SaveLog(nullptr, 0);
+#if IPLUG_EDITOR && !defined(NO_IGRAPHICS)
+  if (GetUI()) GetUI()->SetTextInClipboard(s.c_str());
+#elif defined(_WIN32)
+  // the GDI window: the clipboard by hand (UTF-8 -> UTF-16)
+  const int wn = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+  if (wn > 0 && OpenClipboard(nullptr))
+  {
+    EmptyClipboard();
+    if (HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, wn * sizeof(wchar_t)))
+    {
+      MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, (wchar_t*)GlobalLock(h), wn); GlobalUnlock(h);
+      if (!SetClipboardData(CF_UNICODETEXT, h)) GlobalFree(h);
+    }
+    CloseClipboard();
+  }
+#endif
 }
 
 void TwentyEngine::OnReset()
@@ -886,7 +995,13 @@ void TwentyEngine::OnIdle()
   // 0. beta diagnostics
   { int slot = mHost->memSlot(); if (slot != mDbgSlot) { Dbg("MEMORY slot %d (-1 = panel)  LPF cut %.2f  VCO1 wave %d  PW %.2f", slot,
       mHost->getParamRaw(PARAM_INDEX_Filter__Macro_lpfcut) / 2097152.0, (int)mHost->getParamRaw(PARAM_INDEX_MS20__Voices_vco1wave), mHost->getParamRaw(PARAM_INDEX_MS20__Voices_pw) / 2097152.0); mDbgSlot = slot; }
-    int r = mDbgResets.load(); if (r != mDbgResetsSeen) { Dbg("RESET from the host (%d so far)", r); mDbgResetsSeen = r; }
+    int r = mDbgResets.load(); if (r != mDbgResetsSeen) { Dbg("RESET from the host (%d so far)  \xC2\xB7  %.0f Hz", r, GetSampleRate()); mDbgResetsSeen = r; }
+    { const int d = mLed.KnobsDirect() ? 1 : 0, l = mLed.Connected() ? 1 : 0;
+      if (d != mLogDirect || l != mLogLed) { Dbg("CONTROLLER input %s, LED output %s", d ? "direct" : "through the DAW", l ? "open" : "not open"); mLogDirect = d; mLogLed = l; } }
+    { const int b = gBursts.load(); if (b != mLogBursts) { mLogBursts = b;
+        Dbg("POWER-ON REPORT? %d messages, %d CCs, max %d per CC, %s, %s", gBurstPts.load(), gBurstCCs.load(), gBurstMax.load(), gBurstSame.load() ? "same time" : "timed",
+            gBurstOn.load() == 1 ? "power on sent" : (gBurstOn.load() == 2 ? "power on (again)" : "no power on")); } }
+    { const int rv = LogSwitchReversed() ? 1 : 0; if (rv != mLogRev) { Dbg("SWITCH %s", rv ? "reversed" : "normal"); mLogRev = rv; } }
     DbgMidi m; while (mDbgMidiQ.pop(m)) { const char* k = (m.s & 0xF0) == 0x90 ? (m.d2 ? "NOTE ON " : "NOTE ON v0") : (m.s & 0xF0) == 0x80 ? "NOTE OFF" : (m.s & 0xF0) == 0xD0 ? "PRESSURE" : (m.s & 0xF0) == 0xA0 ? "POLY AT " : "OTHER   ";
       Dbg("MIDI in %s  status %02X  data %3d %3d  (offset %d, clk %lld)", k, m.s, m.d1, m.d2, m.off, (long long)m.clk); }
     { const int64_t f = FocusCell()->load(); if (f != mDbgFocus) { Dbg("FOCUS: id %lld plays from the controller (this copy: %lld)%s", (long long)f, (long long)mFocusId, f == mFocusId ? "  <- THIS ONE" : ""); mDbgFocus = f; } }

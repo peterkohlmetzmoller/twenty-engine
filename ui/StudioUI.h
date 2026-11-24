@@ -782,7 +782,10 @@ public:
     std::string m = mPatch->CableFlag(0) ? "mono" : "poly";
     m += mo < 18.0 ? "  \xC2\xB7  arp off" : (mo < 42.0 ? "  \xC2\xB7  arp" : "  \xC2\xB7  latch");
     if (mPatch->CableFlag(1)) m += "  \xC2\xB7  tap tempo";
-    g.DrawText(IText(13.f, kGrey, kF, EAlign::Near, EVAlign::Middle), m.c_str(), IRECT(mRECT.L + 740.f, mRECT.T, mRECT.L + 920.f, mRECT.B));
+    FitText(g, IText(13.f, kGrey, kF, EAlign::Near, EVAlign::Middle), m.c_str(), IRECT(mRECT.L + 740.f, mRECT.T, mRECT.R - 404.f, mRECT.B));
+    // the bug log: copied for an email
+    g.DrawRect(kGrey, LogB(), nullptr, 1.f);
+    g.DrawText(IText(12.f, kInk, kF, EAlign::Center, EVAlign::Middle), "LOG", LogB());
     if (mSwitch) g.FillRect(kAccent, SwitchB());
     g.DrawRect(mSwitch ? kAccent : kInk, SwitchB(), nullptr, 1.5f);
     g.DrawText(IText(12.f, mSwitch ? kPaper : kInk, kF, EAlign::Center, EVAlign::Middle), "SWITCH", SwitchB());   // black while held
@@ -798,6 +801,7 @@ public:
       g.DrawLine(i == 4 ? kInk : kGrey, mRECT.R - 3.f, mRECT.B - 3.f - i * 4.5f, mRECT.R - 3.f - i * 4.5f, mRECT.B - 3.f, nullptr, 1.6f);
 #endif
   }
+  IRECT LogB() const { return IRECT(mRECT.R - 396.f, mRECT.T + 9.f, mRECT.R - 346.f, mRECT.B - 9.f); }
 #ifdef _WIN32
   IRECT ZoomB() const { return IRECT(mRECT.R - 338.f, mRECT.T + 9.f, mRECT.R - 288.f, mRECT.B - 9.f); }
   void OnPopupMenuSelection(IPopupMenu* pMenu, int) override
@@ -813,6 +817,7 @@ public:
   void OnMouseDown(float x, float y, const IMouseMod&) override
   {
     if (SwitchB().Contains(x, y)) { mSwitch = true; SwitchHeld() = true; mPatch->SwitchDown(true); SetDirty(false); }
+    if (LogB().Contains(x, y)) { mPatch->CopyLog(); SetInfo("LOG copied  \xC2\xB7  paste it into an email to twentyenginesupport@gmail.com"); SetDirty(false); }
 #ifdef _WIN32
     if (ZoomB().Contains(x, y))
     {
@@ -826,6 +831,7 @@ public:
   void OnMouseOver(float x, float y, const IMouseMod&) override
   {
     if (SwitchB().Contains(x, y)) SetInfo("SWITCH  \xC2\xB7  the MS-20's momentary switch  \xC2\xB7  tap: tempo (SWITCH -> ESP SIGNAL IN)");
+    if (LogB().Contains(x, y)) SetInfo("LOG  \xC2\xB7  click: copy what happened lately, for a bug report");
 #ifdef _WIN32
     if (ZoomB().Contains(x, y)) SetInfo("WINDOW SIZE  \xC2\xB7  click to pick a size");
 #endif
