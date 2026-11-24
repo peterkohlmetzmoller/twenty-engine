@@ -219,7 +219,7 @@ jobs:
           gh release view v1.1-test -R ${{ github.repository }} > /dev/null 2>&1 || \
             gh release create v1.1-test -R ${{ github.repository }} --draft --title "Twenty Engine 1.1 (test build)" --notes "Test build. Not for release." --target v1.1 || true
           cp TwentyEngine-Installer.pkg TwentyEngine-1.1-test-Mac.pkg
-          gh release upload v1.1-test TwentyEngine-1.1-test-Mac.pkg --clobber -R ${{ github.repository }}
+          gh release upload v1.1-test TwentyEngine-1.1-test-Mac.pkg app_window_mac.png --clobber -R ${{ github.repository }}
       - name: UI test build on the draft release (a plain download)
         if: github.ref_name == 'ui'
         env:
@@ -476,7 +476,7 @@ jobs:
           gh release view v1.1-test -R ${{ github.repository }} > /dev/null 2>&1 || \
             gh release create v1.1-test -R ${{ github.repository }} --draft --title "Twenty Engine 1.1 (test build)" --notes "Test build. Not for release." --target v1.1 || true
           cp TwentyEngine-Setup.exe TwentyEngine-1.1-test-Windows-Setup.exe
-          gh release upload v1.1-test TwentyEngine-1.1-test-Windows-Setup.exe --clobber -R ${{ github.repository }}
+          gh release upload v1.1-test TwentyEngine-1.1-test-Windows-Setup.exe app_window_win.png --clobber -R ${{ github.repository }}
       - name: Release build on the draft release (plain downloads)
         if: github.ref_name == 'main'
         shell: bash
@@ -586,6 +586,11 @@ jobs:
         with:
           name: TwentyEngine-Daisy
           path: dout/*
+      - name: 1.1 test build on the draft release (plain downloads)
+        if: github.ref_name == 'v1.1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload v1.1-test dout/TwentyEngineDaisy.bin --clobber -R ${{ github.repository }}
 
   build-teensy:
     if: ${{ !inputs.artifacts_run && github.ref_name != 'ui' && github.ref_name != 'linux' }}
@@ -618,6 +623,11 @@ jobs:
         with:
           name: TwentyEngine-Teensy
           path: out/*.hex
+      - name: 1.1 test build on the draft release (plain downloads)
+        if: github.ref_name == 'v1.1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload v1.1-test out/TwentyEngineTeensy.ino.hex --clobber -R ${{ github.repository }}
 
   # ---------------- Linux: the standalone app with the panel window (DPF), Intel/AMD and ARM ----------------
   build-linux:
@@ -677,3 +687,43 @@ jobs:
           path: |
             TwentyEngine-Linux-${{ matrix.arch }}.tar.gz
             linux_window_${{ matrix.arch }}.png
+      - name: 1.1 test build on the draft release (plain downloads)
+        if: github.ref_name == 'v1.1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload v1.1-test TwentyEngine-Linux-${{ matrix.arch }}.tar.gz linux_window_${{ matrix.arch }}.png --clobber -R ${{ github.repository }}
+
+  # ---------------- the free web edition (WebAssembly): built, its engine tested, its page opened in Chrome ----------------
+  build-web:
+    if: ${{ !inputs.artifacts_run && github.ref_name != 'ui' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Emscripten, and NanoVG (iPlug2's copy, the fixed version)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq emscripten > /dev/null
+          emcc --version | head -1
+          git clone -q --filter=blob:none --no-checkout https://github.com/iPlug2/iPlug2.git iPlug2
+          cd iPlug2 && git sparse-checkout set Dependencies/IGraphics/NanoVG && git checkout -q $IPLUG2_COMMIT
+      - name: Build
+        run: web/build.sh iPlug2/Dependencies/IGraphics/NanoVG/src web-out
+      - name: Test the engine (node)
+        run: node tests/web_dsp_test.js web-out/dsp.wasm
+      - name: Test the page (Chrome, pretend MS-20ic)
+        run: |
+          pip install -q playwright
+          python3 tests/web_page_test.py web-out "$(which google-chrome)" web_panel.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TwentyEngine-Web
+          path: |
+            web-out
+            web_panel.png
+      - name: 1.1 test build on the draft release (plain downloads)
+        if: github.ref_name == 'v1.1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          (cd web-out && zip -q -r ../TwentyEngine-Web.zip .)
+          gh release upload v1.1-test TwentyEngine-Web.zip web_panel.png --clobber -R ${{ github.repository }}

@@ -167,7 +167,11 @@ public:
   // --- patch memory (36 sounds on the keys) ---
   // main thread, once after construction: folder for MS20MEM.BIN (ending in '/'); loads it if it exists
   bool loadMemories(const char *folder) {
+#ifndef MS20_RAMFILE
     snprintf(g_memDir, sizeof(g_memDir), "%s", folder);
+#else
+    (void)folder;   // the memory file is in RAM (the web page, the Daisy): loads what the host put there
+#endif
     return core->o_Patch_Memory.loadFile();
   }
   // main thread, regularly (e.g. every 20 ms): writes the file after a save on the keys

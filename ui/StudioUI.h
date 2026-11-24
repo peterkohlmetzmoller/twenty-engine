@@ -886,8 +886,9 @@ public:
     g.DrawText(IText(16.f, kInk, kF, EAlign::Center, EVAlign::Middle), "with a few words about what happened.", IRECT(b.L, b.T + 120.f, b.R, b.T + 146.f));
     g.DrawText(IText(13.f, kGrey, kF, EAlign::Center, EVAlign::Middle), "Click the address to start the email  \xC2\xB7  click anywhere else to close",
                IRECT(b.L, b.T + 160.f, b.R, b.T + 180.f));
-    g.DrawText(IText(13.f, kGrey, kF, EAlign::Center, EVAlign::Middle), "The log is also saved as TwentyEngine-log.txt next to the sound memories.",
-               IRECT(b.L, b.T + 182.f, b.R, b.T + 202.f));
+    if (mPatch && mPatch->LogSavedToFile())
+      g.DrawText(IText(13.f, kGrey, kF, EAlign::Center, EVAlign::Middle), "The log is also saved as TwentyEngine-log.txt next to the sound memories.",
+                 IRECT(b.L, b.T + 182.f, b.R, b.T + 202.f));
   }
   void OnMouseDown(float x, float y, const IMouseMod&) override
   {

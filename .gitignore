@@ -12,4 +12,5 @@ tests/recall_test
 /studio/
 tests/cabtest/
 tests/cabtest_old/
+tests/cabtest14/
 tests/memtest_cc/
