@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Twenty Engine - free web edition</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='white'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='black' stroke-width='3'/%3E%3Cline x1='16' y1='16' x2='23' y2='9' stroke='black' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<meta name="description" content="Twenty Engine in your browser: an 8-voice polysynth for the Korg MS-20ic (or any MIDI keyboard), with the whole MS-20 panel, patch cables and the iC's LEDs. Chrome or Edge.">
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; color: #000; font-family: "DejaVu Sans Condensed", "Arial Narrow", sans-serif; overflow: hidden; }
+  #bar { display: flex; align-items: center; gap: 22px; padding: 8px 16px; border-bottom: 1px solid #000; font-size: 14px; }
+  #bar b { font-size: 16px; letter-spacing: 0.04em; }
+  #bar a { color: #0052cc; text-decoration: none; }
+  #bar a:hover { text-decoration: underline; }
+  #bar .grow { flex: 1; }
+  #bar .dim { color: #888; }
+  #wrap { display: flex; justify-content: center; align-items: center; height: calc(100% - 38px); }
+  #panel { display: block; }
+  #start { position: fixed; inset: 38px 0 0 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px;
+           background: rgba(255,255,255,0.86); cursor: pointer; font-size: 18px; text-align: center; padding: 0 24px; }
+  #start .big { font-size: 28px; font-weight: bold; letter-spacing: 0.05em; border: 2px solid #000; padding: 14px 34px; }
+  #start .small { font-size: 14px; color: #555; max-width: 640px; line-height: 1.45; }
+  #nogl { display: none; position: fixed; inset: 38px 0 0 0; background: #fff; padding: 40px; font-size: 18px; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <b>TWENTY ENGINE</b>
+  <span class="dim">free web edition</span>
+  <span class="grow"></span>
+  <a href="https://7233849350308.gumroad.com/l/ygmrks" target="_blank" rel="noopener">The full version (plugins, apps, Ksoloti, Teensy)</a>
+  <a href="https://github.com/peterkohlmetzmoller/twenty-engine" target="_blank" rel="noopener">Source (GPL)</a>
+  <a href="mailto:twentyenginesupport@gmail.com">Support</a>
+</div>
+<div id="wrap"><canvas id="panel" width="1224" height="580"></canvas></div>
+<div id="start">
+  <div class="big">START</div>
+  <div>Click to start the sound</div>
+  <div class="small">Plug in the Korg MS-20ic (USB) or any MIDI keyboard, and allow MIDI when the browser asks (allow SysEx too: it lights the iC's LEDs).
+    No keyboard? Play the computer's keys: A W S E D F T G Y H U J K, Z and X change the octave.<br>Chrome or Edge on a computer. Safari and Firefox have no Web MIDI.</div>
+</div>
+<div id="nogl">This browser could not start WebGL, which draws the panel. Try Chrome or Edge, or switch on hardware acceleration.</div>
+<script src="ui.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
