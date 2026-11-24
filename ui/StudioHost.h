@@ -31,5 +31,14 @@ struct PatchHost {
   virtual void MailLog() {}                                      // a new email to the support address, the setup filled in
   virtual void PatchCable(int outJack, int inJack, bool on) {}   // the MS-20ic's own cable message (jack numbers as it sends them)
   virtual void SetEspLatch(bool on) {}                           // the DELAY latch: the iC's ESP knobs follow it (engine CC 105)
+  // CC learn (engine/cc_map.h: one map for the setup). CcOf: the controller learned for a parameter, -1 none.
+  // CcLearn(p): the next controller moved is learned for p (-1: stop). CcTakeLearned: a controller just learned
+  // (once, -1 none), for the window's message.
+  virtual bool CcAvailable() const { return false; }
+  virtual int CcOf(int param) const { return -1; }
+  virtual int CcLearning() const { return -1; }
+  virtual void CcLearn(int param) {}
+  virtual void CcForget(int param) {}
+  virtual int CcTakeLearned() { return -1; }
 };
 }

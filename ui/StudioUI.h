@@ -296,6 +296,62 @@ static double DragStep(float dX, float dY, const IMouseMod& m, double px)
 static void DragBegin(IControl* c) { if (c->GetParamIdx() >= 0 && c->GetDelegate()) c->GetDelegate()->BeginInformHostOfParamChangeFromUI(c->GetParamIdx()); }
 static void DragEnd(IControl* c) { if (c->GetParamIdx() >= 0 && c->GetDelegate()) c->GetDelegate()->EndInformHostOfParamChangeFromUI(c->GetParamIdx()); }
 
+// ---------------------------------------------------------------- CC learn (engine/cc_map.h: one map for the setup)
+// Right-click a knob: Learn MIDI controller, then move a knob or slider on any keyboard / controller; Forget
+// removes it. A knob waiting for a controller has a blue ring. (Linux: no menus - right-click learns, right-click
+// a learned knob forgets, right-click while learning stops.)
+static PatchHost*& UiHost() { static PatchHost* h = nullptr; return h; }
+struct CcLearn
+{
+  IPopupMenu menu; bool rclick = false; int shown = -2;
+  // a mouse press: true = it was for CC learn (the knob must not move)
+  bool Down(IControl* c, const IMouseMod& m)
+  {
+    rclick = m.R;
+    if (!m.R) return false;
+    PatchHost* h = UiHost(); const int p = c->GetParamIdx();
+    if (!h || !h->CcAvailable() || p < 0) return true;
+    const int cc = h->CcOf(p);
+#ifdef TE_NO_POPUP
+    if (h->CcLearning() == p) h->CcLearn(-1); else if (cc >= 0) h->CcForget(p); else h->CcLearn(p);
+    Info(p);
+#else
+    menu.Clear();
+    char t[96];
+    if (cc >= 0) { snprintf(t, sizeof(t), "Moved by MIDI controller CC %d", cc); menu.AddItem(t, -1, IPopupMenu::Item::kTitle); }
+    menu.AddItem(h->CcLearning() == p ? "Stop learning" : (cc >= 0 ? "Learn another controller..." : "Learn MIDI controller..."));
+    if (cc >= 0) menu.AddItem("Forget the controller");
+    if (c->GetUI()) c->GetUI()->CreatePopupMenu(*c, menu, c->GetRECT());
+#endif
+    return true;
+  }
+  bool Up() { const bool r = rclick; rclick = false; return r; }   // after a right-click: nothing more to do
+  void Chosen(IControl* c, IPopupMenu* pm)
+  {
+    PatchHost* h = UiHost(); const int p = c->GetParamIdx();
+    if (!pm || !h || p < 0) return;
+    int i = pm->GetChosenItemIdx(); if (h->CcOf(p) >= 0) i--;   // the title line
+    if (i == 0) h->CcLearn(h->CcLearning() == p ? -1 : p);
+    else if (i == 1) h->CcForget(p);
+    Info(p);
+  }
+  static void Info(int p)
+  {
+    PatchHost* h = UiHost(); if (!h) return;
+    char b[160]; const int cc = h->CcOf(p);
+    if (h->CcLearning() == p) snprintf(b, sizeof(b), "LEARN  \xC2\xB7  now move a knob or slider on your controller");
+    else if (cc >= 0) snprintf(b, sizeof(b), "MIDI CONTROLLER  \xC2\xB7  CC %d moves this knob", cc);
+    else snprintf(b, sizeof(b), "MIDI CONTROLLER  \xC2\xB7  none (right-click to learn one)");
+    SetInfo(b);
+  }
+  // the blue ring while the knob waits for a controller; Dirty: its state changed (draw again)
+  static bool Learning(int p) { PatchHost* h = UiHost(); return h && p >= 0 && h->CcLearning() == p; }
+  bool Dirty(int p) { const int st = Learning(p) ? 1 : 0; if (st != shown) { shown = st; return true; } return false; }
+  static void Ring(IGraphics& g, float cx, float cy, float r) { g.DrawCircle(kMail, cx, cy, r, nullptr, 0.45f * S); }
+  // the controller learned for a parameter, for the hover text ("  ·  CC 21")
+  static std::string Suffix(int p) { PatchHost* h = UiHost(); const int cc = (h && p >= 0) ? h->CcOf(p) : -1; if (cc < 0) return ""; char b[24]; snprintf(b, sizeof(b), "  \xC2\xB7  CC %d", cc); return b; }
+};
+
 class PKnob : public IKnobControlBase
 {
 public:
@@ -316,6 +372,7 @@ public:
     }
     g.FillCircle(kPaper, mCX, mCY, mR);
     g.DrawCircle(kInk, mCX, mCY, mR, nullptr, 0.38f * S);
+    if (CcLearn::Learning(GetParamIdx())) CcLearn::Ring(g, mCX, mCY, mR * 1.7f);
     const float v = (float)GetValue(), a = Rad(240.f - 300.f * std::max(0.f, std::min(1.f, v)));
     IStrokeOptions o; o.mCapOption = ELineCap::Round;
     g.PathMoveTo(mCX + mR * 0.1f * std::cos(a), mCY - mR * 0.1f * std::sin(a));
@@ -339,15 +396,16 @@ public:
     }
   }
   void OnMouseOver(float x, float y, const IMouseMod& m) override { IKnobControlBase::OnMouseOver(x, y, m); Report(); SetDirty(false); }
-  void OnMouseDown(float, float, const IMouseMod&) override { mAcc = GetValue(); DragBegin(this); }
-  void OnMouseUp(float, float, const IMouseMod&) override { DragEnd(this); }
-  void OnMouseDrag(float, float, float dX, float dY, const IMouseMod& m) override { mAcc = Clip(mAcc + DragStep(dX, dY, m, 350.0), 0.0, 1.0); SetValue(mAcc); SetDirty(true); Report(); }
+  void OnMouseDown(float, float, const IMouseMod& m) override { if (mCc.Down(this, m)) return; mAcc = GetValue(); DragBegin(this); }
+  void OnMouseUp(float, float, const IMouseMod&) override { if (mCc.Up()) return; DragEnd(this); }
+  void OnMouseDrag(float, float, float dX, float dY, const IMouseMod& m) override { if (mCc.rclick) return; mAcc = Clip(mAcc + DragStep(dX, dY, m, 350.0), 0.0, 1.0); SetValue(mAcc); SetDirty(true); Report(); }
+  void OnPopupMenuSelection(IPopupMenu* pm, int) override { mCc.Chosen(this, pm); SetDirty(false); }
   void OnMouseOut() override { IKnobControlBase::OnMouseOut(); SetDirty(false); }
   bool IsHit(float x, float y) const override { return (x - mCX) * (x - mCX) + (y - mCY) * (y - mCY) <= mR * mR * 2.4f; }
-  bool IsDirty() override { if (mLook && ++mTick >= 10) { mTick = 0; return true; } return IKnobControlBase::IsDirty(); }
+  bool IsDirty() override { if (mCc.Dirty(GetParamIdx())) return true; if (mLook && ++mTick >= 10) { mTick = 0; return true; } return IKnobControlBase::IsDirty(); }
 private:
-  int mTick = 0; double mAcc = 0.0;
-  void Report() { if (const IParam* p = GetParam()) { char b[96]; snprintf(b, sizeof(b), "%s  %.1f", mInfo.c_str(), p->Value()); SetInfo(b); } }
+  int mTick = 0; double mAcc = 0.0; CcLearn mCc;
+  void Report() { if (CcLearn::Learning(GetParamIdx())) { CcLearn::Info(GetParamIdx()); return; } if (const IParam* p = GetParam()) { char b[128]; snprintf(b, sizeof(b), "%s  %.1f%s", mInfo.c_str(), p->Value(), CcLearn::Suffix(GetParamIdx()).c_str()); SetInfo(b); } }
   float mCX, mCY, mR; std::string mLabel, mInfo, mFn; bool mAbove; std::vector<std::string> mZones; std::function<Look()> mLook;
 };
 
@@ -374,6 +432,7 @@ public:
     }
     g.FillCircle(kPaper, mCX, mCY, mR);
     g.DrawCircle(kInk, mCX, mCY, mR, nullptr, 0.55f * S);
+    if (CcLearn::Learning(GetParamIdx())) CcLearn::Ring(g, mCX, mCY, mR * 1.45f);
     const float a = Rad(140.f - Sel() * (100.f / (n - 1)));
     IStrokeOptions o; o.mCapOption = ELineCap::Round;
     g.PathMoveTo(mCX + mR * 0.1f * std::cos(a), mCY - mR * 0.1f * std::sin(a));
@@ -381,9 +440,12 @@ public:
     g.PathStroke(IPattern(kInk), mR * 0.13f, o);
     Txt(g, mCX, mCY + (mR / S * 1.25f + 1.7f) * S + 0.3f * S, mLabel.c_str(), 1.72f);
   }
-  void OnMouseDown(float, float, const IMouseMod&) override { mDragged = false; mMoved = 0.f; mAcc = GetValue(); DragBegin(this); }
+  void OnMouseDown(float, float, const IMouseMod& m) override { if (mCc.Down(this, m)) return; mDragged = false; mMoved = 0.f; mAcc = GetValue(); DragBegin(this); }
+  void OnPopupMenuSelection(IPopupMenu* pm, int) override { mCc.Chosen(this, pm); SetDirty(false); }
+  bool IsDirty() override { if (mCc.Dirty(GetParamIdx())) return true; return IKnobControlBase::IsDirty(); }
   void OnMouseDrag(float, float, float dX, float dY, const IMouseMod& m) override
   {
+    if (mCc.rclick) return;
     mMoved += std::fabs(dX) + std::fabs(dY);
     if (mMoved < 4.f) return;                          // a click that wobbles a pixel or two is still a click
     mDragged = true;
@@ -391,6 +453,7 @@ public:
   }
   void OnMouseUp(float, float, const IMouseMod&) override
   {
+    if (mCc.Up()) return;
     DragEnd(this);
     if (!mDragged && GetParam())   // a click steps to the next position
     {
@@ -400,10 +463,11 @@ public:
       GetDelegate()->EndInformHostOfParamChangeFromUI(GetParamIdx());
     }
   }
-  void OnMouseOver(float x, float y, const IMouseMod& m) override { IKnobControlBase::OnMouseOver(x, y, m); SetInfo(mInfo); SetDirty(false); }
+  void OnMouseOver(float x, float y, const IMouseMod& m) override { IKnobControlBase::OnMouseOver(x, y, m); if (CcLearn::Learning(GetParamIdx())) CcLearn::Info(GetParamIdx()); else SetInfo(mInfo + CcLearn::Suffix(GetParamIdx())); SetDirty(false); }
   void OnMouseOut() override { IKnobControlBase::OnMouseOut(); SetDirty(false); }
   bool IsHit(float x, float y) const override { return (x - mCX) * (x - mCX) + (y - mCY) * (y - mCY) <= mR * mR * 3.2f; }
 private:
+  CcLearn mCc;
   int Sel() const { const IParam* p = GetParam(); return p ? std::max(0, std::min((int)mMarks.size() - 1, (int)std::lround(p->Value()))) : 0; }
   float mCX, mCY, mR; std::string mLabel, mInfo; std::vector<std::string> mMarks; bool mDragged = false; float mMoved = 0.f; double mAcc = 0.0;
 };
@@ -444,6 +508,7 @@ public:
       SetValue(GetDelegate()->GetParam(mJob[j].param)->GetNormalized());
       SetDirty(false);
     }
+    if (mCc.Dirty(GetParamIdx())) SetDirty(false);   // CC learn: the blue ring on / off
     return IKnobControlBase::IsDirty();
   }
   void Draw(IGraphics& g) override
@@ -455,6 +520,7 @@ public:
     }
     g.FillCircle(kPaper, mCX, mCY, mR);
     g.DrawCircle(kInk, mCX, mCY, mR, nullptr, 0.38f * S);
+    if (CcLearn::Learning(GetParamIdx())) CcLearn::Ring(g, mCX, mCY, mR * 1.7f);
     const float v = (float)GetValue(), a = Rad(240.f - 300.f * std::max(0.f, std::min(1.f, v)));
     IStrokeOptions o; o.mCapOption = ELineCap::Round;
     g.PathMoveTo(mCX + mR * 0.1f * std::cos(a), mCY - mR * 0.1f * std::sin(a));
@@ -486,21 +552,23 @@ public:
     }
   }
   void OnMouseOver(float x, float y, const IMouseMod& m) override { IKnobControlBase::OnMouseOver(x, y, m); Report(); }
-  void OnMouseDown(float, float, const IMouseMod&) override { mAcc = GetValue(); DragBegin(this); }
-  void OnMouseUp(float, float, const IMouseMod&) override { DragEnd(this); }
-  void OnMouseDrag(float, float, float dX, float dY, const IMouseMod& m) override { mAcc = Clip(mAcc + DragStep(dX, dY, m, 350.0), 0.0, 1.0); SetValue(mAcc); SetDirty(true); Report(); }
+  void OnMouseDown(float, float, const IMouseMod& m) override { if (mCc.Down(this, m)) return; mAcc = GetValue(); DragBegin(this); }
+  void OnMouseUp(float, float, const IMouseMod&) override { if (mCc.Up()) return; DragEnd(this); }
+  void OnMouseDrag(float, float, float dX, float dY, const IMouseMod& m) override { if (mCc.rclick) return; mAcc = Clip(mAcc + DragStep(dX, dY, m, 350.0), 0.0, 1.0); SetValue(mAcc); SetDirty(true); Report(); }
+  void OnPopupMenuSelection(IPopupMenu* pm, int) override { mCc.Chosen(this, pm); SetDirty(false); }
   bool IsHit(float x, float y) const override { return (x - mCX) * (x - mCX) + (y - mCY) * (y - mCY) <= mR * mR * 2.4f; }
 private:
   void Report()
   {
     const IParam* p = GetParam(); if (!p) return;
+    if (CcLearn::Learning(GetParamIdx())) { CcLearn::Info(GetParamIdx()); return; }
     static const char* kModes[3] = { "POLY", "VCO2 ARP", "LATCH" };
     const char* nm = mJob[0].param == PARAM_INDEX_MS20__Voices_arpmode ? kModes[ArpZone(GetDelegate())] : mJob[mActive].name;
-    char b[128]; snprintf(b, sizeof(b), "%s  \xC2\xB7  %s  %.1f", mHw, nm, p->Value());
+    char b[160]; snprintf(b, sizeof(b), "%s  \xC2\xB7  %s  %.1f%s", mHw, nm, p->Value(), CcLearn::Suffix(GetParamIdx()).c_str());
     SetInfo(b);
   }
   float mCX, mCY, mR; const char* mHw;
-  Job mJob[3]; int mActive = 0, mZoneShown = -1, mSyncShown = -1; double mAcc = 0.0;
+  Job mJob[3]; int mActive = 0, mZoneShown = -1, mSyncShown = -1; double mAcc = 0.0; CcLearn mCc;
 public:
   PatchHost* mHost = nullptr;   // the RATE knob shows the division while SYNC is on
 };
@@ -948,7 +1016,13 @@ public:
     if (ZoomB().Contains(x, y)) SetInfo("WINDOW SIZE  \xC2\xB7  click to pick a size");
 #endif
   }
-  bool IsDirty() override { HoverInfo().age++; if (++mTick >= 6) { mTick = 0; return true; } return IControl::IsDirty(); }
+  bool IsDirty() override
+  {
+    HoverInfo().age++;
+    { const int cc = mPatch->CcTakeLearned(); if (cc >= 0) { char b[96]; snprintf(b, sizeof(b), "LEARNED  \xC2\xB7  CC %d moves that knob now", cc); SetInfo(b); return true; } }
+    if (++mTick >= 6) { mTick = 0; return true; }
+    return IControl::IsDirty();
+  }
   LogBox* mLogBox = nullptr;
 private:
   PatchHost* mPatch; std::function<int()> mCtl; std::function<void(char*, int)> mDiag;
@@ -962,6 +1036,7 @@ private:
 // ---------------------------------------------------------------- the whole window
 inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller, std::function<void(char*, int)> diag)
 {
+  UiHost() = ph;   // CC learn
   g->AttachControl(new PanelArt());
   for (int i = 0; i < 5; i++) g->AttachControl(new LedLight(ph, i));
   static const float COLX[8] = {7.5f, 20.0f, 32.6f, 45.0f, 57.4f, 69.8f, 82.2f, 94.0f};

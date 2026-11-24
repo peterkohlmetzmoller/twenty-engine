@@ -11,6 +11,7 @@
 #endif
 #include "engine/engine_gen.h"
 #include "engine/state_format.h"
+#include "engine/cc_map.h"
 #include "led_port.h"
 #if TWENTY_UI
 #include "ui/StudioHost.h"
@@ -86,6 +87,12 @@ public:
   void SetModeSetting(int m) override;
   bool IcMode() const override;
   void SetEspLatch(bool on) override { UiMidi(0xB0, 105, on ? 127 : 0); }
+  bool CcAvailable() const override { return true; }
+  int CcOf(int p) const override { return ms20::GlobalCcMap().ccOf(p); }
+  int CcLearning() const override { return ms20::GlobalCcMap().learning.load(); }
+  void CcLearn(int p) override { ms20::GlobalCcMap().learning.store(p); }
+  void CcForget(int p) override { ms20::GlobalCcMap().forget(p); }
+  int CcTakeLearned() override { return ms20::GlobalCcMap().learnedCc.exchange(-1); }
   void PatchCable(int outJack, int inJack, bool on) override
   { if (on) UiCable(4, outJack, inJack); else { UiCable(5, outJack, inJack); UiCable(5, inJack, inJack); UiCable(5, outJack, outJack); } }
 #endif
@@ -120,6 +127,8 @@ private:
   std::atomic<int> mController{0};
   static constexpr int32_t kMemPresetMagic = 0x54454D53;   // 'TEMS': a preset that is a memory slot
   int mRestoreOvr = -1;   // while a state is restored: the cables' mode (1 the sound's own, 0 the window's)
+  ms20::SpscQueue<ms20::ParamSet, 256> mCcQ;   // CC learn: controllers moved (audio thread) -> the parameters, the DAW (main)
+  int mCcSaved = 0; long long mCcFileTime = 0; int mCcScan = 0;
   int mPresetShown = 36;
   std::atomic<int> mArpSync{0};   // arp SYNC switch: 1 = on the DAW's beat, the RATE knob picks the division
   double mArpPpq = 0.0;

@@ -8,6 +8,7 @@
 #include "engine/engine_gen.h"
 #include "engine/ms20_host.h"
 #include "engine/panel_memory.h"
+#include "engine/cc_map.h"
 #include "led_port.h"
 #include "ui/StudioHost.h"
 #include <atomic>
@@ -40,6 +41,13 @@ public:
   void SwitchDown(bool down) override { UiMidi(0xD0, down ? 127 : 0, 0); }
   int Leds() const override { return mUiLeds.load(); }
   void SetEspLatch(bool on) override { UiMidi(0xB0, 105, on ? 127 : 0); }
+  // CC learn (engine/cc_map.h): the app's keyboards (not the MS-20ic, whose knobs come on their own path)
+  bool CcAvailable() const override { return true; }
+  int CcOf(int p) const override { return ms20::GlobalCcMap().ccOf(p); }
+  int CcLearning() const override { return ms20::GlobalCcMap().learning.load(); }
+  void CcLearn(int p) override { ms20::GlobalCcMap().learning.store(p); }
+  void CcForget(int p) override { ms20::GlobalCcMap().forget(p); }
+  int CcTakeLearned() override { return ms20::GlobalCcMap().learnedCc.exchange(-1); }
   void PatchCable(int outJack, int inJack, bool on) override
   { if (on) UiCable(4, outJack, inJack); else { UiCable(5, outJack, inJack); UiCable(5, inJack, inJack); UiCable(5, outJack, outJack); } }
   // the bug log: what happened lately with the setup; LOG copies it (the window puts it on the clipboard) and saves
@@ -77,6 +85,7 @@ private:
   ms20::SpscQueue<uint32_t, 1024> mLogMidi;     // audio thread -> log: keys played (status, note, velocity)
   char mDir[1024] = "";
   int mLogCtl = -1, mLogPanel = -1; double mLogRate = 0.0;
+  int mCcSaved = 0;
 
   std::unique_ptr<ms20::MS20Host> mHost;
   LedPort mLed;

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <cmath>
 #include <spawn.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
@@ -69,6 +70,8 @@ TwentyEnginePlugin::TwentyEnginePlugin()
       mHost->loadMemories(dir);
       snprintf(mPanelPath, sizeof(mPanelPath), "%sMS20PANEL.BIN", dir);
       snprintf(mDir, sizeof(mDir), "%s", dir);
+      char cp[1100]; snprintf(cp, sizeof(cp), "%sccmap.txt", dir); ms20::GlobalCcMap().load(cp);
+      mCcSaved = ms20::GlobalCcMap().changed.load();
     }
   }
   if (mPanelPath[0] && mPanelMem.load(mPanelPath)) mPanelSrc.store(1);
@@ -132,6 +135,12 @@ void TwentyEnginePlugin::run(const float**, float** outputs, uint32_t frames, co
   {
     if ((s & 0xF0) == 0xD0) continue;
     if ((s & 0xF0) == 0x90 || (s & 0xF0) == 0x80) mLogMidi.push(((uint32_t)s << 16) | ((uint32_t)d1 << 8) | d2 | 0x01000000u);
+    if ((s & 0xF0) == 0xB0)   // CC learn: a learned controller moves its parameter (the window follows the engine)
+    {
+      int type; double def, mn, mx;
+      const int p = ms20::GlobalCcMap().onCc(d1, false);
+      if (p >= 0 && p < kNumParams) { ParamRange(p, type, def, mn, mx); double v = mn + (mx - mn) * (d2 / 127.0); if (type != 0) v = std::round(v); mHost->setParamQuiet(p, ToRaw(p, v)); continue; }
+    }
     mHost->midi(0, s, d1, d2);
   }
   { uint32_t m; while (mUiMidi.pop(m)) mHost->midi(0, (uint8_t)(m >> 16), (uint8_t)(m >> 8), (uint8_t)m); }
@@ -154,6 +163,9 @@ void TwentyEnginePlugin::Idle()
   { ParamSet p; while (mHost->popEngineChange(p)) {} }   // the window reads the engine itself
   if (--rescan <= 0) { mLed.Rescan(); rescan = 100; }   // every 2 s: the controller plugged in later
   if (--scan <= 0) { mController.store(LedPort::FindController()); scan = 50; }
+  // CC learn: the map file after a change
+  { const int ch = ms20::GlobalCcMap().changed.load();
+    if (ch != mCcSaved && mDir[0]) { mCcSaved = ch; char cp[1100]; snprintf(cp, sizeof(cp), "%sccmap.txt", mDir); ms20::GlobalCcMap().save(cp); Log("CC LEARN map saved"); } }
   // the bug log: the controller, the panel, the sample rate, keys played
   { static const char* kN[] = { "none", "MS-20ic", "Ksoloti Core", "Teensy", "microKONTROL" };
     const int c = mController.load(); if (c != mLogCtl) { mLogCtl = c; Log("CONTROLLER %s", (c >= 0 && c <= 4) ? kN[c] : "?"); }

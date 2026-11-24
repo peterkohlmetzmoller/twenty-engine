@@ -72,6 +72,7 @@ jobs:
           clang++ -std=c++17 -O2 -w -o v11_test v11_test.cpp && ./v11_test
           clang++ -std=c++17 -O2 -w -o cables_test cables_test.cpp && ./cables_test
           clang++ -std=c++17 -O2 -w -o state_test state_test.cpp && ./state_test
+          clang++ -std=c++17 -O2 -w -o cc_test cc_test.cpp && ./cc_test
 
       - name: Configure
         if: github.ref_name != 'ui'

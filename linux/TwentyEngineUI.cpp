@@ -78,9 +78,10 @@ protected:
   }
   bool onMouse(const MouseEvent& ev) override
   {
-    if (ev.button != 1) return false;
+    if (ev.button != kMouseButtonLeft && ev.button != kMouseButtonRight) return false;
+    const bool right = ev.button == kMouseButtonRight;   // right-click: CC learn on a knob
     const float x = ToX(ev.pos.getX()), y = ToY(ev.pos.getY());
-    if (ev.press) mG->MouseDown(x, y, Mod(ev.mod, true), ev.time); else mG->MouseUp(x, y, Mod(ev.mod, false));
+    if (ev.press) mG->MouseDown(x, y, Mod(ev.mod, !right, right), ev.time); else mG->MouseUp(x, y, Mod(ev.mod, false));
     repaint();
     return true;
   }
@@ -104,7 +105,7 @@ private:
   float OffY() const { return (getHeight() - te_ui::kH * Scale()) * 0.5f; }
   float ToX(double x) const { return (float)((x - OffX()) / Scale()); }
   float ToY(double y) const { return (float)((y - OffY()) / Scale()); }
-  static IMouseMod Mod(uint m, bool left) { return IMouseMod(left, false, (m & kModifierShift) != 0, (m & kModifierControl) != 0, (m & kModifierAlt) != 0); }
+  static IMouseMod Mod(uint m, bool left, bool right = false) { return IMouseMod(left, right, (m & kModifierShift) != 0, (m & kModifierControl) != 0, (m & kModifierAlt) != 0); }
   void Diag(char* out, int n) const
   {
     const int ps = mPlug->PanelSource();

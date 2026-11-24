@@ -142,6 +142,7 @@ public:
   const IParam* GetParam(int = 0) const { return (mParamIdx >= 0 && mDelegate) ? mDelegate->GetParam(mParamIdx) : nullptr; }
   IEditorDelegate* GetDelegate() const { return mDelegate; }
   IGraphics* GetUI() const { return mGraphics; }
+  const IRECT& GetRECT() const { return mRECT; }
   // repaint; with triggerAction the parameter takes the control's value (a knob turned in the window)
   void SetDirty(bool triggerAction = true, int = 0)
   {

@@ -33,7 +33,7 @@ target_include_directories(TwentyEngine PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/shim
   ${TE_ROOT})
-target_compile_definitions(TwentyEngine PUBLIC TWENTY_ALSA=1)
+target_compile_definitions(TwentyEngine PUBLIC TWENTY_ALSA=1 TE_NO_POPUP=1)   # no menus in the Linux window (CC learn: right-click)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(ALSA REQUIRED IMPORTED_TARGET alsa)

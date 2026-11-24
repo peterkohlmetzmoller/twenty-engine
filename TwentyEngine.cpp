@@ -335,6 +335,10 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
 #endif
   }
 #endif
+#if IPLUG_DSP && TWENTY_UI
+  { static bool ccLoaded = false; if (!ccLoaded && mDataDir[0]) { char p[1200]; snprintf(p, sizeof(p), "%sccmap.txt", mDataDir); ms20::GlobalCcMap().load(p); ccLoaded = true; }
+    mCcSaved = ms20::GlobalCcMap().changed.load(); }
+#endif
 #if IPLUG_DSP
 #if TWENTY_STUDIO
   PanelPort::Get();   // the plugin's own MIDI port exists from the start, so the DAW sees it before recording
@@ -853,6 +857,19 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   if (!mLed.KnobsDirect() && (msg.mStatus & 0xF0) == 0x90 && msg.mData2 > 0 && !mWinInTake) FocusCell()->store(mFocusId);
 #endif
 #if TWENTY_UI
+  // CC learn: a learned controller moves its parameter (both engines: live playing and regions); the parameter, the
+  // window and the DAW follow on the main thread (OnIdle). A parameter waiting for a controller learns this one.
+  if ((msg.mStatus & 0xF0) == 0xB0)
+  {
+    const int p = ms20::GlobalCcMap().onCc(msg.mData1, IcModeNow());
+    if (p >= 0 && p < kNumParams)
+    {
+      const int32_t raw = ToRaw(p, GetParam(p)->FromNormalized(msg.mData2 / 127.0));
+      mHost->setParamQuiet(p, raw); mPlay->setParamQuiet(p, raw);
+      mCcQ.push({p, raw});
+      return;
+    }
+  }
   // played from any keyboard: channel pressure is the MS-20ic's momentary switch only when one is connected
   // (a keyboard's aftertouch would otherwise hold the switch: silent keys, memory mode)
   if ((msg.mStatus & 0xF0) == 0xD0 && mController.load() == 0) return;
@@ -1182,6 +1199,26 @@ void TwentyEngine::OnIdle()
 #endif
   }
 #if TWENTY_UI
+  // 1a'. CC learn: controllers moved -> the plugin's parameters (the DAW records them as automation), the window,
+  //      the regions (MS-20ic mode); the map file after a change (learned or forgotten), or reloaded when another
+  //      program changed it
+  { ms20::ParamSet c;
+    while (mCcQ.pop(c))
+    {
+      const double v = FromRaw(c.idx, c.raw);
+      mFromEngine = true; GetParam(c.idx)->Set(v); mFromEngine = false;
+      mUiShown[c.idx] = c.raw; mUiTouchMs[c.idx].store(ms20::ParamStream<kNumParams>::NowMs());
+      const double nv = GetParam(c.idx)->GetNormalized();
+      BeginInformHostOfParamChange(c.idx); InformHostOfParamChange(c.idx, nv); EndInformHostOfParamChange(c.idx);
+      SendParameterValueFromDelegate(c.idx, nv, true);
+      if (SendsToRegions() && (HasFocus() || !mLed.KnobsDirect())) StreamSend(c.idx, c.raw);
+    }
+    char cp[1200]; snprintf(cp, sizeof(cp), "%sccmap.txt", mDataDir);
+    const int ch = ms20::GlobalCcMap().changed.load();
+    if (ch != mCcSaved && mDataDir[0]) { mCcSaved = ch; ms20::GlobalCcMap().save(cp); struct stat st; if (stat(cp, &st) == 0) mCcFileTime = (long long)st.st_mtime; Dbg("CC LEARN map saved"); }
+    else if (mDataDir[0] && --mCcScan <= 0)
+    { mCcScan = 100; struct stat st;   // every 2 s: another program (another DAW) changed the map
+      if (stat(cp, &st) == 0 && (long long)st.st_mtime != mCcFileTime) { if (mCcFileTime) { ms20::GlobalCcMap().load(cp); mCcSaved = ms20::GlobalCcMap().changed.load(); } mCcFileTime = (long long)st.st_mtime; } } }
   // 1b. the window's knobs follow the live engine (an MS-20ic, a region playing back with one engine, a memory),
   //     except one being held in the window
   { const int64_t now = ms20::ParamStream<kNumParams>::NowMs();
