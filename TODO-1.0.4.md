@@ -37,3 +37,5 @@ Plan:
   - TRIG LED shows the delay time (blinks at the delay rate) instead of "stored sound"; mode indicator could be solid = panel. (PEAK already blinks the arp tempo.)
   - Pickup for the ESP knobs when switching layers (delay <-> arp), so a knob doesn't jump (e.g. delay time after changing arp rate).
   - Arp on both oscillators: already there in mono (KBD CV OUT -> VCO1+2 CV IN + arp: VCO1 plays the arp too). Poly arp: VCO1 organ chord, VCO2 arp. Maybe a poly option where both arp.
+- Régis (24 Nov): mono + arp: VCO1's phaser saw (wave 2) is a plain saw - the arp VCO1 path (ao1, w1==1) skips the phaser that the poly path applies to s1. Fix: run ao1 through the phaser too. Wheel idea: vibrato on the wheel unless a cable is in the WHEEL OUT jack (jack 27 patched -> no vibrato). Likes TOTAL sweeping VCO1's waveform.
+- Ryan Richter (Mac, Live 12.4.16, Sonoma 14.6): "white noise in every note whatever the attack" = Key Click (click + gated pink/white noise after the filter). Pops in all settings: need his bounce. "Secondary functions flipped" - check for a reversed switch (Mac has no reversed-switch handling yet). Patch bay "doesn't work": ask what he patched.
