@@ -66,7 +66,7 @@ def table(rows, widths):
 
 SETTINGS = '''// ================= SETTINGS =================
 ...
-static const float KEY_CLICK = 6.0f;   // 0 = off, 6 = standard, 64 = max
+static const float KEY_CLICK = 3.0f;   // 0 = off, 3 = standard, 64 = max
 
 static const int SWITCH_NEXT  = -1;    // next sound
 static const int SWITCH_PREV  = -1;    // previous sound
@@ -87,7 +87,7 @@ story += [Paragraph('Key click', h1),
                     'You can make it quieter or turn it off.', body),
           table([['', '<b>How</b>', '<b>Values</b>'],
                  ['<b>Plugin</b>', 'In your DAW, open the plugin\'s parameters and find <b>Key Click</b> (under Filters). '
-                                   'It is saved with your project.', '0 = off<br/>6 = standard<br/>64 = maximum'],
+                                   'It is saved with your project.', '0 = off<br/>3 = standard<br/>64 = maximum'],
                  ['<b>Teensy</b>', '<b>KEY_CLICK</b> at the top of the sketch, then upload (below).', 'Same scale as the plugin']],
                 [22 * mm, W - 2 * M - 22 * mm - 36 * mm, 36 * mm]),
           Spacer(1, 4 * mm)]
