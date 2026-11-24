@@ -1163,11 +1163,11 @@ void TwentyEngine::StudioDiag(char* out, int n) const
 {
 #if IPLUG_DSP
 #if defined(_WIN32)
-  if (!PanelPort::Get().Ok()) snprintf(out, n, "Plays the panel's sound (to keep it in the takes: loopMIDI port \"Twenty Engine Panel\")");
+  if (!PanelPort::Get().Ok()) snprintf(out, n, "Plays the panel  \xC2\xB7  takes keep their sound with loopMIDI");
 #else
-  if (!PanelPort::Get().Ok()) snprintf(out, n, "Plays the panel's sound (keeping it in the regions needs a Mac)");
+  if (!PanelPort::Get().Ok()) snprintf(out, n, "Plays the panel's sound");
 #endif
-  else if (mFollowA.load()) snprintf(out, n, "No sound recorded here yet \xC2\xB7 plays the panel (track input: All)");
+  else if (mFollowA.load()) snprintf(out, n, "No sound recorded here yet  \xC2\xB7  plays the panel");
   else snprintf(out, n, "The sound is recorded with the regions");
 #else
   if (n > 0) out[0] = 0;

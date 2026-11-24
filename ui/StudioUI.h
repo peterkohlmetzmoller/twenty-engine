@@ -286,7 +286,7 @@ class PKnob : public IKnobControlBase
 {
 public:
   PKnob(float cx, float cy, float rUnits, int param, const char* label, const char* infoName, bool labelAbove = false)
-  : IKnobControlBase(IRECT(cx - 6.2f * S, cy - rUnits * 2.4f * S - 2.5f * S, cx + 6.2f * S, cy + rUnits * 1.62f * S + 6.5f * S), param, EDirection::Vertical, 2.0),
+  : IKnobControlBase(IRECT(cx - 6.2f * S, cy - rUnits * 2.4f * S - 2.5f * S, cx + 6.2f * S, cy + rUnits * 1.62f * S + 6.5f * S), param, EDirection::Vertical, 5.0),
     mCX(cx), mCY(cy), mR(rUnits * S), mLabel(label), mInfo(infoName), mAbove(labelAbove) {}
   void SetFunction(const char* fn, const char* info) { mFn = fn; mInfo = info; SetDirty(false); }
   void SetZones(std::vector<std::string> z) { mZones = z; }
@@ -341,7 +341,7 @@ class PRotary : public IKnobControlBase
 public:
   // marks: "w:tri" draws a waveform symbol, anything else is printed
   PRotary(float cx, float cy, int param, const char* label, const char* info, std::vector<std::string> marks)
-  : IKnobControlBase(IRECT(cx - 6.2f * S, cy - 3.2f * 2.2f * S, cx + 6.2f * S, cy + 8.f * S), param, EDirection::Vertical, 0.8),
+  : IKnobControlBase(IRECT(cx - 6.2f * S, cy - 3.2f * 2.2f * S, cx + 6.2f * S, cy + 8.f * S), param, EDirection::Vertical, 1.6),
     mCX(cx), mCY(cy), mR(3.0f * 1.05f * S), mLabel(label), mInfo(info), mMarks(marks) {}
   void Draw(IGraphics& g) override
   {
@@ -404,7 +404,7 @@ class EspKnob : public IKnobControlBase
 public:
   struct Job { int param; const char* name; };
   EspKnob(float cx, float cy, const char* hw, Job delay, Job arp, Job sw)
-  : IKnobControlBase(IRECT(cx - 6.8f * S, cy - 3.2f * 2.4f * S, cx + 6.8f * S, cy + 3.2f * 1.62f * S + 6.f * S), delay.param, EDirection::Vertical, 2.0),
+  : IKnobControlBase(IRECT(cx - 6.8f * S, cy - 3.2f * 2.4f * S, cx + 6.8f * S, cy + 3.2f * 1.62f * S + 6.f * S), delay.param, EDirection::Vertical, 5.0),
     mCX(cx), mCY(cy), mR(3.2f * S), mHw(hw) { mJob[0] = delay; mJob[1] = arp; mJob[2] = sw; }
 
   bool IsDirty() override
@@ -715,6 +715,24 @@ private:
   float mCX, mCY; PatchHost* mHost; int mShown = -1;
 };
 
+// text that never runs past its box: cut with an ellipsis
+static void FitText(IGraphics& g, const IText& t, const char* s, const IRECT& r)
+{
+  std::string str(s); IRECT b;
+  g.MeasureText(t, str.c_str(), b);
+  if (b.W() > r.W()) {
+    while (!str.empty()) { str.pop_back(); g.MeasureText(t, (str + "\xE2\x80\xA6").c_str(), b); if (b.W() <= r.W()) break; }
+    str += "\xE2\x80\xA6";
+  }
+  g.DrawText(t, str.c_str(), r);
+}
+
+#ifdef _WIN32
+// Windows: the window is drawn on the CPU; it has fixed sizes picked from a menu instead of free resizing
+static float& Zoom() { static float z = 1.f; return z; }
+static const float kZooms[] = { 1.f, 1.25f, 1.5f, 1.75f, 2.f };
+#endif
+
 // SWITCH is the MS-20's momentary switch (tap tempo with a cable SWITCH -> ESP SIGNAL IN).
 class StatusBar : public IControl
 {
@@ -734,8 +752,8 @@ public:
     else { g.DrawCircle(kGrey, mRECT.L + 22.f, cy, 6.f, nullptr, 1.5f); g.DrawText(IText(15.f, kGrey, kF, EAlign::Near, EVAlign::Middle), "Any MIDI keyboard", IRECT(mRECT.L + 36.f, mRECT.T, mRECT.L + 224.f, mRECT.B)); }
     // what the mouse is over, else where the sound is kept
     Info& in = HoverInfo();
-    if (!in.text.empty() && in.age < 90) g.DrawText(IText(14.f, kInk, kF, EAlign::Near, EVAlign::Middle), in.text.c_str(), IRECT(mRECT.L + 236.f, mRECT.T, mRECT.L + 630.f, mRECT.B));
-    else { char d[200] = ""; if (mDiag) mDiag(d, sizeof(d)); g.DrawText(IText(13.f, kGrey, kF, EAlign::Near, EVAlign::Middle), d, IRECT(mRECT.L + 236.f, mRECT.T, mRECT.L + 630.f, mRECT.B)); }
+    if (!in.text.empty() && in.age < 90) FitText(g, IText(14.f, kInk, kF, EAlign::Near, EVAlign::Middle), in.text.c_str(), IRECT(mRECT.L + 236.f, mRECT.T, mRECT.L + 626.f, mRECT.B));
+    else { char d[200] = ""; if (mDiag) mDiag(d, sizeof(d)); FitText(g, IText(13.f, kGrey, kF, EAlign::Near, EVAlign::Middle), d, IRECT(mRECT.L + 236.f, mRECT.T, mRECT.L + 626.f, mRECT.B)); }
     // modes
     const double mo = GetDelegate() ? GetDelegate()->GetParam(PARAM_INDEX_MS20__Voices_arpmode)->Value() : 0.0;
     std::string m = mPatch->CableFlag(0) ? "mono" : "poly";
@@ -746,24 +764,56 @@ public:
     g.DrawRect(mSwitch ? kAccent : kInk, SwitchB(), nullptr, 1.5f);
     g.DrawText(IText(12.f, mSwitch ? kPaper : kInk, kF, EAlign::Center, EVAlign::Middle), "SWITCH", SwitchB());   // black while held
     g.DrawText(IText(17.f, kInk, kFB, EAlign::Far, EVAlign::Middle), "TWENTY ENGINE", IRECT(mRECT.R - 278.f, mRECT.T, mRECT.R - 34.f, mRECT.B));
+#ifdef _WIN32
+    // window size: a menu of fixed sizes
+    char z[16]; snprintf(z, sizeof(z), "%d %%", (int)(Zoom() * 100.f + 0.5f));
+    g.DrawRect(kGrey, ZoomB(), nullptr, 1.f);
+    g.DrawText(IText(12.f, kInk, kF, EAlign::Center, EVAlign::Middle), z, ZoomB());
+#else
     // resize grip in the corner: drag it to scale the window
     for (int i = 1; i <= 4; i++)
       g.DrawLine(i == 4 ? kInk : kGrey, mRECT.R - 3.f, mRECT.B - 3.f - i * 4.5f, mRECT.R - 3.f - i * 4.5f, mRECT.B - 3.f, nullptr, 1.6f);
+#endif
   }
+#ifdef _WIN32
+  IRECT ZoomB() const { return IRECT(mRECT.R - 338.f, mRECT.T + 9.f, mRECT.R - 288.f, mRECT.B - 9.f); }
+  void OnPopupMenuSelection(IPopupMenu* pMenu, int) override
+  {
+    if (!pMenu) return;
+    const int i = pMenu->GetChosenItemIdx();
+    if (i < 0 || i >= (int)(sizeof(kZooms) / sizeof(kZooms[0]))) return;
+    Zoom() = kZooms[i];
+    if (IGraphics* ui = GetUI()) ui->Resize(ui->Width(), ui->Height(), Zoom());
+  }
+#endif
 
   void OnMouseDown(float x, float y, const IMouseMod&) override
   {
     if (SwitchB().Contains(x, y)) { mSwitch = true; SwitchHeld() = true; mPatch->SwitchDown(true); SetDirty(false); }
+#ifdef _WIN32
+    if (ZoomB().Contains(x, y))
+    {
+      mZoomMenu.Clear();
+      for (float zz : kZooms) { char t[16]; snprintf(t, sizeof(t), "%d %%", (int)(zz * 100.f + 0.5f)); mZoomMenu.AddItem(t, -1, zz == Zoom() ? IPopupMenu::Item::kChecked : IPopupMenu::Item::kNoFlags); }
+      GetUI()->CreatePopupMenu(*this, mZoomMenu, ZoomB());
+    }
+#endif
   }
   void OnMouseUp(float, float, const IMouseMod&) override { if (mSwitch) { mSwitch = false; SwitchHeld() = false; mPatch->SwitchDown(false); SetDirty(false); } }
   void OnMouseOver(float x, float y, const IMouseMod&) override
   {
     if (SwitchB().Contains(x, y)) SetInfo("SWITCH  \xC2\xB7  the MS-20's momentary switch  \xC2\xB7  tap: tempo (SWITCH -> ESP SIGNAL IN)");
+#ifdef _WIN32
+    if (ZoomB().Contains(x, y)) SetInfo("WINDOW SIZE  \xC2\xB7  click to pick a size");
+#endif
   }
   bool IsDirty() override { HoverInfo().age++; if (++mTick >= 6) { mTick = 0; return true; } return IControl::IsDirty(); }
 private:
   PatchHost* mPatch; std::function<int()> mCtl; std::function<void(char*, int)> mDiag;
   int mTick = 0; bool mSwitch = false;
+#ifdef _WIN32
+  IPopupMenu mZoomMenu;
+#endif
 };
 
 // ---------------------------------------------------------------- the whole window
@@ -838,7 +888,11 @@ inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller,
   if (ph && ph->ArpSync() >= 0) g->AttachControl(new SyncButton(RX(1340), ey, ph));   // only where there is a DAW clock
   // status bar
   g->AttachControl(new StatusBar(IRECT(0, Yd(PH) + 10.f, (float)kW, Yd(PH) + 10.f + BARH), ph, controller, diag));
+#ifndef _WIN32
   g->AttachCornerResizer(EUIResizerMode::Scale, false);
+#else
+  if (Zoom() != 1.f) g->Resize(g->Width(), g->Height(), Zoom());   // the size picked last time (this session)
+#endif
 }
 
 } // namespace te_ui

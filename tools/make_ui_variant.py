@@ -49,7 +49,7 @@ edit('config.h', [
     ('#define PLUG_NAME "Twenty Engine MS-20ic"', '#define TWENTY_UI 1\n#define PLUG_NAME "Twenty Engine UI"'),
     ('#define PLUG_WIDTH 360', '#define PLUG_WIDTH 1224'),     # the full MS-20 panel (ui/StudioUI.h)
     ('#define PLUG_HEIGHT 120', '#define PLUG_HEIGHT 580'),
-    ('#define PLUG_HOST_RESIZE 0', '#define PLUG_HOST_RESIZE 1'),
+    ('#define PLUG_HOST_RESIZE 0', '#ifdef _WIN32\n#define PLUG_HOST_RESIZE 0   /* Windows: fixed sizes from the window\'s size menu */\n#else\n#define PLUG_HOST_RESIZE 1\n#endif'),
     ("#define PLUG_UNIQUE_ID 'Tw20'", "#define PLUG_UNIQUE_ID 'Tw2U'"),
     ('#define BUNDLE_NAME "TwentyEngine"', '#define BUNDLE_NAME "TwentyEngineUI"'),
     ('#define SHARED_RESOURCES_SUBPATH "TwentyEngine"', '#define SHARED_RESOURCES_SUBPATH "TwentyEngineUI"'),
