@@ -14,7 +14,11 @@ or from any MIDI keyboard.
 - **MS-20ic:** plug it in (before or after starting). The app finds it by name and connects to it itself; the
   status bar says "Connected · MS-20ic". Switch the volume knob off and on once so the app reads the knobs.
 - **Other keyboards** (USB MIDI) are connected automatically and play the keys.
-- **Files:** the 36 sound memories and the last panel are kept in `~/.config/twenty-engine/`.
+- **Every take is saved** as a 24-bit WAV in `~/Music/Twenty Engine/Captures` (a take starts at the first note and
+  ends after two seconds of silence; the folder keeps the newest 1 GB). Click the status line to open the folder.
+- **CC learn:** right-click a knob, then move a knob or slider on your controller. Right-click it again to forget.
+- **LOG** in the status bar copies a bug log; click the blue address to start an email to support.
+- **Files:** the 36 sound memories, the last panel and the learned controllers are kept in `~/.config/twenty-engine/`.
 
 Libraries it needs (normally already there on a desktop): ALSA (`libasound2`), OpenGL, X11.
 

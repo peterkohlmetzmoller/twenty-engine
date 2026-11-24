@@ -73,6 +73,7 @@ edit_all('resources/TwentyEngineUI-macOS-MainMenu.xib', 'title="Hide TwentyEngin
 edit_all('resources/TwentyEngineUI-macOS-MainMenu.xib', 'title="Quit TwentyEngineUI"', 'title="Quit Twenty Engine"')
 edit_all('resources/TwentyEngineUI-macOS-MainMenu.xib', 'title="TwentyEngineUI"', 'title="Twenty Engine"')
 edit_all('resources/main.rc', 'CAPTION "TwentyEngineUI"', 'CAPTION "Twenty Engine"')
+edit_all('resources/main.rc_mac_dlg', '"TwentyEngineUI",300,300', '"Twenty Engine",300,300')   # the Mac window's title
 # the app's menus (Windows: main.rc, Mac: main.rc_mac_menu): no developer menu (live edit, control bounds, FPS,
 # screenshot), no "Read Manual" (it only said "See the manual")
 for rc in ('resources/main.rc', 'resources/main.rc_mac_menu'):
