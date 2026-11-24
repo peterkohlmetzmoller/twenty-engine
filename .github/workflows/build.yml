@@ -383,7 +383,7 @@ jobs:
           # iPlug2's prebuilt Skia (the panel is drawn by Skia on the CPU on Windows), placed where iPlug2's CMake looks
           cd iPlug2/Dependencies && curl -sL -o deps.zip https://github.com/iPlug2/iPlug2/releases/download/v1.0.0-beta/IPLUG2_DEPS_WIN.zip
           unzip -q deps.zip && mkdir -p Build && cp -R IPLUG2_DEPS_WIN/* Build/ && rm -rf IPLUG2_DEPS_WIN deps.zip
-          mkdir -p Build/src/skia/out/Release-x64 && cp Build/win/x64/Release/skia.lib Build/win/x64/Release/svg.lib Build/src/skia/out/Release-x64/
+          mkdir -p Build/src/skia/out/Release-x64 && cp Build/win/x64/Release/*.lib Build/src/skia/out/Release-x64/
           cd ../..
           python tools/make_ui_variant.py build-ui-src
           cmake -S build-ui-src -B build-ui -G "Visual Studio 17 2022" -A x64 -T ClangCL -DIPLUG_DEPLOY_PLUGINS=OFF -DIPLUG2_DIR="$PWD/iPlug2" > ui-cfg.log 2>&1 || { tail -40 ui-cfg.log; exit 1; }
