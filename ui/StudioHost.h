@@ -22,6 +22,11 @@ struct PatchHost {
   // -1 = not available (no host clock)
   virtual int ArpSync() const { return -1; }
   virtual void SetArpSync(int) {}
+  // the plugin's mode (Twenty Engine UI in a DAW): 0 automatic (MS-20ic mode while an iC is connected), 1 MS-20ic,
+  // 2 standard synth plugin. -1: no modes (the standalone apps). IcMode: the mode in effect.
+  virtual int ModeSetting() const { return -1; }
+  virtual void SetModeSetting(int) {}
+  virtual bool IcMode() const { return true; }
   virtual void CopyLog() {}                                      // the bug log: to the clipboard (and a file)
   virtual void MailLog() {}                                      // a new email to the support address, the setup filled in
   virtual void PatchCable(int outJack, int inJack, bool on) {}   // the MS-20ic's own cable message (jack numbers as it sends them)

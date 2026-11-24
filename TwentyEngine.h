@@ -10,6 +10,7 @@
 #define TWENTY_STUDIO 0
 #endif
 #include "engine/engine_gen.h"
+#include "engine/state_format.h"
 #include "led_port.h"
 #if TWENTY_UI
 #include "ui/StudioHost.h"
@@ -70,7 +71,8 @@ public:
 #if TWENTY_UI
   // ---- the panel window (ui/StudioUI.h); main thread
   int Controller() const { return mController.load(); }      // 0 none, 1 MS-20ic, 2 Ksoloti, 3 Teensy
-  bool CableFlag(int which) const override { return mCableFlag[which & 1].load(); }
+  // mono (KBD CV -> VCO 1+2 CV IN) as the engine has it (also a recalled sound's or preset's own cable); tap tempo
+  bool CableFlag(int which) const override { return (which & 1) ? mCableFlag[1].load() : mHost->getParamRaw(PARAM_INDEX_Patch__State_mono) != 0; }
   void SetCableFlag(int which, bool on) override;
   int NoisePick(int j) const override { return (j >= 0 && j < 35) ? mNoise[j] : 0; }
   void SetNoisePick(int j, int pick) override { if (j >= 0 && j < 35) mNoise[j] = (uint8_t)pick; }
@@ -80,10 +82,15 @@ public:
   void SetArpSync(int v) override { mArpSync.store(v > 0 ? 1 : 0); }
   void CopyLog() override { CopyLogToClipboard(); }
   void MailLog() override;
+  int ModeSetting() const override;
+  void SetModeSetting(int m) override;
+  bool IcMode() const override;
   void PatchCable(int outJack, int inJack, bool on) override
   { if (on) UiCable(4, outJack, inJack); else { UiCable(5, outJack, inJack); UiCable(5, inJack, inJack); UiCable(5, outJack, outJack); } }
 #endif
   int PanelSource() const { return mPanelSrc.load(); }       // UI: 0 unknown, 1 from memory (MS20PANEL.BIN), 2 read from the controller
+  bool IcModeNow() const;                                    // MS-20ic mode (the classic plugin: always)
+  bool SendsToRegions() const;                               // the sound goes into the regions (the plugin's own port, MS-20ic mode)
 #ifdef _WIN32
   int mNrpnMsb = -1, mNrpnLsb = -1, mSwRaw = -1;   // the switch: "power on" seen, its report (ProcessMidiMsg)
   int64_t mPowerOnClk = -1, mSwRawClk = -1;
@@ -111,6 +118,7 @@ private:
   uint8_t mNoise[35] = {};
   std::atomic<int> mController{0};
   static constexpr int32_t kMemPresetMagic = 0x54454D53;   // 'TEMS': a preset that is a memory slot
+  int mRestoreOvr = -1;   // while a state is restored: the cables' mode (1 the sound's own, 0 the window's)
   int mPresetShown = 36;
   std::atomic<int> mArpSync{0};   // arp SYNC switch: 1 = on the DAW's beat, the RATE knob picks the division
   double mArpPpq = 0.0;
@@ -178,7 +186,9 @@ private:
   void Dbg(const char* fmt, ...);
 public:
   // ---- the bug log (main thread): what happened lately, with the setup, to copy into an email
+  static constexpr int32_t kStateMagic = ms20::kStateMagicTEP2;   // a 1.1 state: header + parameter count
   std::string BugLog();
+  int ReadParams(const IByteChunk& chunk, int pos, int nStored);   // the parameters of a saved state (any version)
   bool SaveLog(char* pathOut, int n);    // TwentyEngine-log.txt next to the memories
   void CopyLogToClipboard();             // UI builds: clipboard + file; classic builds: the file (+ clipboard on Windows)
 #if !TWENTY_UI

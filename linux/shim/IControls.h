@@ -104,6 +104,16 @@ struct IMouseMod
 
 class IGraphics;
 
+// menus: the Linux app has none (the plugin's mode menu is not shown in the apps)
+class IPopupMenu
+{
+public:
+  struct Item { enum Flags { kNoFlags = 0, kDisabled = 1, kTitle = 2, kChecked = 4, kSeparator = 8 }; };
+  void Clear() {}
+  void AddItem(const char*, int = -1, int = 0) {}
+  int GetChosenItemIdx() const { return -1; }
+};
+
 class IControl
 {
 public:
@@ -122,6 +132,7 @@ public:
   virtual void OnMouseOver(float, float, const IMouseMod&) {}
   virtual void OnMouseOut() {}
   virtual void OnMouseWheel(float, float, const IMouseMod&, float) {}
+  virtual void OnPopupMenuSelection(IPopupMenu*, int) {}
 
   // value: normalised, the control's own copy (kept in step with the parameter by the window)
   double GetValue() const { return mValue; }
@@ -202,6 +213,7 @@ public:
   }
   void AttachCornerResizer(EUIResizerMode = EUIResizerMode::Scale, bool = false) {}   // the app's window resizes itself
   void SetAllControlsDirty() { for (auto& c : mControls) c->SetDirty(false); }
+  void CreatePopupMenu(IControl&, IPopupMenu&, const IRECT&, int = 0) {}
   // the window does these (DPF): the mouse pointer, the clipboard
   std::function<void(ECursor)> mCursorFn;
   std::function<void(const char*)> mClipboardFn;

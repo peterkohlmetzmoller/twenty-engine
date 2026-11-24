@@ -439,6 +439,40 @@ bool TE_MidiBlock(int points, int distinctCCs, int maxPerCC, bool sameOffsets)
   return fresh;
 }
 
+// ---- the data folder (every copy and project): Mac ~/Library/Application Support/Twenty Engine/,
+//      Windows %APPDATA%\Twenty Engine\
+[[maybe_unused]] static void DataDirPath(char* d, size_t n)
+{
+#ifdef _WIN32
+  const char* base = getenv("APPDATA");
+  if (base) snprintf(d, n, "%s/Twenty Engine/", base); else d[0] = 0;
+#else
+  const char* home = getenv("HOME");
+  if (home) snprintf(d, n, "%s/Library/Application Support/Twenty Engine/", home); else d[0] = 0;
+#endif
+}
+
+// ---- Twenty Engine UI: the mode (0 automatic, 1 MS-20ic, 2 standard plugin), for every copy and project:
+//      it belongs to the setup (mode.txt in the data folder)
+static std::atomic<int> gMode{-1};
+[[maybe_unused]] static int ModeSettingG()
+{
+  int v = gMode.load();
+  if (v < 0)
+  {
+    char p[1100]; DataDirPath(p, sizeof(p)); v = 0;
+    if (p[0]) { strncat(p, "mode.txt", sizeof(p) - strlen(p) - 1); if (FILE* f = fopen(p, "r")) { char b[32] = ""; if (fgets(b, sizeof(b), f)) v = !strncmp(b, "ms20ic", 6) ? 1 : (!strncmp(b, "standard", 8) ? 2 : 0); fclose(f); } }
+    gMode.store(v);
+  }
+  return v;
+}
+[[maybe_unused]] static void SetModeSettingG(int v)   // main thread
+{
+  v = (v < 0 || v > 2) ? 0 : v; gMode.store(v);
+  char p[1100]; DataDirPath(p, sizeof(p));
+  if (p[0]) { MakeDir(p); strncat(p, "mode.txt", sizeof(p) - strlen(p) - 1); if (FILE* f = fopen(p, "w")) { fputs(v == 1 ? "ms20ic\n" : (v == 2 ? "standard\n" : "auto\n"), f); fclose(f); } }
+}
+
 // ---- Windows: a reversed SWITCH ----
 // The MS-20ic's SWITCH arrives as channel pressure: 127 pressed, 0 released. Some units send it the other way
 // round (0 pressed, 127 released). The iC reports the switch position when it is switched on (volume knob
@@ -1022,15 +1056,17 @@ void TwentyEngine::OnParamChange(int paramIdx, EParamSource source, int sampleOf
   if (!mFromEngine) mDbgHostSets++;
   if (!mFromEngine && source == kHost && mRunningA.load()) { mDiagHost++; mDiagHostBits.fetch_or(1ull << (paramIdx & 63)); }
   if (mFromEngine) return;   // the engine already has this value (it made the change)
-  const int32_t raw = ToRaw(paramIdx, GetParam(paramIdx)->Value());
+  int32_t raw = ToRaw(paramIdx, GetParam(paramIdx)->Value());
 #if TWENTY_UI
+  // a preset's or project's cables: the mode decides (UnserializeState): MS-20ic mode = the sound's own cables
+  if (source == kPresetRecall && paramIdx == PARAM_INDEX_Patch__State_ovr && mRestoreOvr >= 0) { GetParam(paramIdx)->Set(mRestoreOvr); raw = mRestoreOvr; }
   if (source != kUI) { mHostSetMs[paramIdx] = ms20::ParamStream<kNumParams>::NowMs(); mUiShown[paramIdx] = raw; }
   if (source == kPresetRecall)
   {
     // a preset from the host's menu (or the project as saved): the window shows it, so the live engine plays it,
     // and a region being recorded gets it
     mHost->setParamRaw(paramIdx, raw);
-    if (PanelPort::Get().Ok() && (HasFocus() || !mLed.KnobsDirect())) StreamSend(paramIdx, raw);
+    if (SendsToRegions() && (HasFocus() || !mLed.KnobsDirect())) StreamSend(paramIdx, raw);
   }
   if (source == kUI)
   {
@@ -1039,7 +1075,7 @@ void TwentyEngine::OnParamChange(int paramIdx, EParamSource source, int sampleOf
     mUiTouchMs[paramIdx].store(ms20::ParamStream<kNumParams>::NowMs());
     mUiShown[paramIdx] = raw;
     mHost->setParamRaw(paramIdx, raw);
-    if (PanelPort::Get().Ok() && (HasFocus() || !mLed.KnobsDirect())) StreamSend(paramIdx, raw);
+    if (SendsToRegions() && (HasFocus() || !mLed.KnobsDirect())) StreamSend(paramIdx, raw);
     return;
   }
 #endif
@@ -1107,11 +1143,12 @@ void TwentyEngine::OnIdle()
 #if TWENTY_STUDIO
   // 1a. Automation: the transport has started: the whole panel through the port, behind a new snapshot number.
   //     A recording track records it (a take starts with its sound); otherwise it is only echoed back and ignored.
-  const bool port = PanelPort::Get().Ok();
+  const bool portOk = PanelPort::Get().Ok(); (void)portOk;
+  const bool port = SendsToRegions();   // MS-20ic mode: the sound goes into the regions through the port
   const int64_t nowMs = ms20::ParamStream<kNumParams>::NowMs();
   const bool again = mRunningA.load() && nowMs - mLastSnapMs >= ms20::ParamStream<kNumParams>::SNAP_EVERY_MS;
 #if defined(_WIN32)
-  if (!port && --mPortScan <= 0) { mPortScan = 100; PanelPort::Get().Rescan(); }   // loopMIDI's port made later (every 2 s)
+  if (!portOk && --mPortScan <= 0) { mPortScan = 100; PanelPort::Get().Rescan(); }   // loopMIDI's port made later (every 2 s)
   const bool focus = HasFocus();   // Windows: the copy whose track was last played on (one copy sends at a time)
 #else
   const bool focus = HasFocus() || !mLed.KnobsDirect();   // only the copy that plays from the controller sends its panel
@@ -1210,9 +1247,28 @@ void TwentyEngine::OnIdle()
 }
 #endif
 
-// ---- project state: the parameters (as before), then the recorded takes (performance recall) ----
+// ---- saved parameters (engine/state_format.h): iPlug2 reads parameters in order without a count, so a state with
+// fewer or more parameters than this version would be misread (and, in VST3, the bypass flag after it)
+int TwentyEngine::ReadParams(const IByteChunk& chunk, int pos, int nStored)
+{
+  ENTER_PARAMS_MUTEX
+  for (int i = 0; i < nStored && pos >= 0; i++)
+  {
+    double v = 0.0; pos = chunk.Get(&v, pos);
+    if (pos >= 0 && i < kNumParams) GetParam(i)->Set(v);
+  }
+  for (int i = nStored; i < kNumParams; i++) GetParam(i)->Set(GetParam(i)->GetDefault());   // added since it was saved
+  OnParamReset(kPresetRecall);
+  LEAVE_PARAMS_MUTEX
+  return pos;
+}
+
+// ---- project state: a header and the parameters, then the recorded takes (performance recall) ----
 bool TwentyEngine::SerializeState(IByteChunk& chunk) const
 {
+  // 1.1: a header with the number of parameters, so a project keeps loading as parameters are added
+  const int32_t stateMagic = kStateMagic, np = kNumParams;
+  chunk.Put(&stateMagic); chunk.Put(&np);
   if (!SerializeParams(chunk)) return false;
 #if IPLUG_DSP
   const std::vector<uint8_t> b = mRecall.serialize();
@@ -1243,14 +1299,29 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
   // (AU: the host restores the preset of that name first, then this state)
   mHost->cancelRecall();
 #endif
-  int pos = UnserializeParams(chunk, startPos);
+  // the parameters: 1.1 states say how many there are; older ones are recognised by their layout
+  int pos = startPos;
+  const int nStored = ms20::StateParamCount(chunk.GetData(), chunk.Size(), startPos, kNumParams, &pos);
+#if TWENTY_UI && IPLUG_DSP
+  // the cables of a preset or project: in MS-20ic mode they are the sound's own, as a recalled memory's (until a
+  // cable is touched; the real cables stay known); in standard mode they are the window's cables. Set before the
+  // cables arrive, so the real panel's cables are never taken over.
+  mRestoreOvr = IcModeNow() ? 1 : 0;
+  mHost->setParamRaw(PARAM_INDEX_Patch__State_ovr, mRestoreOvr);
+#endif
+  pos = ReadParams(chunk, pos, nStored);
+#if TWENTY_UI && IPLUG_DSP
+  const bool restoreIc = mRestoreOvr == 1;
+  mRestoreOvr = -1;
+#endif
 #if IPLUG_DSP
   // older projects (before recall) end here; anything that is not our block is left alone
   if (pos >= 0 && pos + 4 <= chunk.Size())
   {
     int32_t n = 0;
     const int p2 = chunk.Get(&n, pos);
-    if (p2 > 0 && n > 0 && p2 + n <= chunk.Size())
+    if (p2 > 0 && n == 0) pos = p2;   // no takes (the usual case): the window's block follows
+    else if (p2 > 0 && n > 0 && p2 + n <= chunk.Size())
     {
       std::vector<uint8_t> b((size_t)n);
       if (chunk.GetBytes(b.data(), n, p2) > 0 && mRecall.unserialize(b.data(), (size_t)n)) pos = p2 + n;
@@ -1265,7 +1336,9 @@ int TwentyEngine::UnserializeState(const IByteChunk& chunk, int startPos)
     {
       q = chunk.Get(&mono, q); q = chunk.Get(&tap, q);
       if (q > 0) q = chunk.GetBytes(mNoise, 35, q);
-      if (q > 0) { SetCableFlag(0, mono != 0); SetCableFlag(1, tap != 0); pos = q; }
+      // mono comes with the parameters (Patch_State); tap tempo is the window's cable only in standard mode (with the
+      // iC its own cable counts, and a cable message would release the preset's cables)
+      if (q > 0) { if (!restoreIc && (tap != 0) != mCableFlag[1].load()) SetCableFlag(1, tap != 0); pos = q; }
     }
   }
   if (pos >= 0 && pos + 8 <= chunk.Size())
@@ -1349,7 +1422,7 @@ void TwentyEngine::SetCableFlag(int which, bool on)
   else { UiCable(5, a, b); UiCable(5, b, b); UiCable(5, a, a); }
   // into the region like the MS-20ic's cable
   bool& cur = which ? mStreamTap : mStreamMono;
-  if (cur != on && PanelPort::Get().Ok() && (HasFocus() || !mLed.KnobsDirect()))
+  if (cur != on && SendsToRegions() && (HasFocus() || !mLed.KnobsDirect()))
   { cur = on; StreamSend(which ? ms20::ParamStream<kNumParams>::SLOT_TAP : ms20::ParamStream<kNumParams>::SLOT_MONO, on); }
 }
 
@@ -1371,9 +1444,34 @@ void TwentyEngine::WatchCable(uint8_t s, uint8_t d1, uint8_t d2)
 }
 #endif
 
+#if TWENTY_UI
+int TwentyEngine::ModeSetting() const { return ModeSettingG(); }
+void TwentyEngine::SetModeSetting(int m) { SetModeSettingG(m); Dbg("MODE set to %s", m == 1 ? "MS-20ic" : (m == 2 ? "standard" : "automatic")); }
+bool TwentyEngine::IcMode() const { const int m = ModeSettingG(); return m == 1 || (m == 0 && mController.load() > 0); }
+#endif
+bool TwentyEngine::IcModeNow() const
+{
+#if TWENTY_UI
+  return IcMode();
+#else
+  return true;   // Twenty Engine MS-20ic: always played from the iC
+#endif
+}
+bool TwentyEngine::SendsToRegions() const
+{
+#if TWENTY_STUDIO
+  return PanelPort::Get().Ok() && IcModeNow();   // standard mode: the DAW's own automation keeps the knobs
+#else
+  return false;
+#endif
+}
+
 void TwentyEngine::StudioDiag(char* out, int n) const
 {
 #if IPLUG_DSP
+#if TWENTY_UI
+  if (!IcModeNow()) { snprintf(out, n, "A normal synth plugin  \xC2\xB7  knobs and cables are saved with the project and presets"); return; }
+#endif
 #if defined(_WIN32)
   if (!PanelPort::Get().Ok()) snprintf(out, n, "Plays the panel  \xC2\xB7  takes keep their sound with loopMIDI");
 #else

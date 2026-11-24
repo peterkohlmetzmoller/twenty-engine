@@ -830,8 +830,23 @@ public:
     const float cy = mRECT.MH();
     static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy", "microKONTROL" };
     const int c = mCtl ? mCtl() : 0;
-    if (c > 0 && c <= 4) { g.FillCircle(kInk, mRECT.L + 22.f, cy, 6.f); g.DrawText(IText(15.f, kInk, kF, EAlign::Near, EVAlign::Middle), (std::string("Connected  \xC2\xB7  ") + kNames[c]).c_str(), IRECT(mRECT.L + 36.f, mRECT.T, mRECT.L + 224.f, mRECT.B)); }
-    else { g.DrawCircle(kGrey, mRECT.L + 22.f, cy, 6.f, nullptr, 1.5f); g.DrawText(IText(15.f, kGrey, kF, EAlign::Near, EVAlign::Middle), "Any MIDI keyboard", IRECT(mRECT.L + 36.f, mRECT.T, mRECT.L + 224.f, mRECT.B)); }
+    const int ms = mPatch->ModeSetting();
+    const IRECT tr(mRECT.L + 36.f, mRECT.T, mRECT.L + 214.f, mRECT.B);
+    if (ms < 0)   // the apps: no modes, only the connection
+    {
+      if (c > 0 && c <= 4) { g.FillCircle(kInk, mRECT.L + 22.f, cy, 6.f); g.DrawText(IText(15.f, kInk, kF, EAlign::Near, EVAlign::Middle), (std::string("Connected  \xC2\xB7  ") + kNames[c]).c_str(), tr); }
+      else { g.DrawCircle(kGrey, mRECT.L + 22.f, cy, 6.f, nullptr, 1.5f); g.DrawText(IText(15.f, kGrey, kF, EAlign::Near, EVAlign::Middle), "Any MIDI keyboard", tr); }
+    }
+    else          // the plugin: its mode (a menu): MS-20ic mode or a standard synth plugin
+    {
+      const bool ic = mPatch->IcMode();
+      std::string t = ic ? (c > 0 ? "MS-20ic mode  \xC2\xB7  connected" : "MS-20ic mode  \xC2\xB7  through the DAW")
+                         : (c > 0 ? "Standard mode  \xC2\xB7  MS-20ic found" : "Standard mode");
+      if (ic) g.FillCircle(kInk, mRECT.L + 22.f, cy, 6.f); else g.DrawCircle(kInk, mRECT.L + 22.f, cy, 6.f, nullptr, 1.5f);
+      FitText(g, IText(15.f, kInk, kF, EAlign::Near, EVAlign::Middle), t.c_str(), tr);
+      const float ax = ModeB().R - 8.f;   // a small triangle: it is a menu
+      g.PathMoveTo(ax - 4.5f, cy - 2.f); g.PathLineTo(ax + 4.5f, cy - 2.f); g.PathLineTo(ax, cy + 3.5f); g.PathClose(); g.PathFill(IPattern(kInk));
+    }
     // what the mouse is over, else where the sound is kept
     Info& in = HoverInfo();
     if (!in.text.empty() && in.age < 90) FitText(g, IText(14.f, kInk, kF, EAlign::Near, EVAlign::Middle), in.text.c_str(), IRECT(mRECT.L + 236.f, mRECT.T, mRECT.L + 626.f, mRECT.B));
@@ -861,22 +876,35 @@ public:
 #endif
   }
   IRECT LogB() const { return IRECT(mRECT.R - 396.f, mRECT.T + 9.f, mRECT.R - 346.f, mRECT.B - 9.f); }
+  IRECT ModeB() const { return IRECT(mRECT.L + 8.f, mRECT.T + 4.f, mRECT.L + 228.f, mRECT.B - 4.f); }
 #ifdef _WIN32
   IRECT ZoomB() const { return IRECT(mRECT.R - 338.f, mRECT.T + 9.f, mRECT.R - 288.f, mRECT.B - 9.f); }
+#endif
   void OnPopupMenuSelection(IPopupMenu* pMenu, int) override
   {
     if (!pMenu) return;
     const int i = pMenu->GetChosenItemIdx();
+    if (pMenu == &mModeMenu) { if (i >= 0 && i <= 2) { mPatch->SetModeSetting(i); SetDirty(false); } return; }
+#ifdef _WIN32
     if (i < 0 || i >= (int)(sizeof(kZooms) / sizeof(kZooms[0]))) return;
     Zoom() = kZooms[i];
     if (IGraphics* ui = GetUI()) ui->Resize(ui->Width(), ui->Height(), Zoom());
-  }
 #endif
+  }
 
   void OnMouseDown(float x, float y, const IMouseMod&) override
   {
     if (SwitchB().Contains(x, y)) { mSwitch = true; SwitchHeld() = true; mPatch->SwitchDown(true); SetDirty(false); }
     if (LogB().Contains(x, y)) { mPatch->CopyLog(); if (mLogBox) mLogBox->Open(); else SetInfo("LOG copied  \xC2\xB7  paste it into an email to " TWENTY_SUPPORT_MAIL); SetDirty(false); }
+    if (ModeB().Contains(x, y) && mPatch->ModeSetting() >= 0)
+    {
+      const int ms = mPatch->ModeSetting();
+      mModeMenu.Clear();
+      mModeMenu.AddItem("Automatic: MS-20ic mode while an MS-20ic is connected", -1, ms == 0 ? IPopupMenu::Item::kChecked : IPopupMenu::Item::kNoFlags);
+      mModeMenu.AddItem("MS-20ic mode (also when it reaches the plugin through the DAW)", -1, ms == 1 ? IPopupMenu::Item::kChecked : IPopupMenu::Item::kNoFlags);
+      mModeMenu.AddItem("Standard plugin mode", -1, ms == 2 ? IPopupMenu::Item::kChecked : IPopupMenu::Item::kNoFlags);
+      GetUI()->CreatePopupMenu(*this, mModeMenu, ModeB());
+    }
 #ifdef _WIN32
     if (ZoomB().Contains(x, y))
     {
@@ -891,6 +919,9 @@ public:
   {
     if (SwitchB().Contains(x, y)) SetInfo("SWITCH  \xC2\xB7  the MS-20's momentary switch  \xC2\xB7  tap: tempo (SWITCH -> ESP SIGNAL IN)");
     if (LogB().Contains(x, y)) SetInfo("LOG  \xC2\xB7  click: copy what happened lately, for a bug report");
+    if (ModeB().Contains(x, y) && mPatch->ModeSetting() >= 0)
+      SetInfo(mPatch->IcMode() ? "MODE  \xC2\xB7  MS-20ic: the iC plays it, its regions keep their sound  \xC2\xB7  click to choose"
+                               : "MODE  \xC2\xB7  standard: knobs, cables, automation and presets like any synth  \xC2\xB7  click to choose");
 #ifdef _WIN32
     if (ZoomB().Contains(x, y)) SetInfo("WINDOW SIZE  \xC2\xB7  click to pick a size");
 #endif
@@ -900,6 +931,7 @@ public:
 private:
   PatchHost* mPatch; std::function<int()> mCtl; std::function<void(char*, int)> mDiag;
   int mTick = 0; bool mSwitch = false;
+  IPopupMenu mModeMenu;
 #ifdef _WIN32
   IPopupMenu mZoomMenu;
 #endif
