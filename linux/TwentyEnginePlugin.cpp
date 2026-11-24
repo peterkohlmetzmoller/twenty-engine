@@ -2,10 +2,19 @@
 // (the Mac/Windows plugin) where the controller is read directly: DrainController, the panel memory, the LEDs.
 #include "TwentyEnginePlugin.hpp"
 #include <chrono>
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
+#include <spawn.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
+#include <sys/wait.h>
+#ifndef TWENTY_SUPPORT_MAIL
+#define TWENTY_SUPPORT_MAIL "twentyenginesupport@gmail.com"
+#endif
+extern char** environ;
 
 START_NAMESPACE_DISTRHO
 
@@ -59,10 +68,12 @@ TwentyEnginePlugin::TwentyEnginePlugin()
       mkdir(dir, 0755);
       mHost->loadMemories(dir);
       snprintf(mPanelPath, sizeof(mPanelPath), "%sMS20PANEL.BIN", dir);
+      snprintf(mDir, sizeof(mDir), "%s", dir);
     }
   }
   if (mPanelPath[0] && mPanelMem.load(mPanelPath)) mPanelSrc.store(1);
   mHost->reset(getSampleRate() > 0 ? getSampleRate() : 48000.0);
+  Log("START  Twenty Engine 1.1.0 (Linux)");
   mIdle = std::thread([this] { while (mRun.load()) { Idle(); std::this_thread::sleep_for(std::chrono::milliseconds(20)); } });
 }
 
@@ -113,12 +124,14 @@ void TwentyEnginePlugin::run(const float**, float** outputs, uint32_t frames, co
     mPanelMem.onMessage(s, d1, d2);
     if ((s & 0xF0) == 0xB0 && (d1 == 102 || d1 == 103)) { s = (uint8_t)((d1 == 102 ? 0x90 : 0x80) | (s & 0x0F)); d1 = d2; d2 = (s & 0xF0) == 0x90 ? 100 : 0; }
     WatchCable(s, d1, d2);
+    if ((s & 0xF0) == 0x90 || (s & 0xF0) == 0x80) mLogMidi.push(((uint32_t)s << 16) | ((uint32_t)d1 << 8) | d2);
     mHost->midi(0, s, d1, d2);
   }
   // other keyboards: keys, wheels, pedals - never the switch (channel pressure would hold it: silent keys)
   while (mLed.PopKey(s, d1, d2))
   {
     if ((s & 0xF0) == 0xD0) continue;
+    if ((s & 0xF0) == 0x90 || (s & 0xF0) == 0x80) mLogMidi.push(((uint32_t)s << 16) | ((uint32_t)d1 << 8) | d2 | 0x01000000u);
     mHost->midi(0, s, d1, d2);
   }
   { uint32_t m; while (mUiMidi.pop(m)) mHost->midi(0, (uint8_t)(m >> 16), (uint8_t)(m >> 8), (uint8_t)m); }
@@ -141,6 +154,12 @@ void TwentyEnginePlugin::Idle()
   { ParamSet p; while (mHost->popEngineChange(p)) {} }   // the window reads the engine itself
   if (--rescan <= 0) { mLed.Rescan(); rescan = 100; }   // every 2 s: the controller plugged in later
   if (--scan <= 0) { mController.store(LedPort::FindController()); scan = 50; }
+  // the bug log: the controller, the panel, the sample rate, keys played
+  { static const char* kN[] = { "none", "MS-20ic", "Ksoloti Core", "Teensy", "microKONTROL" };
+    const int c = mController.load(); if (c != mLogCtl) { mLogCtl = c; Log("CONTROLLER %s", (c >= 0 && c <= 4) ? kN[c] : "?"); }
+    const int ps = mPanelSrc.load(); if (ps != mLogPanel) { mLogPanel = ps; Log("PANEL %s", ps == 2 ? "read from the MS-20ic" : (ps == 1 ? "from memory" : "unknown")); }
+    const double sr = getSampleRate(); if (sr != mLogRate) { mLogRate = sr; Log("AUDIO %.0f Hz, block %u", sr, (unsigned)getBufferSize()); }
+    uint32_t k; while (mLogMidi.pop(k)) Log("MIDI in %s  %s  note %3u  vel %3u", (k >> 24) ? "keyboard  " : "controller", ((k >> 16) & 0xF0) == 0x90 && (k & 0x7F) ? "NOTE ON " : "NOTE OFF", (k >> 8) & 0x7F, k & 0x7F); }
   LedMsg m;
   while (mHost->popLed(m))
   {
@@ -182,6 +201,79 @@ void TwentyEnginePlugin::WatchCable(uint8_t s, uint8_t d1, uint8_t d2)
     if ((a == o && b == i) || (a == i && b == o)) { if (t == 4) mCableFlag[w].store(true); else if (t == 5) mCableFlag[w].store(false); }
     if (t == 5 && a == b && (a == o || a == i)) mCableFlag[w].store(false);
   }
+}
+
+// ---- the bug log
+void TwentyEnginePlugin::Log(const char* fmt, ...)
+{
+  char line[400]; va_list a; va_start(a, fmt); vsnprintf(line, sizeof(line), fmt, a); va_end(a);
+  const time_t t = time(nullptr); struct tm lt; localtime_r(&t, &lt); char ts[16]; strftime(ts, sizeof(ts), "%H:%M:%S", &lt);
+  std::lock_guard<std::mutex> g(mLogMx);
+  mLogRing.push_back(std::string(ts) + "  " + line);
+  while (mLogRing.size() > 600) mLogRing.pop_front();
+}
+
+static void SystemName(char* out, int n)
+{
+  struct utsname u; snprintf(out, n, "Linux");
+  if (uname(&u) == 0) snprintf(out, n, "%s %s (%s)", u.sysname, u.release, u.machine);
+}
+
+std::string TwentyEnginePlugin::BugLog()
+{
+  char sys[200]; SystemName(sys, sizeof(sys));
+  const time_t t = time(nullptr); char when[32]; strftime(when, sizeof(when), "%Y-%m-%d %H:%M", localtime(&t));
+  static const char* kN[] = { "none", "MS-20ic", "Ksoloti Core", "Teensy", "microKONTROL" };
+  const int c = mController.load(), ps = mPanelSrc.load();
+  char b[1400];
+  snprintf(b, sizeof(b),
+    "Twenty Engine bug log  \xC2\xB7  %s\n"
+    "Please email it to " TWENTY_SUPPORT_MAIL " with a few words about what happened.\n\n"
+    "App:         Twenty Engine 1.1.0 (Linux standalone)\n"
+    "System:      %s\n"
+    "Sample rate: %.0f Hz, block %u\n"
+    "Controller:  %s, %s\n"
+    "Panel:       %s\n"
+    "Memories:    %sMS20MEM.BIN\n\n",
+    when, sys, getSampleRate(), (unsigned)getBufferSize(), (c >= 0 && c <= 4) ? kN[c] : "?", mLed.KnobsDirect() ? "connected" : "not connected",
+    ps == 2 ? "read from the MS-20ic" : (ps == 1 ? "from memory" : "unknown"), mDir);
+  std::string s = b;
+  s += "What happened (newest last):\n";
+  std::lock_guard<std::mutex> g(mLogMx);
+  for (const std::string& l : mLogRing) { s += l; s += "\n"; }
+  return s;
+}
+
+void TwentyEnginePlugin::CopyLog()
+{
+  Log("LOG copied by the user");
+  const std::string s = BugLog();
+  if (mDir[0]) { char p[1200]; snprintf(p, sizeof(p), "%sTwentyEngine-log.txt", mDir); if (FILE* f = fopen(p, "wb")) { fwrite(s.data(), 1, s.size(), f); fclose(f); } }
+  if (mClipboard) mClipboard(s.c_str());
+}
+
+static std::string UrlEnc(const char* s)
+{
+  std::string o; char h[4];
+  for (const unsigned char* p = (const unsigned char*)s; *p; p++)
+  {
+    if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') || *p == '-' || *p == '_' || *p == '.' || *p == '~') o += (char)*p;
+    else { snprintf(h, sizeof(h), "%%%02X", *p); o += h; }
+  }
+  return o;
+}
+
+// the address in the LOG box: a new email (xdg-open: the desktop's mail program), setup filled in, log pasted by hand
+void TwentyEnginePlugin::MailLog()
+{
+  char sys[200]; SystemName(sys, sizeof(sys));
+  char body[600];
+  snprintf(body, sizeof(body), "Twenty Engine 1.1.0 (Linux standalone)\n%s\n\nWhat happened:\n\n\n\nThe log (on the clipboard: paste it here):\n\n", sys);
+  const std::string url = std::string("mailto:" TWENTY_SUPPORT_MAIL "?subject=") + UrlEnc("Twenty Engine bug report (Linux 1.1.0)") + "&body=" + UrlEnc(body);
+  pid_t pid; char a0[] = "xdg-open"; std::string u = url; char* argv[] = { a0, &u[0], nullptr };
+  const bool ok = posix_spawnp(&pid, "xdg-open", nullptr, nullptr, argv, environ) == 0;
+  if (ok) std::thread([pid] { int st; waitpid(pid, &st, 0); }).detach();   // no zombie
+  Log("LOG: email to support opened (%s)", ok ? "ok" : "xdg-open failed");
 }
 
 Plugin* createPlugin() { return new TwentyEnginePlugin(); }

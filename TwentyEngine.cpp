@@ -3,6 +3,14 @@
 #include <time.h>
 #ifdef __APPLE__
 #include <sys/sysctl.h>
+#include <CoreFoundation/CoreFoundation.h>
+extern "C" OSStatus LSOpenCFURLRef(CFURLRef inURL, CFURLRef* outLaunchedURL);   // Launch Services (CoreServices)
+#endif
+#ifdef _WIN32
+#include <shellapi.h>
+#endif
+#ifndef TWENTY_SUPPORT_MAIL
+#define TWENTY_SUPPORT_MAIL "twentyenginesupport@gmail.com"   // where bug logs go
 #endif
 #ifndef _WIN32
 #include <unistd.h>
@@ -34,6 +42,47 @@ static void MakeDir(const char* d) { mkdir(d, 0755); }
 
 using namespace ms20;
 
+// ---- the bug log's helpers: the system's name, opening a link, link encoding
+static void OsName(char* os, int n)
+{
+  snprintf(os, n, "unknown system");
+#ifdef _WIN32
+  typedef LONG (WINAPI *RtlGetVersionFn)(OSVERSIONINFOW*); OSVERSIONINFOW v = {}; v.dwOSVersionInfoSize = sizeof(v);
+  if (HMODULE nt = GetModuleHandleA("ntdll.dll")) if (auto f = (RtlGetVersionFn)GetProcAddress(nt, "RtlGetVersion")) if (f(&v) == 0)
+    snprintf(os, n, "Windows %lu.%lu build %lu", v.dwMajorVersion, v.dwMinorVersion, v.dwBuildNumber);
+#elif defined(__APPLE__)
+  char pv[32] = ""; size_t len = sizeof(pv); if (sysctlbyname("kern.osproductversion", pv, &len, nullptr, 0) == 0) snprintf(os, n, "macOS %s", pv);
+#endif
+}
+// a link opened by the system (here: a new email). Not iPlug2's OpenURL: on the Mac it opens only web links, and on
+// Windows it gives up while the computer is offline.
+static bool OpenLink(const char* url)
+{
+#if defined(_WIN32)
+  wchar_t w[2048];
+  if (MultiByteToWideChar(CP_UTF8, 0, url, -1, w, 2048) <= 0) return false;
+  return (INT_PTR)ShellExecuteW(nullptr, L"open", w, nullptr, nullptr, SW_SHOWNORMAL) > 32;
+#elif defined(__APPLE__)
+  CFURLRef u = CFURLCreateWithBytes(nullptr, (const UInt8*)url, (CFIndex)strlen(url), kCFStringEncodingUTF8, nullptr);
+  if (!u) return false;
+  const OSStatus st = LSOpenCFURLRef(u, nullptr);
+  CFRelease(u);
+  return st == 0;
+#else
+  (void)url; return false;
+#endif
+}
+static std::string UrlEnc(const char* s)
+{
+  std::string o; char h[4];
+  for (const unsigned char* p = (const unsigned char*)s; *p; p++)
+  {
+    if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') || *p == '-' || *p == '_' || *p == '.' || *p == '~') o += (char)*p;
+    else { snprintf(h, sizeof(h), "%%%02X", *p); o += h; }
+  }
+  return o;
+}
+
 
 #if IPLUG_EDITOR && !defined(NO_IGRAPHICS)
 // The whole window (Mac, IGraphics): product name and whether a controller is plugged in. Windows: GDI, below.
@@ -48,11 +97,14 @@ public:
     return IControl::IsDirty();
   }
 
-  // "Copy log" (top right): the bug log to the clipboard, for an email
+  // "Copy log" (top right): the bug log to the clipboard, and a box with the address to send it to (stays until
+  // clicked; the blue address starts the email)
   IRECT LogRect() const { const IRECT in = mRECT.GetPadded(-22.f); return IRECT(in.R - 70.f, in.T, in.R, in.T + 16.f); }
+  IRECT MailRect() const { return IRECT(mRECT.L + 20.f, mRECT.T + 46.f, mRECT.R - 20.f, mRECT.T + 70.f); }
   void OnMouseDown(float x, float y, const IMouseMod&) override
   {
-    if (mPlug && LogRect().Contains(x, y)) { mPlug->CopyLogToClipboard(); mCopied = 90; SetDirty(false); }
+    if (mBox) { if (mPlug && MailRect().Contains(x, y)) mPlug->MailLog(); mBox = false; SetDirty(false); return; }
+    if (mPlug && LogRect().Contains(x, y)) { mPlug->CopyLogToClipboard(); mBox = true; SetDirty(false); }
   }
   // double-click on the takes line: forget the recorded takes (they are only the settings, the MIDI stays)
   void OnMouseDblClick(float x, float y, const IMouseMod& mod) override
@@ -66,14 +118,24 @@ public:
     g.FillRect(paper, mRECT);
     g.DrawRect(ink, mRECT.GetPadded(-6.f), nullptr, 1.5f);
     const IRECT in = mRECT.GetPadded(-22.f);
+    if (mBox)   // the LOG box over the whole window
+    {
+      const IColor mail(255, 0, 82, 204);
+      g.DrawText(IText(15.f, ink, "Roboto-Regular", EAlign::Center, EVAlign::Middle), "Log copied  \xC2\xB7  paste it into an email to", IRECT(mRECT.L, mRECT.T + 22.f, mRECT.R, mRECT.T + 42.f));
+      const IText mt(17.f, mail, "Roboto-Regular", EAlign::Center, EVAlign::Middle);
+      g.DrawText(mt, TWENTY_SUPPORT_MAIL, MailRect());
+      IRECT u = MailRect(); g.MeasureText(mt, TWENTY_SUPPORT_MAIL, u);
+      g.DrawLine(mail, u.L, u.B - 1.f, u.R, u.B - 1.f, nullptr, 1.f);
+      g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Center, EVAlign::Middle), "click the address to start the email  \xC2\xB7  anywhere else to close", IRECT(mRECT.L, mRECT.T + 78.f, mRECT.R, mRECT.T + 94.f));
+      return;
+    }
 #if TWENTY_STUDIO
     g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE", in);
 #else
     g.DrawText(IText(22.f, ink, "Roboto-Regular", EAlign::Near, EVAlign::Top), "TWENTY ENGINE INSTRUMENT", in);
 #endif
 
-    g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Far, EVAlign::Top), mCopied > 0 ? "Log copied" : "Copy log", LogRect());
-    if (mCopied > 0) mCopied--;
+    g.DrawText(IText(11.f, dim, "Roboto-Regular", EAlign::Far, EVAlign::Top), "Copy log", LogRect());
     static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy" };
     const bool on = mController > 0;
     const IRECT row = in.GetFromBottom(18.f);
@@ -126,7 +188,7 @@ private:
   int mTakes = -1;
   int mPanel = -1;
   int mFocus = -1;
-  int mCopied = 0;
+  bool mBox = false;
   int mFrames = 0;
 };
 #endif
@@ -480,8 +542,9 @@ LRESULT CALLBACK TwentyEngine::StatusWndProc(HWND h, UINT msg, WPARAM wp, LPARAM
     case WM_LBUTTONDOWN:     // a click on the switch (bottom row, right half): normal <-> reversed
     {
       const int x = (short)LOWORD(lp), y = (short)HIWORD(lp);
+      if (p && p->mLogBox) { if (y >= 44 && y <= 72) p->MailLog(); p->mLogBox = false; InvalidateRect(h, nullptr, FALSE); return 0; }   // the LOG box: the address, or close
       if (p && y >= PLUG_HEIGHT - 44 && x >= PLUG_WIDTH / 2) { SetSwitchReversed(!SwitchReversed()); SaveSwitch(); InvalidateRect(h, nullptr, FALSE); }
-      else if (p && y <= 42 && x >= PLUG_WIDTH - 110) { p->CopyLogToClipboard(); p->mLogCopiedMs = GetTickCount64(); InvalidateRect(h, nullptr, FALSE); }   // "Copy log"
+      else if (p && y <= 42 && x >= PLUG_WIDTH - 110) { p->CopyLogToClipboard(); p->mLogBox = true; InvalidateRect(h, nullptr, FALSE); }   // "Copy log"
       return 0;
     }
     case WM_LBUTTONDBLCLK:   // double-click on the takes line: forget the recorded takes
@@ -524,8 +587,26 @@ void TwentyEngine::PaintStatus(HDC wdc)
 #else
   DrawUtf8(dc, "TWENTY ENGINE INSTRUMENT", RECT{L, T - 4, R, T + 24}, DT_LEFT | DT_TOP | DT_SINGLELINE);
 #endif
+  if (mLogBox)   // the LOG box over the whole window: the address in blue (underlined), click it to start the email
+  {
+    RECT inner = {8, 8, W - 8, H - 8};
+    HBRUSH bp = CreateSolidBrush(paper); FillRect(dc, &inner, bp); DeleteObject(bp);
+    HFONT f15 = StatusFont(15), fm = CreateFontA(-17, 0, 0, 0, FW_NORMAL, 0, TRUE, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, "Segoe UI"), f11 = StatusFont(11);
+    HGDIOBJ of = SelectObject(dc, f15); SetTextColor(dc, ink);
+    DrawUtf8(dc, "Log copied  \xC2\xB7  paste it into an email to", RECT{0, 22, W, 42}, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(dc, fm); SetTextColor(dc, RGB(0, 82, 204));
+    DrawUtf8(dc, TWENTY_SUPPORT_MAIL, RECT{0, 46, W, 70}, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(dc, f11); SetTextColor(dc, dim);
+    DrawUtf8(dc, "click the address to start the email  \xC2\xB7  anywhere else to close", RECT{0, 78, W, 94}, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(dc, of); DeleteObject(f15); DeleteObject(fm); DeleteObject(f11);
+    SelectObject(dc, oldF); DeleteObject(fTitle); DeleteObject(fRow); DeleteObject(fSmall);
+    SelectObject(dc, oldBr); SelectObject(dc, oldPen); DeleteObject(pen);
+    BitBlt(wdc, 0, 0, W, H, dc, 0, 0, SRCCOPY);
+    SelectObject(dc, oldBm); DeleteObject(bm); DeleteDC(dc);
+    return;
+  }
   { HFONT fl = StatusFont(12); HGDIOBJ of = SelectObject(dc, fl); SetTextColor(dc, dim);
-    DrawUtf8(dc, GetTickCount64() - mLogCopiedMs < 3000 ? "Log copied" : "Copy log", RECT{R - 90, T - 4, R, T + 14}, DT_RIGHT | DT_TOP | DT_SINGLELINE);
+    DrawUtf8(dc, "Copy log", RECT{R - 90, T - 4, R, T + 14}, DT_RIGHT | DT_TOP | DT_SINGLELINE);
     SelectObject(dc, of); DeleteObject(fl); SetTextColor(dc, ink); }
 
   static const char* kNames[] = { "", "MS-20ic", "Ksoloti Core", "Teensy" };
@@ -620,14 +701,7 @@ std::string TwentyEngine::BugLog()
 {
   std::string s; char b[1400];
   WDL_String host, hv; GetHostStr(host); GetHostVersionStr(hv);
-  char os[96] = "unknown";
-#ifdef _WIN32
-  { typedef LONG (WINAPI *RtlGetVersionFn)(OSVERSIONINFOW*); OSVERSIONINFOW v = {}; v.dwOSVersionInfoSize = sizeof(v);
-    if (HMODULE nt = GetModuleHandleA("ntdll.dll")) if (auto f = (RtlGetVersionFn)GetProcAddress(nt, "RtlGetVersion")) if (f(&v) == 0)
-      snprintf(os, sizeof(os), "Windows %lu.%lu build %lu", v.dwMajorVersion, v.dwMinorVersion, v.dwBuildNumber); }
-#else
-  { char pv[32] = ""; size_t n = sizeof(pv); if (sysctlbyname("kern.osproductversion", pv, &n, nullptr, 0) == 0) snprintf(os, sizeof(os), "macOS %s", pv); }
-#endif
+  char os[96]; OsName(os, sizeof(os));
   char burst[160] = "none seen";
   if (gBursts.load() > 0)
     snprintf(burst, sizeof(burst), "%d messages, %d CCs, max %d per CC, %s, %s (%d seen)", gBurstPts.load(), gBurstCCs.load(), gBurstMax.load(),
@@ -636,7 +710,7 @@ std::string TwentyEngine::BugLog()
   const time_t t = time(nullptr); char when[32]; strftime(when, sizeof(when), "%Y-%m-%d %H:%M", localtime(&t));
   snprintf(b, sizeof(b),
     "Twenty Engine bug log  \xC2\xB7  %s\n"
-    "Please email it to twentyenginesupport@gmail.com with a few words about what happened.\n\n"
+    "Please email it to " TWENTY_SUPPORT_MAIL " with a few words about what happened.\n\n"
     "Plugin:      %s %s (%s)\n"
     "Host:        %s %s\n"
     "System:      %s\n"
@@ -687,6 +761,20 @@ void TwentyEngine::CopyLogToClipboard()
     CloseClipboard();
   }
 #endif
+}
+
+// the address in the LOG box: a new email to support with the setup filled in (the log itself is pasted from the
+// clipboard: it is too long for a mail link)
+void TwentyEngine::MailLog()
+{
+  WDL_String host, hv; GetHostStr(host); GetHostVersionStr(hv);
+  char os[96]; OsName(os, sizeof(os));
+  char body[700];
+  snprintf(body, sizeof(body),
+           "%s %s (%s)\n%s %s\n%s\n\nWhat happened:\n\n\n\nThe log (on the clipboard: paste it here):\n\n",
+           PLUG_NAME, PLUG_VERSION_STR, GetAPIStr(), host.Get(), hv.Get(), os);
+  const std::string url = std::string("mailto:" TWENTY_SUPPORT_MAIL "?subject=") + UrlEnc("Twenty Engine bug report (" PLUG_NAME " " PLUG_VERSION_STR ")") + "&body=" + UrlEnc(body);
+  Dbg("LOG: email to support opened (%s)", OpenLink(url.c_str()) ? "ok" : "failed");
 }
 
 void TwentyEngine::OnReset()

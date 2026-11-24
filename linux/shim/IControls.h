@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -15,6 +16,7 @@
 namespace iplug {
 
 static const int kNoParameter = -1;
+template <typename T> T Clip(T x, T lo, T hi) { return x < lo ? lo : (x > hi ? hi : x); }   // iPlug's
 
 // a parameter as the panel sees it: value in its own units, normalised 0..1
 class IParam
@@ -72,6 +74,7 @@ struct IRECT
   IRECT GetPadded(float p) const { return IRECT(L - p, T - p, R + p, B + p); }
   IRECT GetFromBottom(float h) const { return IRECT(L, B - h, R, B); }
   IRECT GetHShifted(float x) const { return IRECT(L + x, T, R + x, B); }
+  IRECT GetCentredInside(float w, float h = 0.f) const { if (h <= 0.f) h = w; const float l = MW() - w / 2.f, t = MH() - h / 2.f; return IRECT(l, t, l + w, t + h); }
 };
 
 enum class EAlign { Near, Center, Far };
@@ -80,6 +83,7 @@ enum class EDirection { Vertical, Horizontal };
 enum class ELineCap { Butt, Round, Square };
 enum class ELineJoin { Miter, Round, Bevel };
 enum class EUIResizerMode { Scale, Size };
+enum class ECursor { ARROW, IBEAM, WAIT, CROSS, UPARROW, SIZENWSE, SIZENESW, SIZEWE, SIZENS, SIZEALL, INO, HAND, APPSTARTING, HELP };
 struct IBlend {};
 
 struct IText
@@ -135,6 +139,8 @@ public:
   }
   void SetClean() { mDirty = false; }
   bool MouseIsDown() const { return mMouseIsDown; }
+  void Hide(bool hide) { mHide = hide; mDirty = true; }   // hidden: not drawn, not clicked
+  bool IsHidden() const { return mHide; }
 
   IRECT mRECT;
   bool mIgnoreMouse = false;
@@ -142,6 +148,7 @@ protected:
   int mParamIdx = kNoParameter;
   double mValue = 0.0;
   bool mDirty = true;
+  bool mHide = false;
 private:
   friend class IGraphics;
   IEditorDelegate* mDelegate = nullptr;
@@ -194,6 +201,12 @@ public:
     return c;
   }
   void AttachCornerResizer(EUIResizerMode = EUIResizerMode::Scale, bool = false) {}   // the app's window resizes itself
+  void SetAllControlsDirty() { for (auto& c : mControls) c->SetDirty(false); }
+  // the window does these (DPF): the mouse pointer, the clipboard
+  std::function<void(ECursor)> mCursorFn;
+  std::function<void(const char*)> mClipboardFn;
+  ECursor SetMouseCursor(ECursor c = ECursor::ARROW) { const ECursor old = mCursor; mCursor = c; if (mCursorFn) mCursorFn(c); return old; }
+  bool SetTextInClipboard(const char* s) { if (!mClipboardFn) return false; mClipboardFn(s); return true; }
 
   // ---- the app drives these ----
   // once per frame: controls follow their parameters (unless held), then ask each whether it needs drawing
@@ -211,7 +224,7 @@ public:
   void DrawAll(DGL::NanoVG& vg)
   {
     mVG = &vg;
-    for (auto& c : mControls) { c->Draw(*this); c->SetClean(); }
+    for (auto& c : mControls) { if (!c->IsHidden()) c->Draw(*this); c->SetClean(); }
     mVG = nullptr;
   }
   void MouseDown(float x, float y, const IMouseMod& m, uint32_t timeMs)
@@ -278,6 +291,18 @@ public:
     V().textAlign(h | v); V().fillColor(t.mFGColor.Dgl());
     V().text(x, y, s, nullptr);
   }
+  // the size of a text, placed in bounds as DrawText would place it (iPlug: bounds becomes the text's own rectangle)
+  float MeasureText(const IText& t, const char* s, IRECT& bounds)
+  {
+    if (!mVG || !s) { bounds = IRECT(bounds.L, bounds.T, bounds.L, bounds.T); return 0.f; }
+    V().fontFace(t.mFont.c_str()); V().fontSize(t.mSize); V().textAlign(DGL::NanoVG::ALIGN_LEFT | DGL::NanoVG::ALIGN_TOP);
+    DGL::Rectangle<float> rb; V().textBounds(0.f, 0.f, s, nullptr, rb);
+    const float w = rb.getWidth(), h = rb.getHeight();
+    const float x = t.mAlign == EAlign::Near ? bounds.L : (t.mAlign == EAlign::Far ? bounds.R - w : bounds.MW() - w / 2.f);
+    const float y = t.mVAlign == EVAlign::Top ? bounds.T : (t.mVAlign == EVAlign::Bottom ? bounds.B - h : bounds.MH() - h / 2.f);
+    bounds = IRECT(x, y, x + w, y + h);
+    return w;
+  }
   void PathMoveTo(float x, float y) { if (!mPath) { V().beginPath(); mPath = true; } V().moveTo(x, y); }
   void PathLineTo(float x, float y) { V().lineTo(x, y); }
   void PathCubicBezierTo(float c1x, float c1y, float c2x, float c2y, float x, float y) { V().bezierTo(c1x, c1y, c2x, c2y, x, y); }
@@ -296,12 +321,13 @@ private:
   IControl* Hit(float x, float y)
   {
     for (auto it = mControls.rbegin(); it != mControls.rend(); ++it)
-      if (!(*it)->mIgnoreMouse && (*it)->mRECT.Contains(x, y) && (*it)->IsHit(x, y)) return it->get();
+      if (!(*it)->mIgnoreMouse && !(*it)->IsHidden() && (*it)->mRECT.Contains(x, y) && (*it)->IsHit(x, y)) return it->get();
     return nullptr;
   }
   IEditorDelegate* mDelegate;
   std::vector<std::unique_ptr<IControl>> mControls;
   DGL::NanoVG* mVG = nullptr;
+  ECursor mCursor = ECursor::ARROW;
   bool mPath = false;
   IControl *mCapture = nullptr, *mOver = nullptr, *mLastClick = nullptr;
   int mCaptureParam = kNoParameter;

@@ -67,7 +67,7 @@ iplug_add_plugin(${PROJECT_NAME}
 foreach(_t ${PROJECT_NAME}-au ${PROJECT_NAME}-vst3 ${PROJECT_NAME}-aax)
   if(TARGET ${_t})
     if(APPLE)
-      target_link_libraries(${_t} PRIVATE "-framework CoreMIDI" "-framework CoreFoundation")
+      target_link_libraries(${_t} PRIVATE "-framework CoreMIDI" "-framework CoreFoundation" "-framework CoreServices")   # CoreServices: opening the support email
     elseif(WIN32)
       target_link_libraries(${_t} PRIVATE winmm)
     endif()

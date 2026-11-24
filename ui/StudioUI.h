@@ -26,6 +26,7 @@ using namespace ms20;
 // black and white only; grey only for what is greyed out (jacks the engine does not use)
 static const IColor kPaper(255, 255, 255, 255), kWin = kPaper, kInk(255, 0, 0, 0), kGrey(255, 170, 170, 170),
   kDimC = kGrey, kAccent = kInk, kOutC = kInk, kInC = kInk, kMonoC = kInk, kLed = kInk, kBar = kPaper;
+static const IColor kMail(255, 0, 82, 204);   // the one blue in the window: the support email link
 static const char *kF = "Cond", *kFB = "CondB", *kFI = "CondI";
 
 // panel geometry: units of manual/panel.py (1 unit = 1 mm on the drawing), scaled to pixels
@@ -770,6 +771,50 @@ static float& Zoom() { static float z = 1.f; return z; }
 static const float kZooms[] = { 1.f, 1.25f, 1.5f, 1.75f, 2.f };
 #endif
 
+// LOG: the log is on the clipboard; this box says where to send it and stays until clicked. The blue address opens
+// a new email (subject and setup filled in, the log is pasted by hand: too long for a mail link); a click anywhere
+// else closes the box.
+class LogBox : public IControl
+{
+public:
+  LogBox(const IRECT& r, PatchHost* ph) : IControl(r), mPatch(ph) { Hide(true); }
+  void Open() { Hide(false); SetDirty(false); }
+  IRECT BoxR() const { return mRECT.GetCentredInside(600.f, 216.f); }
+  IRECT MailR() const { const IRECT b = BoxR(); return IRECT(b.L + 40.f, b.T + 84.f, b.R - 40.f, b.T + 116.f); }
+  void Draw(IGraphics& g) override
+  {
+    g.FillRect(IColor(190, 255, 255, 255), mRECT);   // the panel fades behind the box
+    const IRECT b = BoxR();
+    g.FillRect(kPaper, b);
+    g.DrawRect(kInk, b, nullptr, 2.f);
+    g.DrawText(IText(21.f, kInk, kFB, EAlign::Center, EVAlign::Middle), "LOG COPIED TO THE CLIPBOARD", IRECT(b.L, b.T + 16.f, b.R, b.T + 46.f));
+    g.DrawText(IText(16.f, kInk, kF, EAlign::Center, EVAlign::Middle), "Paste it into an email to", IRECT(b.L, b.T + 54.f, b.R, b.T + 80.f));
+    const IText mail(22.f, kMail, kF, EAlign::Center, EVAlign::Middle);
+    g.DrawText(mail, TWENTY_SUPPORT_MAIL, MailR());
+    IRECT u = MailR(); g.MeasureText(mail, TWENTY_SUPPORT_MAIL, u);
+    g.DrawLine(kMail, u.L, u.B - 1.f, u.R, u.B - 1.f, nullptr, mOver ? 2.f : 1.2f);
+    g.DrawText(IText(16.f, kInk, kF, EAlign::Center, EVAlign::Middle), "with a few words about what happened.", IRECT(b.L, b.T + 120.f, b.R, b.T + 146.f));
+    g.DrawText(IText(13.f, kGrey, kF, EAlign::Center, EVAlign::Middle), "Click the address to start the email  \xC2\xB7  click anywhere else to close",
+               IRECT(b.L, b.T + 160.f, b.R, b.T + 180.f));
+    g.DrawText(IText(13.f, kGrey, kF, EAlign::Center, EVAlign::Middle), "The log is also saved as TwentyEngine-log.txt next to the sound memories.",
+               IRECT(b.L, b.T + 182.f, b.R, b.T + 202.f));
+  }
+  void OnMouseDown(float x, float y, const IMouseMod&) override
+  {
+    if (MailR().Contains(x, y) && mPatch) mPatch->MailLog();
+    Close();
+  }
+  void OnMouseOver(float x, float y, const IMouseMod&) override
+  {
+    const bool o = MailR().Contains(x, y);
+    if (o != mOver) { mOver = o; if (GetUI()) GetUI()->SetMouseCursor(o ? ECursor::HAND : ECursor::ARROW); SetDirty(false); }
+  }
+  void OnMouseOut() override { if (mOver) { mOver = false; if (GetUI()) GetUI()->SetMouseCursor(ECursor::ARROW); SetDirty(false); } }
+private:
+  void Close() { if (mOver && GetUI()) GetUI()->SetMouseCursor(ECursor::ARROW); mOver = false; Hide(true); if (GetUI()) GetUI()->SetAllControlsDirty(); }
+  PatchHost* mPatch; bool mOver = false;
+};
+
 // SWITCH is the MS-20's momentary switch (tap tempo with a cable SWITCH -> ESP SIGNAL IN).
 class StatusBar : public IControl
 {
@@ -831,7 +876,7 @@ public:
   void OnMouseDown(float x, float y, const IMouseMod&) override
   {
     if (SwitchB().Contains(x, y)) { mSwitch = true; SwitchHeld() = true; mPatch->SwitchDown(true); SetDirty(false); }
-    if (LogB().Contains(x, y)) { mPatch->CopyLog(); SetInfo("LOG copied  \xC2\xB7  paste it into an email to twentyenginesupport@gmail.com"); SetDirty(false); }
+    if (LogB().Contains(x, y)) { mPatch->CopyLog(); if (mLogBox) mLogBox->Open(); else SetInfo("LOG copied  \xC2\xB7  paste it into an email to " TWENTY_SUPPORT_MAIL); SetDirty(false); }
 #ifdef _WIN32
     if (ZoomB().Contains(x, y))
     {
@@ -851,6 +896,7 @@ public:
 #endif
   }
   bool IsDirty() override { HoverInfo().age++; if (++mTick >= 6) { mTick = 0; return true; } return IControl::IsDirty(); }
+  LogBox* mLogBox = nullptr;
 private:
   PatchHost* mPatch; std::function<int()> mCtl; std::function<void(char*, int)> mDiag;
   int mTick = 0; bool mSwitch = false;
@@ -930,7 +976,12 @@ inline void Layout(IGraphics* g, PatchHost* ph, std::function<int()> controller,
   g->AttachControl(new DelayLatchButton(RX(1160), ey));
   if (ph && ph->ArpSync() >= 0) g->AttachControl(new SyncButton(RX(1340), ey, ph));   // only where there is a DAW clock
   // status bar
-  g->AttachControl(new StatusBar(IRECT(0, Yd(PH) + 10.f, (float)kW, Yd(PH) + 10.f + BARH), ph, controller, diag));
+  StatusBar* bar = new StatusBar(IRECT(0, Yd(PH) + 10.f, (float)kW, Yd(PH) + 10.f + BARH), ph, controller, diag);
+  g->AttachControl(bar);
+  // the LOG box: over everything, hidden until LOG is clicked
+  LogBox* box = new LogBox(IRECT(0, 0, (float)kW, (float)kH), ph);
+  g->AttachControl(box);
+  bar->mLogBox = box;
 #ifndef _WIN32
   g->AttachCornerResizer(EUIResizerMode::Scale, false);
 #else

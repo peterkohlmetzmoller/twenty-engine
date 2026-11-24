@@ -29,9 +29,13 @@ public:
       mParams[i].Set(TwentyEnginePlugin::FromRaw(i, mShown[i]));
     }
     mG = std::make_unique<IGraphics>(this);
+    mG->mCursorFn = [this](ECursor c) { setCursor(c == ECursor::HAND ? kMouseCursorHand : kMouseCursorArrow); };
+    mPlug->mClipboard = [this](const char* s) { setClipboard("text/plain", s, strlen(s)); };
     te_ui::Layout(mG.get(), mPlug, [this]() { return mPlug->Controller(); }, [this](char* out, int n) { Diag(out, n); });
     setGeometryConstraints(te_ui::kW / 2, te_ui::kH / 2, true, false);
   }
+
+  ~TwentyEngineUI() override { if (mPlug) mPlug->mClipboard = nullptr; }
 
   // ---- IEditorDelegate
   IParam* GetParam(int idx) override { return (idx >= 0 && idx < kNumParams) ? &mParams[idx] : nullptr; }

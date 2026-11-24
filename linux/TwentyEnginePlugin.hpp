@@ -11,7 +11,11 @@
 #include "led_port.h"
 #include "ui/StudioHost.h"
 #include <atomic>
+#include <deque>
+#include <functional>
 #include <memory>
+#include <mutex>
+#include <string>
 #include <thread>
 
 START_NAMESPACE_DISTRHO
@@ -35,6 +39,14 @@ public:
   void SetNoisePick(int j, int pick) override { if (j >= 0 && j < 35) mNoise[j] = (uint8_t)pick; }
   void SwitchDown(bool down) override { UiMidi(0xD0, down ? 127 : 0, 0); }
   int Leds() const override { return mUiLeds.load(); }
+  void PatchCable(int outJack, int inJack, bool on) override
+  { if (on) UiCable(4, outJack, inJack); else { UiCable(5, outJack, inJack); UiCable(5, inJack, inJack); UiCable(5, outJack, outJack); } }
+  // the bug log: what happened lately with the setup; LOG copies it (the window puts it on the clipboard) and saves
+  // TwentyEngine-log.txt next to the memories; the address in the LOG box starts an email
+  void CopyLog() override;
+  void MailLog() override;
+  std::string BugLog();
+  std::function<void(const char*)> mClipboard;   // set by the window
   static int32_t ToRaw(int idx, double value);
   static double FromRaw(int idx, int32_t raw);
   static void ParamRange(int idx, int& type, double& def, double& mn, double& mx);   // type 0 knob, 1 selector, 2 switch
@@ -45,7 +57,7 @@ protected:
   const char* getDescription() const override { return "8-voice polysynth for the Korg MS-20ic"; }
   const char* getMaker() const override { return "Peter Kohlmetz Moller"; }
   const char* getLicense() const override { return "GPL-3.0-or-later"; }
-  uint32_t getVersion() const override { return d_version(1, 0, 0); }
+  uint32_t getVersion() const override { return d_version(1, 1, 0); }
   int64_t getUniqueId() const override { return d_cconst('T', 'w', '2', '0'); }
   void initParameter(uint32_t index, Parameter& p) override;
   float getParameterValue(uint32_t index) const override;
@@ -59,6 +71,11 @@ private:
   void UiMidi(uint8_t s, uint8_t d1, uint8_t d2) { mUiMidi.push(((uint32_t)s << 16) | ((uint32_t)d1 << 8) | d2); }
   void UiCable(int type, int a, int b) { UiMidi(0xB0, 99, (uint8_t)type); UiMidi(0xB0, 98, (uint8_t)a); UiMidi(0xB0, 6, (uint8_t)b); }
   void WatchCable(uint8_t s, uint8_t d1, uint8_t d2);
+  void Log(const char* fmt, ...);                // idle / window threads
+  std::mutex mLogMx; std::deque<std::string> mLogRing;
+  ms20::SpscQueue<uint32_t, 1024> mLogMidi;     // audio thread -> log: keys played (status, note, velocity)
+  char mDir[1024] = "";
+  int mLogCtl = -1, mLogPanel = -1; double mLogRate = 0.0;
 
   std::unique_ptr<ms20::MS20Host> mHost;
   LedPort mLed;

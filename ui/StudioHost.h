@@ -1,6 +1,9 @@
 // StudioHost.h - what the panel window (Twenty Engine UI) needs from the plugin (no graphics code, so the plugin can
 // implement it in every build).
 #pragma once
+#ifndef TWENTY_SUPPORT_MAIL
+#define TWENTY_SUPPORT_MAIL "twentyenginesupport@gmail.com"   // where bug logs go
+#endif
 namespace te_ui {
 
 // while SYNC is on, the RATE knob (0..1) picks the division in six equal zones, slow to fast
@@ -19,7 +22,8 @@ struct PatchHost {
   // -1 = not available (no host clock)
   virtual int ArpSync() const { return -1; }
   virtual void SetArpSync(int) {}
-  virtual void CopyLog() {}
-  virtual void PatchCable(int outJack, int inJack, bool on) {}   // the MS-20ic's own cable message (jack numbers as it sends them)                              // the bug log: to the clipboard (and a file)
+  virtual void CopyLog() {}                                      // the bug log: to the clipboard (and a file)
+  virtual void MailLog() {}                                      // a new email to the support address, the setup filled in
+  virtual void PatchCable(int outJack, int inJack, bool on) {}   // the MS-20ic's own cable message (jack numbers as it sends them)
 };
 }

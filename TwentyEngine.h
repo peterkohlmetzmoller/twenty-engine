@@ -79,6 +79,7 @@ public:
   int ArpSync() const override { return mArpSync.load(); }
   void SetArpSync(int v) override { mArpSync.store(v > 0 ? 1 : 0); }
   void CopyLog() override { CopyLogToClipboard(); }
+  void MailLog() override;
   void PatchCable(int outJack, int inJack, bool on) override
   { if (on) UiCable(4, outJack, inJack); else { UiCable(5, outJack, inJack); UiCable(5, inJack, inJack); UiCable(5, outJack, outJack); } }
 #endif
@@ -95,7 +96,7 @@ public:
   void PaintStatus(HDC dc);
   static LRESULT CALLBACK StatusWndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp);
   HWND mStatusWnd = nullptr;
-  unsigned long long mLogCopiedMs = 0;   // "Log copied" for a few seconds
+  bool mLogBox = false;                  // "Copy log" clicked: the box with the address, until the next click
 #endif
 
 private:
@@ -180,6 +181,9 @@ public:
   std::string BugLog();
   bool SaveLog(char* pathOut, int n);    // TwentyEngine-log.txt next to the memories
   void CopyLogToClipboard();             // UI builds: clipboard + file; classic builds: the file (+ clipboard on Windows)
+#if !TWENTY_UI
+  void MailLog();                        // a new email to support, the setup filled in (the log is pasted by hand)
+#endif
 private:
   std::deque<std::string> mLogRing;
   char mDataDir[1024] = "";
