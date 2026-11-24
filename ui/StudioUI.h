@@ -519,8 +519,8 @@ static const Jack kJacks[35] = {
   {4, 365, 590, "S&H\nCLOCK", 2, 0, PARAM_INDEX_PatchBay_shclock}, {11, 610, 590, "EG1\nREV OUT", 1, 4, -1},
   {14, 725, 590, "VCA\nCTRL IN", 2, 0, PARAM_INDEX_PatchBay_vca}, {18, 915, 590, "EG1\nTRIG IN", 2, 0, PARAM_INDEX_PatchBay_eg1trig},
   {26, 1280, 600, "KBD\nTRIG IN", 2, 0, PARAM_INDEX_PatchBay_eg2trig}, {32, 1400, 600, "KBD\nTRIG OUT", 1, 12, -1},
-  {2, 245, 710, "S&H IN", 2, 0, PARAM_INDEX_PatchBay_shin}, {7, 490, 710, "S&H OUT", 1, 7, -1}, {12, 610, 710, "VCA IN", 0, 0, -1},
-  {16, 795, 710, "VCA OUT", 0, 0, -1}, {19, 915, 710, "PINK", 1, 8, -1}, {23, 1150, 710, "WHITE", 1, 8, -1},
+  {2, 245, 710, "S&H IN", 2, 0, PARAM_INDEX_PatchBay_shin}, {7, 490, 710, "S&H OUT", 1, 7, -1}, {12, 610, 710, "VCA IN", 5, 0, PARAM_INDEX_Patch__State_vin},
+  {16, 795, 710, "VCA OUT", 1, 5, -1}, {19, 915, 710, "PINK", 1, 8, -1}, {23, 1150, 710, "WHITE", 1, 8, -1},
   {27, 1270, 710, "WHEEL", 1, 9, -1}, {33, 1390, 710, "SWITCH", 1, 10, -1},
   {3, 250, 870, "SIGNAL IN", 4, 0, -1}, {8, 490, 870, "AMP OUT", 0, 0, -1}, {15, 730, 870, "BPF OUT", 0, 0, -1},
   {20, 965, 870, "F-V OUT", 0, 0, -1}, {28, 1265, 870, "ENV OUT", 0, 0, -1}, {34, 1385, 870, "TRIG OUT", 0, 0, -1},
@@ -637,7 +637,10 @@ public:
       std::string s(kJacks[h].label); for (char& c : s) if (c == '\n') c = ' ';
       static const char* kWhat[6] = { "  \xC2\xB7  not used yet", "  \xC2\xB7  output", "  \xC2\xB7  input", "  \xC2\xB7  patch KBD CV OUT here for mono", "  \xC2\xB7  patch SWITCH here for tap tempo",
                                       "  \xC2\xB7  input: the last note keeps sounding at this level (a drone)" };
-      SetInfo(s + kWhat[kJacks[h].kind]);
+      if (kJacks[h].id == 12) SetInfo(s + "  \xC2\xB7  input: VCA OUT = this x VCA CTRL IN (nothing in CTRL IN: closed)");
+      else if (kJacks[h].id == 14) SetInfo(s + "  \xC2\xB7  input: the main volume, or the VCA when VCA OUT is patched");
+      else if (kJacks[h].id == 16) SetInfo(s + "  \xC2\xB7  output: VCA IN x VCA CTRL IN");
+      else SetInfo(s + kWhat[kJacks[h].kind]);
     }
   }
   void OnMouseOut() override { mHover = -1; SetDirty(false); }

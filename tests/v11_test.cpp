@@ -1,6 +1,7 @@
 // v11_test.cpp - checks the 1.1 engine changes on the generated engine (48 kHz, 16-sample blocks)
 #include "../engine/ms20_host.h"
 #include <vector>
+#include <algorithm>
 #include <stdio.h>
 #include <math.h>
 namespace ms20 { thread_local SysexSender g_sysexSender = 0; thread_local void *g_sysexUser = 0; thread_local uint32_t g_ks_rng = 0x12345678u; }
@@ -95,6 +96,31 @@ int main() {
     CHECK(after > 0.01, "a new note takes over the drone");
     CHECK(off < 0.002, "source at zero: the drone closes");
     CHECK(c->o_PatchBay.selig == 9, "INITIAL GAIN's source is the wheel");
+    delete c; }
+
+  printf("Modulation VCA: VCA IN x CONTROL IN -> VCA OUT\n");
+  { EngineCore *c = fresh(); c->root.PExch[PARAM_INDEX_EG1_amount].value = 0x07FFFFFF;   // EG1/EXT knob up: scales the FREQ jack
+    c->root.PExch[PARAM_INDEX_MG__Morphing__LFO_rate].value = 40 << 20;
+    c->midi(0x90, 57, 100);
+    auto spread = [&](double secs) { double lo = 1e9, hi = 0; int nb = (int)(secs * 3000);
+      for (int b = 0; b < nb; b++) { c->process(); for (int v = 0; v < 8; v++) if (c->o_MS20_Voices.vgn[v] > 0.5f) { double f = c->o_MS20_Voices.inc1[v]; if (b > 300) { lo = fmin(lo, f); hi = fmax(hi, f); } } }
+      return hi > 0 ? 1200 * log2(hi / lo) : -1; };
+    cable(c, 4, 1, 12); cable(c, 4, 16, 5); run(c, 0.01);   // MG TRI -> VCA IN, VCA OUT -> FREQ
+    CHECK(c->o_PatchBay.selvin == 1 && c->root.PExch[PARAM_INDEX_PatchBay_freq].value == 5, "VCA IN has the MG, FREQ has VCA OUT");
+    int32_t mx = 0; for (int b = 0; b < 3000; b++) { c->process(); mx = std::max(mx, abs(c->o_PatchBay.src[5])); }
+    double a = spread(1.5);
+    CHECK(mx == 0, "nothing in CONTROL IN: the VCA is closed");
+    cable(c, 4, 27, 14); c->midi(0xB0, 1, 127); run(c, 0.05);   // WHEEL OUT -> CONTROL IN, wheel up
+    for (int b = 0; b < 3000; b++) { c->process(); mx = std::max(mx, abs(c->o_PatchBay.src[5])); }
+    double b2 = spread(1.5);
+    printf("    VCO 1 pitch spread: %.1f cents closed, %.1f cents with the wheel up in CONTROL IN\n", a, b2);
+    CHECK(mx > (1 << 25), "the wheel opens the VCA: the MG comes out of VCA OUT");
+    CHECK(a < 5 && b2 > 50, "the MG reaches the pitch only through the open VCA");
+    CHECK(c->o_PatchBay.outlet_vca == NORMAL, "VCA OUT patched: CONTROL IN leaves the main volume alone");
+    cable(c, 5, 16, 5); cable(c, 5, 5, 5); cable(c, 5, 16, 16); run(c, 0.01);
+    CHECK(c->o_PatchBay.outlet_vca != NORMAL, "VCA OUT unplugged: CONTROL IN is the main volume again (tremolo)");
+    cable(c, 5, 1, 12); cable(c, 5, 12, 12); run(c, 0.01);
+    CHECK(c->o_PatchBay.selvin == 0 && c->o_PatchBay.src[5] == 0, "VCA IN unplugged: nothing in the VCA");
     delete c; }
 
   printf(fails ? "V11 CHECKS FAILED (%d)\n" : "ALL V11 CHECKS PASSED (%d failed)\n", fails);

@@ -54,7 +54,14 @@ int main() {
     tapKey(h, 5); CHECK(P(h, OVR) == 1 && P(h, LPF) == 1 && P(h, MONO) == 1, "sound 6 comes back with its cables");
     FILE *f = fopen("./cabtest/MS20MEM.BIN", "rb"); int32_t hd[4] = {0}; if (f) { fread(hd, 4, 4, f); fseek(f, 0, SEEK_END); long sz = ftell(f); fclose(f);
       printf("     header %08X NS=%d NP=%d NC=%d, %ld bytes\n", hd[0], hd[1], hd[2], hd[3], sz);
-      CHECK(hd[0] == 0x4D533231 && hd[3] == 14 && sz == 16 + 36 * (29 + 2 + 14) * 4, "'MS21' file, 14 cable values per sound"); } }
+      CHECK(hd[0] == 0x4D533231 && hd[3] == 15 && sz == 16 + 36 * (29 + 2 + 15) * 4, "'MS21' file, 15 cable values per sound (with VCA IN)"); } }
+  printf("6b. A file from the 1.1 test builds (14 cable values) still loads\n");
+  { mkdir("./cabtest14/", 0755); FILE *f = fopen("./cabtest14/MS20MEM.BIN", "wb");
+    int32_t hd[4] = {0x4D533231, 36, 29, 14}; fwrite(hd, 4, 4, f);
+    for (int n = 0; n < 36; n++) { int32_t r[29 + 2 + 14]; memset(r, 0, sizeof r); r[0] = (n == 5); r[30] = (n == 5); r[31 + 4] = 1; fwrite(r, 4, 29 + 2 + 14, f); }   // slot 6: MG TRI in LPF CUTOFF
+    fclose(f);
+    MS20Host h; h.reset(48000); CHECK(h.loadMemories("./cabtest14/"), "14-cable file loaded"); run(h, 0.05);
+    tapKey(h, 5); CHECK(P(h, OVR) == 1 && P(h, LPF) == 1, "its sound comes back with its cables (VCA IN stays empty)"); }
   printf("7. A 1.0 memory file ('MS20', knobs only) still loads\n");
   { mkdir("./cabtest_old/", 0755); FILE *f = fopen("./cabtest_old/MS20MEM.BIN", "wb");
     int32_t hd[3] = {0x4D533230, 36, 29}; fwrite(hd, 4, 3, f);

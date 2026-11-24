@@ -167,7 +167,7 @@ static const NiceName kNiceNames[] = {
   {"PatchBay", "shin", "Patch S&H In", "Patch Panel"},         {"PatchBay", "shclock", "Patch S&H Clock", "Patch Panel"},
   {"Patch_State", "c12", "Patch VCO 1+2 CV", "Patch Panel"},  {"Patch_State", "mono", "Patch Mono", "Patch Panel"},
   {"Patch_State", "wheel", "Patch Wheel Out", "Patch Panel"},  {"Patch_State", "ovr", "Sound's Own Cables", "Patch Panel"},
-  {"Patch_State", "ig", "Patch Initial Gain", "Patch Panel"},
+  {"Patch_State", "ig", "Patch Initial Gain", "Patch Panel"}, {"Patch_State", "vin", "Patch VCA In", "Patch Panel"},
   {"MS20_Master_Tune", "tune", "Master Tune", "Output"},
   {"BBD_Delay", "time", "Delay Time", "Delay"},                {"BBD_Delay", "feedback", "Delay Feedback", "Delay"},
   {"BBD_Delay", "bbdfilter", "Delay Tone", "Delay"},           {"BBD_Delay", "wowflutter", "Delay Wow and Flutter", "Delay"},
