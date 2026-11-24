@@ -147,5 +147,13 @@ rep('   </nets>', '''      <net>
       </net>
    </nets>''', 'delay nets')
 
+# ---- the patch's title comment: v51 (1.1) and what it adds (shown in the Ksoloti Patcher)
+rep('=== TWENTY ENGINE v50c by Pete', '=== TWENTY ENGINE v51 (1.1) by Pete', 'title version')
+rep('LATCH = VCO1 CHORD HELD | v11:',
+    'LATCH = VCO1 CHORD HELD | v51 (1.1): sounds keep their cables (switch + top C held 2 s = cables only), INITIAL GAIN = the last note '
+    'keeps sounding, modulation VCA (VCA IN x CTRL IN -&gt; VCA OUT), VCO1+2 CV IN = pitch input, MG TRI OUT follows WAVEFORM, faster wheel '
+    '(no vibrato while WHEEL OUT is patched), volume at 0 = off, mono retrigger, ESP knob pickup, TRIG LED = delay repeats, CC 104 function '
+    'switch, CC 105 ESP layer latch, CC 106 tap, key click 3 | v11:', 'title notes')
+
 open(dst, 'w', encoding='utf-8').write(s)
 print('ok')
