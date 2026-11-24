@@ -99,7 +99,7 @@
     midi.inputs.forEach((p) => { p.onmidimessage = (e) => onMidi(p, e); if (isIc(p)) foundIn = true; });
     if (sysex) midi.outputs.forEach((p) => { if (isIc(p)) out = p; });
     if (foundIn !== icIn) log('CONTROLLER ' + (foundIn ? 'MS-20ic found' : 'MS-20ic gone'));
-    const newOut = out && out !== icOut;
+    const newOut = out && (!icOut || out.id !== icOut.id);   // by id: opening a port fires another statechange
     icIn = foundIn; icOut = out;
     if (newOut) { log('CONTROLLER LED output open'); send({ t: 'lights' }); }   // the start-up light show: the LEDs work
     status();

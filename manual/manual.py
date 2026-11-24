@@ -588,8 +588,8 @@ story.append(side(
             'So the plugins remember the last panel they saw and start from it, with the start-up light show. '
             'Moved knobs while no plugin was open? Switch the volume off and on.', 'small')),
     stack(p('<b>CCs</b>', 'h2'),
-          gtable([['11', 'SIGNAL LEVEL: play mode'], ['88 / 89', 'LOW CUT / HIGH CUT: delay time, feedback / arp rate, octaves'],
-                  ['90 / 91', 'CV ADJUST / THRESHOLD: wow, arp order / delay amount, tone'], ['102 / 103', 'Memory key down / up'],
+          gtable([['11', 'SIGNAL LEVEL: play mode'], ['88', 'LOW CUT: delay time / arp rate'], ['89', 'HIGH CUT: feedback / arp octaves'],
+                  ['90', 'CV ADJUST: wow / arp order'], ['91', 'THRESHOLD: delay amount / tone'], ['102 / 103', 'Memory key down / up'],
                   ['104', 'Function switch (a Teensy FUNCTION button)'], ['105', 'ESP knobs on the delay layer'], ['106', 'One tap of tap tempo']],
                  [16 * mm, None], ('CC', 'Function'))), FULLW * 0.5))
 story.append(Spacer(1, 2))
@@ -678,7 +678,7 @@ story.append(side(
           p('<b>Every take is saved.</b> A take starts with the first note and ends after two seconds of silence. It is saved as a 24-bit WAV in '
             '<b>Music / Twenty Engine / Captures</b>, which keeps the newest 1 GB. The status bar shows it; click there to open the folder.', 'small'),
           p('The app shares the 36 sounds with the plugins, and starts with the sound and window you left. '
-            'Key Click has no setting in the app; it stays at the sound\'s own value.', 'small')),
+            'Key Click has no setting in the app: it stays at 3, the standard.', 'small')),
     stack(p('<b>The web edition (free)</b>', 'h2'),
           p(f'Open <b>{WEB}</b> in Chrome or Edge on a computer and click START. Allow MIDI when the browser asks, and SysEx too: that lights the iC\'s LEDs.', 'small'),
           p('The MS-20ic plays it with its keys, knobs and cables. Any other MIDI keyboard plays the keys, and so does the computer: '

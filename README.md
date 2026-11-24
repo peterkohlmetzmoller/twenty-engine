@@ -1,38 +1,41 @@
 # Twenty Engine
 
-An 8-voice polysynth engine for the Korg MS-20ic, by Peter Kohlmetz Moller.
-This repository builds the plugin edition (AU and VST3 for macOS, VST3 for Windows; AAX optional) that runs
-the same engine as the Ksoloti patch, as two plugins installed together, played from a stock MS-20ic. No graphical interface, on purpose:
-the MS-20ic is the interface.
+An 8-voice polysynth engine for the Korg MS-20ic, by Peter Kohlmetz Moller. One engine, generated from a Ksoloti
+patch, in every edition:
+
+- **Twenty Engine UI** (AU, VST3; Mac and Windows): the whole MS-20 panel in a window. With an MS-20ic it follows
+  the iC and, in Logic, keeps each region's sound; without one it is a normal synth plugin (automation, presets,
+  CC learn).
+- **Twenty Engine MS-20ic** (AU, VST3): no window, the MS-20ic is the interface. Keeps the 1.0 plugin IDs, so
+  projects made with "Twenty Engine" 1.0 open with it.
+- **Twenty Engine**, the standalone app (Mac, Windows, Linux): the panel window, audio and MIDI settings, and every
+  take saved as a WAV.
+- **The free web edition** (`web/`): the panel and the engine in the browser (WebAssembly, Web MIDI).
+- **Ksoloti Core** and **Teensy 4.1** (inside the MS-20ic), and the Daisy Patch SM (beta).
 
 Free software under the GNU GPL v3 (`LICENSE`), with an additional permission for the Avid AAX SDK
-(`LICENSE-EXCEPTIONS.md`).
-
-## Two plugins
-- **Twenty Engine Instrument** (`Tw20`). Parameters are not automatable. It records every knob move of a
-  take itself (`engine/recall.h`) and plays the take back exactly on a second engine, while the live engine keeps
-  following the panel. It needs the controller opened directly next to the DAW: Core MIDI on Mac, WinMM on Windows
-  (multi-client with Windows MIDI Services on Windows 11). Without that it runs as a single-engine MIDI instrument.
-- **Twenty Engine Automation** (`Tw2S`): the same code built with `TWENTY_STUDIO 1`. Every parameter is automatable,
-  and at the first note of a new take it touches all parameters so Latch writes the starting sound.
-  `tools/make_variant.py studio` generates its source tree (own name, AU/VST3/AAX IDs, bundle IDs and class prefix).
+(`LICENSE-EXCEPTIONS.md`). The owner's manual is built from `manual/manual.py`.
 
 ## How it is put together
-- `patch/`    the Ksoloti patch the engine is generated from
-- `engine/`   `gen_engine.py` turns the patch into `engine_gen.h`; `ms20_host.h` runs it in a host
-              (48 kHz engine + resampler, MIDI timing, parameters both ways, LED queue, patch memory file)
-- `TwentyEngine.cpp/.h`  the iPlug2 plugin around the engine
-- `led_port.h`           LED SysEx to the MS-20ic and controller detection (Core MIDI on Mac, WinMM on Windows)
+- `patch/`    the Ksoloti patch the engine is generated from (`MS20_monopoly_v51.axp` for 1.1, named in the
+              workflow's `PATCH:`). The 1.1 changes are scripted from v50c, in this order: `tools/v51_edits.py`,
+              `v51_cables.py`, `v51_drone.py`, `v51_vca.py`, `v51_musts.py` (each: input .axp, output .axp)
+- `engine/`   `gen_engine.py` turns the patch into `engine_gen.h`; `ms20_host.h` runs it in a host (48 kHz engine +
+              resampler, MIDI timing, parameters both ways, LED queue, patch memory file); `state_format.h`
+              (saved state), `cc_map.h` (CC learn), `capture.h` (the apps' takes)
+- `TwentyEngine.cpp/.h`  the iPlug2 plugin and app around the engine; `tools/make_ui_variant.py` generates the
+              Twenty Engine UI source (own name and IDs, and the app "Twenty Engine")
+- `ui/`       the panel window (`StudioUI.h`), shared by the plugin, the apps and the web page
+- `led_port.h`           the MS-20ic's own MIDI port: LEDs, controller detection (Core MIDI, WinMM, ALSA)
+- `linux/`    the Linux app (DPF, with a small IGraphics stand-in on NanoVG)
+- `web/`      the web edition: `build.sh` builds it with Emscripten
+- `teensy/`, `daisy/`    the Teensy 4.1 and Daisy editions
 - `installer/`           Mac .pkg and Windows .exe installer definitions
-- `tools/make_variant.py` generates the Twenty Engine Automation source
-- `tests/`               checks that run on any computer (`recall_test.cpp` simulates recording and playback with
-                         the timing of Logic and of hosts that report the song position smoothly)
-- `tests/daw/`           REAPER test: CI installs REAPER on Mac and Windows, plays both plugins (AU and VST3),
+- `manual/`   the owner's manual, the Teensy guide and the Windows quick guide (reportlab)
+- `tests/`    checks that run on any computer (engine, saved state, cables, CC learn, takes, the web page in Chrome)
+- `tests/daw/`           REAPER test: CI installs REAPER on Mac and Windows, plays the plugins (AU and VST3),
                          checks the renders, MIDI CC, automation and saved state. CI also runs pluginval on every plugin.
-- `.github/workflows/build.yml`  builds, tests and validates every format and both installers
-
-## New patch version
-Replace the file in `patch/`, update `PATCH:` in the workflow, push. GitHub regenerates the engine and builds.
+- `.github/workflows/build.yml`  builds, tests and validates every edition and both installers
 
 ## Building AAX (Pro Tools)
 AAX needs the Avid AAX SDK (free for registered Avid developers, not redistributable) and, for retail Pro Tools,
@@ -53,5 +56,5 @@ The unsigned `.aaxplugin` loads in Pro Tools Developer. For retail Pro Tools, si
 the secrets `AAX_SDK_B64_1` … `AAX_SDK_B64_7`. The workflow then also builds unsigned AAX for Mac and Windows.
 
 ## Names
-Products "Twenty Engine Instrument" and "Twenty Engine Automation", manufacturer "Peter Kohlmetz Moller": `config.h`,
-`resources/*-Info.plist` and `tools/make_variant.py`.
+Products "Twenty Engine UI", "Twenty Engine MS-20ic" and the app "Twenty Engine", manufacturer "Peter Kohlmetz
+Moller": `config.h`, `resources/*-Info.plist` and `tools/make_ui_variant.py`.
