@@ -9,6 +9,7 @@
     <choices-outline>
         <line choice="au"/>
         <line choice="vst3"/>
+        <line choice="app"/>
     </choices-outline>
     <choice id="au" title="Audio Unit (Logic, MainStage, GarageBand)" start_selected="true">
         <pkg-ref id="com.peterkohlmetzmoller.twentyengine.au"/>
@@ -16,6 +17,10 @@
     <choice id="vst3" title="VST3 (Ableton Live, Bitwig, Reaper, Cubase …)" start_selected="true">
         <pkg-ref id="com.peterkohlmetzmoller.twentyengine.vst3"/>
     </choice>
+    <choice id="app" title="Twenty Engine app (no DAW needed; records every take)" start_selected="true">
+        <pkg-ref id="com.peterkohlmetzmoller.twentyengine.app"/>
+    </choice>
     <pkg-ref id="com.peterkohlmetzmoller.twentyengine.au">au.pkg</pkg-ref>
+    <pkg-ref id="com.peterkohlmetzmoller.twentyengine.app">app.pkg</pkg-ref>
     <pkg-ref id="com.peterkohlmetzmoller.twentyengine.vst3">vst3.pkg</pkg-ref>
 </installer-gui-script>

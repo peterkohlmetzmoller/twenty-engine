@@ -75,6 +75,11 @@ TwentyEnginePlugin::TwentyEnginePlugin()
     }
   }
   if (mPanelPath[0] && mPanelMem.load(mPanelPath)) mPanelSrc.store(1);
+  // every take as a WAV: ~/Music/Twenty Engine/Captures/ (the XDG music folder if set)
+  { char d[1100] = ""; const char* home = getenv("HOME"); const char* mu = getenv("XDG_MUSIC_DIR");
+    if (mu && *mu) snprintf(d, sizeof(d), "%s", mu); else if (home) snprintf(d, sizeof(d), "%s/Music", home);
+    if (d[0]) { mkdir(d, 0755); strncat(d, "/Twenty Engine", sizeof(d) - strlen(d) - 1); mkdir(d, 0755); strncat(d, "/Captures/", sizeof(d) - strlen(d) - 1); mkdir(d, 0755);
+                mCapture.setFolder(d); mCapture.setKeepAll(true); } }
   mHost->reset(getSampleRate() > 0 ? getSampleRate() : 48000.0);
   Log("START  Twenty Engine 1.1.0 (Linux)");
   mIdle = std::thread([this] { while (mRun.load()) { Idle(); std::this_thread::sleep_for(std::chrono::milliseconds(20)); } });
@@ -128,6 +133,7 @@ void TwentyEnginePlugin::run(const float**, float** outputs, uint32_t frames, co
     if ((s & 0xF0) == 0xB0 && (d1 == 102 || d1 == 103)) { s = (uint8_t)((d1 == 102 ? 0x90 : 0x80) | (s & 0x0F)); d1 = d2; d2 = (s & 0xF0) == 0x90 ? 100 : 0; }
     WatchCable(s, d1, d2);
     if ((s & 0xF0) == 0x90 || (s & 0xF0) == 0x80) mLogMidi.push(((uint32_t)s << 16) | ((uint32_t)d1 << 8) | d2);
+    if ((s & 0xF0) == 0x90 && d2 > 0) mCapNote.store(true);
     mHost->midi(0, s, d1, d2);
   }
   // other keyboards: keys, wheels, pedals - never the switch (channel pressure would hold it: silent keys)
@@ -135,6 +141,7 @@ void TwentyEnginePlugin::run(const float**, float** outputs, uint32_t frames, co
   {
     if ((s & 0xF0) == 0xD0) continue;
     if ((s & 0xF0) == 0x90 || (s & 0xF0) == 0x80) mLogMidi.push(((uint32_t)s << 16) | ((uint32_t)d1 << 8) | d2 | 0x01000000u);
+    if ((s & 0xF0) == 0x90 && d2 > 0) mCapNote.store(true);
     if ((s & 0xF0) == 0xB0)   // CC learn: a learned controller moves its parameter (the window follows the engine)
     {
       int type; double def, mn, mx;
@@ -149,6 +156,7 @@ void TwentyEnginePlugin::run(const float**, float** outputs, uint32_t frames, co
   {
     const uint32_t n = (frames - done > 512) ? 512 : frames - done;
     mHost->process(mL, mR, (int)n);
+    mCapture.block(mL, mR, (int)n, false, mCapNote.exchange(false), getSampleRate());   // every take as a WAV
     memcpy(outputs[0] + done, mL, n * sizeof(float));
     memcpy(outputs[1] + done, mR, n * sizeof(float));
     done += n;
@@ -163,6 +171,9 @@ void TwentyEnginePlugin::Idle()
   { ParamSet p; while (mHost->popEngineChange(p)) {} }   // the window reads the engine itself
   if (--rescan <= 0) { mLed.Rescan(); rescan = 100; }   // every 2 s: the controller plugged in later
   if (--scan <= 0) { mController.store(LedPort::FindController()); scan = 50; }
+  // the takes: written to their files here
+  mCapture.idle();
+  if (mCapture.takes() != mCapTakes) { mCapTakes = mCapture.takes(); Log("CAPTURE take saved: %s (%.1f s)", mCapture.path().c_str(), mCapture.seconds()); }
   // CC learn: the map file after a change
   { const int ch = ms20::GlobalCcMap().changed.load();
     if (ch != mCcSaved && mDir[0]) { mCcSaved = ch; char cp[1100]; snprintf(cp, sizeof(cp), "%sccmap.txt", mDir); ms20::GlobalCcMap().save(cp); Log("CC LEARN map saved"); } }
@@ -286,6 +297,21 @@ void TwentyEnginePlugin::MailLog()
   const bool ok = posix_spawnp(&pid, "xdg-open", nullptr, nullptr, argv, environ) == 0;
   if (ok) std::thread([pid] { int st; waitpid(pid, &st, 0); }).detach();   // no zombie
   Log("LOG: email to support opened (%s)", ok ? "ok" : "xdg-open failed");
+}
+
+void TwentyEnginePlugin::ShowCaptures()
+{
+  if (mCapture.folder().empty()) return;
+  pid_t pid; char a0[] = "xdg-open"; std::string f = mCapture.folder(); char* argv[] = { a0, &f[0], nullptr };
+  if (posix_spawnp(&pid, "xdg-open", nullptr, nullptr, argv, environ) == 0) std::thread([pid] { int st; waitpid(pid, &st, 0); }).detach();
+}
+
+void TwentyEnginePlugin::CaptureText(char* out, int n) const
+{
+  const int st = mCapture.state(); const double s = mCapture.seconds();
+  if (st == 1) snprintf(out, n, "Recording  %d:%02d  \xC2\xB7  every take is saved (click: the folder)", (int)s / 60, (int)s % 60);
+  else if (st == 2) { const std::string& p = mCapture.path(); const size_t k = p.find_last_of('/'); snprintf(out, n, "Saved %s  \xC2\xB7  click: the folder", (k == std::string::npos ? p : p.substr(k + 1)).c_str()); }
+  else snprintf(out, n, "Every take is saved as a WAV in Music/Twenty Engine/Captures (click)");
 }
 
 Plugin* createPlugin() { return new TwentyEnginePlugin(); }

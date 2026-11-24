@@ -9,6 +9,7 @@
 #include "engine/ms20_host.h"
 #include "engine/panel_memory.h"
 #include "engine/cc_map.h"
+#include "engine/capture.h"
 #include "led_port.h"
 #include "ui/StudioHost.h"
 #include <atomic>
@@ -48,6 +49,10 @@ public:
   void CcLearn(int p) override { ms20::GlobalCcMap().learning.store(p); }
   void CcForget(int p) override { ms20::GlobalCcMap().forget(p); }
   int CcTakeLearned() override { return ms20::GlobalCcMap().learnedCc.exchange(-1); }
+  // every take as a WAV (~/Music/Twenty Engine/Captures); the status line shows it, a click opens the folder
+  bool HasCapture() const override { return true; }
+  void ShowCaptures() override;
+  void CaptureText(char* out, int n) const;
   void PatchCable(int outJack, int inJack, bool on) override
   { if (on) UiCable(4, outJack, inJack); else { UiCable(5, outJack, inJack); UiCable(5, inJack, inJack); UiCable(5, outJack, outJack); } }
   // the bug log: what happened lately with the setup; LOG copies it (the window puts it on the clipboard) and saves
@@ -86,6 +91,7 @@ private:
   char mDir[1024] = "";
   int mLogCtl = -1, mLogPanel = -1; double mLogRate = 0.0;
   int mCcSaved = 0;
+  ms20::Capture mCapture; std::atomic<bool> mCapNote{false}; int mCapTakes = 0;
 
   std::unique_ptr<ms20::MS20Host> mHost;
   LedPort mLed;

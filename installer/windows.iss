@@ -9,7 +9,7 @@ DefaultDirName={commoncf64}\VST3
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 Uninstallable=yes
-UninstallDisplayName=Twenty Engine (VST3: Twenty Engine UI and Twenty Engine MS-20ic)
+UninstallDisplayName=Twenty Engine (the app, and the VST3 plugins Twenty Engine UI and Twenty Engine MS-20ic)
 LicenseFile=resources\license.txt
 InfoBeforeFile=resources\welcome_win.txt
 OutputDir=..
@@ -28,14 +28,20 @@ Type: filesandordirs; Name: "{commoncf64}\VST3\TwentyEngineStudio.vst3"
 [Files]
 Source: "..\out\TwentyEngine.vst3\*"; DestDir: "{commoncf64}\VST3\TwentyEngine.vst3"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\out\TwentyEngineUI.vst3\*"; DestDir: "{commoncf64}\VST3\TwentyEngineUI.vst3"; Flags: ignoreversion recursesubdirs createallsubdirs
+; the standalone app (no DAW needed; every take is saved in Music\Twenty Engine\Captures)
+Source: "..\out\Twenty Engine.exe"; DestDir: "{autopf}\Twenty Engine"; Flags: ignoreversion
+
+[Icons]
+Name: "{autoprograms}\Twenty Engine"; Filename: "{autopf}\Twenty Engine\Twenty Engine.exe"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{commoncf64}\VST3\TwentyEngine.vst3"
 Type: filesandordirs; Name: "{commoncf64}\VST3\TwentyEngineUI.vst3"
 Type: filesandordirs; Name: "{commoncf64}\VST3\TwentyEngineAutomation.vst3"
+Type: filesandordirs; Name: "{autopf}\Twenty Engine"
 
 [Run]
 Filename: "https://www.tobias-erichsen.de/software/loopmidi.html"; Description: "Open the loopMIDI download page (free; keeps each take's sound - add a port named Twenty Engine Panel)"; Flags: postinstall shellexec skipifsilent unchecked nowait
 
 [Messages]
-FinishedLabel=Twenty Engine is installed: Twenty Engine UI (with the panel window, with or without an MS-20ic) and Twenty Engine MS-20ic (the classic plugin). Rescan plugins in your music software (or restart it).
+FinishedLabel=Twenty Engine is installed: the Twenty Engine app (Start menu; no DAW needed, every take is saved as a WAV), Twenty Engine UI (the plugin with the panel window, with or without an MS-20ic) and Twenty Engine MS-20ic (the classic plugin). Rescan plugins in your music software (or restart it).

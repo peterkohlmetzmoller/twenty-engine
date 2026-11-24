@@ -40,5 +40,9 @@ struct PatchHost {
   virtual void CcLearn(int param) {}
   virtual void CcForget(int param) {}
   virtual int CcTakeLearned() { return -1; }
+  // the standalone apps: every take is saved as a WAV (engine/capture.h); the status line shows it, a click opens
+  // the folder
+  virtual bool HasCapture() const { return false; }
+  virtual void ShowCaptures() {}
 };
 }

@@ -27,6 +27,7 @@ xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/Components/TwentyEngine.
 xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/VST3/TwentyEngine.vst3" 2>/dev/null
 xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/Components/TwentyEngineAutomation.component" 2>/dev/null
 xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/VST3/TwentyEngineAutomation.vst3" 2>/dev/null
+xattr -dr com.apple.quarantine "/Applications/Twenty Engine.app" 2>/dev/null
 # 3. let macOS rescan Audio Units
 killall -9 AudioComponentRegistrar 2>/dev/null
 exit 0

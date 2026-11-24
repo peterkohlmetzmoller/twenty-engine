@@ -63,7 +63,9 @@ static bool OpenLink(const char* url)
   if (MultiByteToWideChar(CP_UTF8, 0, url, -1, w, 2048) <= 0) return false;
   return (INT_PTR)ShellExecuteW(nullptr, L"open", w, nullptr, nullptr, SW_SHOWNORMAL) > 32;
 #elif defined(__APPLE__)
-  CFURLRef u = CFURLCreateWithBytes(nullptr, (const UInt8*)url, (CFIndex)strlen(url), kCFStringEncodingUTF8, nullptr);
+  CFURLRef u = strstr(url, "://") || !strncmp(url, "mailto:", 7)
+             ? CFURLCreateWithBytes(nullptr, (const UInt8*)url, (CFIndex)strlen(url), kCFStringEncodingUTF8, nullptr)
+             : CFURLCreateFromFileSystemRepresentation(nullptr, (const UInt8*)url, (CFIndex)strlen(url), true);   // a folder
   if (!u) return false;
   const OSStatus st = LSOpenCFURLRef(u, nullptr);
   CFRelease(u);
@@ -282,6 +284,9 @@ bool TwentyEngine::HasFocus() const { return FocusCell()->load(std::memory_order
 
 TwentyEngine::~TwentyEngine()
 {
+#if TWENTY_APP && IPLUG_DSP
+  AppSaveState(true);
+#endif
   int64_t me = mFocusId;
   FocusCell()->compare_exchange_strong(me, 0);   // the next track played on takes over
 }
@@ -340,8 +345,18 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
     mCcSaved = ms20::GlobalCcMap().changed.load(); }
 #endif
 #if IPLUG_DSP
-#if TWENTY_STUDIO
+#if TWENTY_STUDIO && !TWENTY_APP
   PanelPort::Get();   // the plugin's own MIDI port exists from the start, so the DAW sees it before recording
+#endif
+#if TWENTY_APP
+  // every take as a WAV: Mac ~/Music/Twenty Engine/Captures/, Windows %USERPROFILE%\Music\Twenty Engine\Captures
+  { char d[1100] = "";
+#ifdef _WIN32
+    if (const char* up = getenv("USERPROFILE")) { snprintf(d, sizeof(d), "%s/Music", up); MakeDir(d); snprintf(d, sizeof(d), "%s/Music/Twenty Engine", up); MakeDir(d); snprintf(d, sizeof(d), "%s/Music/Twenty Engine/Captures/", up); MakeDir(d); }
+#else
+    if (const char* home = getenv("HOME")) { snprintf(d, sizeof(d), "%s/Music/Twenty Engine", home); MakeDir(d); snprintf(d, sizeof(d), "%s/Music/Twenty Engine/Captures/", home); MakeDir(d); }
+#endif
+    if (d[0]) { mCapture.setFolder(d); mCapture.setKeepAll(true); } }
 #endif
   if (mPanelPath[0] && mPanelMem.load(mPanelPath)) mPanelSrc.store(1);   // the last panel: replayed when the controller connects
 #endif
@@ -418,6 +433,20 @@ TwentyEngine::TwentyEngine(const InstanceInfo& info)
     pGraphics->AttachControl(new StatusControl(pGraphics->GetBounds(), this));
   };
 #endif
+#endif
+#if TWENTY_APP && IPLUG_DSP
+  // the app: the sound and the window as they were when it was last closed
+  if (mDataDir[0])
+  {
+    char p[1200]; snprintf(p, sizeof(p), "%sapp-state.bin", mDataDir);
+    if (FILE* f = fopen(p, "rb"))
+    {
+      std::vector<uint8_t> b; uint8_t buf[4096]; size_t n;
+      while ((n = fread(buf, 1, sizeof(buf), f)) > 0) b.insert(b.end(), buf, buf + n);
+      fclose(f);
+      if (!b.empty()) { IByteChunk c; c.PutBytes(b.data(), (int)b.size()); UnserializeState(c, 0); }
+    }
+  }
 #endif
 }
 
@@ -846,12 +875,12 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   if (msg.mStatus < 0xF0 && (msg.mStatus & 0xF0) != 0xB0) mDbgMidiQ.push({msg.mStatus, msg.mData1, msg.mData2, msg.mOffset, mClock});   // beta diagnostics: notes, pressure (not the many knob CCs)
   // performance recall (engine/recall.h): the track plays the notes, the switch and the mod wheel; knob and
   // cable CCs on the track are ignored when the knobs reach the plugin straight from the controller
-#if TWENTY_STUDIO
+#if TWENTY_STUDIO && !TWENTY_APP
   // Automation: the region's settings (channels 16/15, engine/paramstream.h), applied per block in ProcessBlock -
   // always read, also where this computer has no port of its own (a project recorded elsewhere keeps its sounds)
   if (mStream.push(msg.mStatus, msg.mData1, msg.mData2)) return;
 #endif
-#if defined(_WIN32) && TWENTY_STUDIO
+#if defined(_WIN32) && TWENTY_STUDIO && !TWENTY_APP
   // Windows with the loopMIDI port: a key played while no take is playing is live - this copy's track is the
   // one being played on, so this copy sends its sound into the port (one copy at a time)
   if (!mLed.KnobsDirect() && (msg.mStatus & 0xF0) == 0x90 && msg.mData2 > 0 && !mWinInTake) FocusCell()->store(mFocusId);
@@ -874,6 +903,15 @@ void TwentyEngine::ProcessMidiMsg(const IMidiMsg& msg)
   // (a keyboard's aftertouch would otherwise hold the switch: silent keys, memory mode)
   if ((msg.mStatus & 0xF0) == 0xD0 && mController.load() == 0) return;
   if (!mLed.KnobsDirect()) WatchCable(msg.mStatus, msg.mData1, msg.mData2);
+#endif
+#if TWENTY_APP
+  // the app: everything from its MIDI input plays the engine - except the iC's own messages, when the iC is also
+  // picked there (it is read directly)
+  if (mLed.KnobsDirect()) { DrainController(); if (AppDup(msg.mStatus, msg.mData1, msg.mData2)) return; }
+  if ((msg.mStatus & 0xF0) == 0xD0) return;   // a keyboard's aftertouch is never the iC's switch (that comes directly)
+  if ((msg.mStatus & 0xF0) == 0x90 && msg.mData2 > 0) mCapNote.store(true);
+  mHost->midi(msg.mOffset, msg.mStatus, msg.mData1, msg.mData2);
+  return;
 #endif
 #ifdef _WIN32
   if (!mLed.KnobsDirect())   // Windows: the track plays the live engine
@@ -939,7 +977,7 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
   if (running && !mWasRunning) { mDiagHost.store(0); mDiagHostBits.store(0); mStreamApplied.store(0); mSnapReq.store(true); }   // Automation: the whole panel goes out at every start
   mWasRunning = running; mRunningA.store(running);
   mRecall.setEnabled(TWENTY_STUDIO ? false : direct);   // Automation keeps the performance in the host's automation
-  const bool twoEngines = direct;
+  const bool twoEngines = direct && !TWENTY_APP;   // the app has no regions: one engine
   // the controller has just connected (or the plugin just started with it): play the last panel into the live
   // engine as a start-up dump - the sound matches the knobs and the start-up light show runs
   if (direct && !mWasDirect && HasFocus()) mPanelMem.replay([this](uint8_t st, uint8_t d1, uint8_t d2) { mHost->midi(0, st, d1, d2); });
@@ -1047,6 +1085,9 @@ void TwentyEngine::ProcessBlock(sample** inputs, sample** outputs, int nFrames)
       outputs[0][done + i] = (sample)mScratchL[i];
       outputs[1][done + i] = (sample)mScratchR[i];
     }
+#if TWENTY_APP
+    mCapture.block(mScratchL, mScratchR, n, false, mCapNote.exchange(false), sr);   // every take as a WAV
+#endif
     done += n;
   }
   if (mDbg && mDbgBlocksLeft > 0)
@@ -1132,6 +1173,11 @@ void TwentyEngine::StreamApply(int slot, int32_t raw)
 void TwentyEngine::OnIdle()
 {
   // main thread, about every 20 ms
+#if TWENTY_APP
+  mCapture.idle();
+  { static int lastTakes = 0; if (mCapture.takes() != lastTakes) { lastTakes = mCapture.takes(); Dbg("CAPTURE take saved: %s (%.1f s)", mCapture.path().c_str(), mCapture.seconds()); } }
+  if (++mStateTick >= 150) { mStateTick = 0; AppSaveState(false); }   // every 3 s: the sound and window, if they changed
+#endif
   // the plugin just reached the controller's LEDs: the power-on light show once, so the user sees it works
   { const bool lo = mLed.Connected(); if (lo && !mLedWas) mHost->requestLightShow(); mLedWas = lo; }
 #ifdef _WIN32
@@ -1418,6 +1464,10 @@ void TwentyEngine::DrainController()
 #if TWENTY_UI
     WatchCable(s, d1, d2);
 #endif
+#if TWENTY_APP
+    mDirectRecent[mDirectHead] = {s, d1, d2, WallMs()}; mDirectHead = (mDirectHead + 1) % 32;
+    if (on) mCapNote.store(true);
+#endif
     const bool late = mRecall.directMsg(s, d1, d2);   // the host's copy of this key came first
     if (late) mPlay->midi(0, (uint8_t)(0x80 | (s & 0x0F)), d1, 0);   // silence the host's copy on the playback engine
     mHost->midi(0, s, d1, d2);
@@ -1482,9 +1532,36 @@ void TwentyEngine::WatchCable(uint8_t s, uint8_t d1, uint8_t d2)
 #endif
 
 #if TWENTY_UI
-int TwentyEngine::ModeSetting() const { return ModeSettingG(); }
+void TwentyEngine::ShowCaptures()
+{
+#if TWENTY_APP && IPLUG_DSP
+  if (!mCapture.folder().empty()) OpenLink(mCapture.folder().c_str());
+#endif
+}
+#endif
+#if TWENTY_APP && IPLUG_DSP
+bool TwentyEngine::AppDup(uint8_t s, uint8_t d1, uint8_t d2) const
+{
+  const int64_t now = WallMs();
+  const bool one = (s & 0xF0) == 0xC0 || (s & 0xF0) == 0xD0;
+  for (const AppMsg& m : mDirectRecent) if (m.ms > 0 && now - m.ms < 200 && m.s == s && m.d1 == d1 && (one || m.d2 == d2)) return true;
+  return false;
+}
+void TwentyEngine::AppSaveState(bool force)
+{
+  if (!mDataDir[0]) return;
+  IByteChunk c; if (!SerializeState(c)) return;
+  uint32_t h = 2166136261u; for (int i = 0; i < c.Size(); i++) h = (h ^ c.GetData()[i]) * 16777619u;
+  if (!force && h == mStateSum) return;
+  mStateSum = h;
+  char p[1200]; snprintf(p, sizeof(p), "%sapp-state.bin", mDataDir);
+  if (FILE* f = fopen(p, "wb")) { fwrite(c.GetData(), 1, c.Size(), f); fclose(f); }
+}
+#endif
+#if TWENTY_UI
+int TwentyEngine::ModeSetting() const { return TWENTY_APP ? -1 : ModeSettingG(); }   // the app: no modes
 void TwentyEngine::SetModeSetting(int m) { SetModeSettingG(m); Dbg("MODE set to %s", m == 1 ? "MS-20ic" : (m == 2 ? "standard" : "automatic")); }
-bool TwentyEngine::IcMode() const { const int m = ModeSettingG(); return m == 1 || (m == 0 && mController.load() > 0); }
+bool TwentyEngine::IcMode() const { const int m = TWENTY_APP ? 0 : ModeSettingG(); return m == 1 || (m == 0 && mController.load() > 0); }
 #endif
 bool TwentyEngine::IcModeNow() const
 {
@@ -1496,7 +1573,7 @@ bool TwentyEngine::IcModeNow() const
 }
 bool TwentyEngine::SendsToRegions() const
 {
-#if TWENTY_STUDIO
+#if TWENTY_STUDIO && !TWENTY_APP
   return PanelPort::Get().Ok() && IcModeNow();   // standard mode: the DAW's own automation keeps the knobs
 #else
   return false;
@@ -1505,6 +1582,15 @@ bool TwentyEngine::SendsToRegions() const
 
 void TwentyEngine::StudioDiag(char* out, int n) const
 {
+#if IPLUG_DSP && TWENTY_APP
+  // the app: where the takes go (and, with the iC, whether its knobs were read)
+  if (mController.load() > 0 && PanelSource() == 0) { snprintf(out, n, "Switch the volume off and on to read the knobs"); return; }
+  const int st = mCapture.state(); const double s = mCapture.seconds();
+  if (st == 1) snprintf(out, n, "Recording  %d:%02d  \xC2\xB7  every take is saved (click: the folder)", (int)s / 60, (int)s % 60);
+  else if (st == 2) { const std::string& p = mCapture.path(); const size_t k = p.find_last_of("/\\"); snprintf(out, n, "Saved %s  \xC2\xB7  click: the folder", (k == std::string::npos ? p : p.substr(k + 1)).c_str()); }
+  else snprintf(out, n, "Every take is saved as a WAV in Music/Twenty Engine/Captures (click)");
+  return;
+#endif
 #if IPLUG_DSP
 #if TWENTY_UI
   if (!IcModeNow()) { snprintf(out, n, "A normal synth plugin  \xC2\xB7  knobs and cables are saved with the project and presets"); return; }

@@ -3,6 +3,12 @@
 #include <string>
 
 #include "IPlug_include_in_plug_hdr.h"
+// the standalone app (iPlug2's APP target, Twenty Engine UI only): no DAW, no regions; every take is saved as a WAV
+#if defined(APP_API) && TWENTY_UI
+#define TWENTY_APP 1
+#else
+#define TWENTY_APP 0
+#endif
 // Twenty Engine: the live engine plays from the MS-20ic; the sound is recorded into the region as MIDI
 // (engine/paramstream.h) and a second engine plays the regions with it (TWENTY_STUDIO 1, config.h).
 // TWENTY_STUDIO 0 is the older "Instrument" (performance recall), kept for reference.
@@ -29,6 +35,7 @@ const int kNumParams = ms20::NPARAMS;   // every parameter of the Ksoloti patch
 #include "engine/recall.h"
 #include "engine/paramstream.h"
 #include "engine/panel_memory.h"
+#include "engine/capture.h"
 #include <memory>
 #include <atomic>
 #include <cstdio>
@@ -79,7 +86,7 @@ public:
   void SetNoisePick(int j, int pick) override { if (j >= 0 && j < 35) mNoise[j] = (uint8_t)pick; }
   void SwitchDown(bool down) override { UiMidi(0xD0, down ? 127 : 0, 0); }
   int Leds() const override { return mUiLeds.load(); }
-  int ArpSync() const override { return mArpSync.load(); }
+  int ArpSync() const override { return TWENTY_APP ? -1 : mArpSync.load(); }   // the app has no DAW clock
   void SetArpSync(int v) override { mArpSync.store(v > 0 ? 1 : 0); }
   void CopyLog() override { CopyLogToClipboard(); }
   void MailLog() override;
@@ -93,6 +100,8 @@ public:
   void CcLearn(int p) override { ms20::GlobalCcMap().learning.store(p); }
   void CcForget(int p) override { ms20::GlobalCcMap().forget(p); }
   int CcTakeLearned() override { return ms20::GlobalCcMap().learnedCc.exchange(-1); }
+  bool HasCapture() const override { return TWENTY_APP; }
+  void ShowCaptures() override;
   void PatchCable(int outJack, int inJack, bool on) override
   { if (on) UiCable(4, outJack, inJack); else { UiCable(5, outJack, inJack); UiCable(5, inJack, inJack); UiCable(5, outJack, outJack); } }
 #endif
@@ -129,6 +138,16 @@ private:
   int mRestoreOvr = -1;   // while a state is restored: the cables' mode (1 the sound's own, 0 the window's)
   ms20::SpscQueue<ms20::ParamSet, 256> mCcQ;   // CC learn: controllers moved (audio thread) -> the parameters, the DAW (main)
   int mCcSaved = 0; long long mCcFileTime = 0; int mCcScan = 0;
+#if TWENTY_APP
+  // ---- the standalone app
+  ms20::Capture mCapture;              // every take as a WAV (~/Music/Twenty Engine/Captures)
+  std::atomic<bool> mCapNote{false};   // a key was played (audio thread: starts a take)
+  struct AppMsg { uint8_t s, d1, d2; int64_t ms; };
+  AppMsg mDirectRecent[32] = {}; int mDirectHead = 0;   // what the iC sent itself lately: its copy from the app's MIDI input is dropped
+  bool AppDup(uint8_t s, uint8_t d1, uint8_t d2) const;
+  uint32_t mStateSum = 0; int mStateTick = 0;          // the app keeps its sound and window between launches (app-state.bin)
+  void AppSaveState(bool force);
+#endif
   int mPresetShown = 36;
   std::atomic<int> mArpSync{0};   // arp SYNC switch: 1 = on the DAW's beat, the RATE knob picks the division
   double mArpPpq = 0.0;

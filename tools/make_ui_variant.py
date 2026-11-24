@@ -61,4 +61,16 @@ edit('config.h', [
     ("#define AAX_TYPE_IDS 'TW21', 'TW22'", "#define AAX_TYPE_IDS 'TW2V', 'TW2W'"),
     ('#define AAX_PLUG_NAME_STR "TwentyEngine\\nTW20"', '#define AAX_PLUG_NAME_STR "TwentyEngineUI\\nTW2U"'),
 ])
+# the standalone app (APP target) is called "Twenty Engine": its bundle name, menus and window title
+def edit_all(rel, a, b):
+    p = os.path.join(out, rel); s = open(p, encoding='utf-8').read()
+    if a not in s: raise SystemExit('make_ui_variant: %r not in %s' % (a, rel))
+    open(p, 'w', encoding='utf-8').write(s.replace(a, b))
+edit_all('resources/TwentyEngineUI-macOS-Info.plist', '<string>TwentyEngineUI</string>\n\t<key>CFBundleDisplayName</key>\n\t<string>TwentyEngineUI</string>',
+         '<string>Twenty Engine</string>\n\t<key>CFBundleDisplayName</key>\n\t<string>Twenty Engine</string>')
+edit_all('resources/TwentyEngineUI-macOS-MainMenu.xib', 'title="About TwentyEngineUI"', 'title="About Twenty Engine"')
+edit_all('resources/TwentyEngineUI-macOS-MainMenu.xib', 'title="Hide TwentyEngineUI"', 'title="Hide Twenty Engine"')
+edit_all('resources/TwentyEngineUI-macOS-MainMenu.xib', 'title="Quit TwentyEngineUI"', 'title="Quit Twenty Engine"')
+edit_all('resources/TwentyEngineUI-macOS-MainMenu.xib', 'title="TwentyEngineUI"', 'title="Twenty Engine"')
+edit_all('resources/main.rc', 'CAPTION "TwentyEngineUI"', 'CAPTION "Twenty Engine"')
 print('Twenty Engine UI source in', out)

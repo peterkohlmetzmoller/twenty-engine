@@ -73,6 +73,7 @@ jobs:
           clang++ -std=c++17 -O2 -w -o cables_test cables_test.cpp && ./cables_test
           clang++ -std=c++17 -O2 -w -o state_test state_test.cpp && ./state_test
           clang++ -std=c++17 -O2 -w -o cc_test cc_test.cpp && ./cc_test
+          clang++ -std=c++17 -O2 -w -o capture_test capture_test.cpp && ./capture_test
 
       - name: Configure
         if: github.ref_name != 'ui'
@@ -96,6 +97,7 @@ jobs:
           cmake --build build-ui --config Release --target TwentyEngineUI-au -- -quiet > ui.log 2>&1
           st=$?
           [ $st -eq 0 ] && { cmake --build build-ui --config Release --target TwentyEngineUI-vst3 -- -quiet >> ui.log 2>&1; st=$?; }
+          [ $st -eq 0 ] && { cmake --build build-ui --config Release --target TwentyEngineUI-app -- -quiet >> ui.log 2>&1; st=$?; }   # the standalone app
           grep -E "error:|error G|fatal" ui.log | sort -u | head -25 | sed 's/^/::error::/'
           grep -E -A6 "Undefined symbols|duplicate symbol" ui.log | head -30 | sed 's/^/::error::/'
           exit $st
@@ -110,10 +112,18 @@ jobs:
           killall -9 AudioComponentRegistrar || true
           sleep 2
           auval -v aumu Tw2U Pkmo
-          echo "console user: $(stat -f%Su /dev/console)"; ls ~/Library/Audio/Presets/Peter\ Kohlmetz\ Moller/Twenty\ Engine\ UI/ 2>/dev/null | head -3 || true
           UVST3=$(find build-ui -name "TwentyEngineUI.vst3" -type d | head -1)
           codesign --force --deep -s - "$UVST3"
           cp -R "$UCOMP" "$UVST3" out-ui/
+          # the standalone app "Twenty Engine": it starts and draws its window (iPlug2's screenshot mode: no audio, no MIDI)
+          UAPP=$(find build-ui -name "TwentyEngineUI.app" -type d | head -1)
+          echo "App: $UAPP"
+          rm -rf "out-ui/Twenty Engine.app" && cp -R "$UAPP" "out-ui/Twenty Engine.app"
+          codesign --force --deep -s - "out-ui/Twenty Engine.app"
+          "out-ui/Twenty Engine.app/Contents/MacOS/TwentyEngineUI" --screenshot "$PWD/app_window_mac.png" > app.log 2>&1 &
+          AP=$!; for i in $(seq 1 30); do sleep 1; [ -f app_window_mac.png ] && break; done; kill $AP 2>/dev/null || true
+          ls -la app_window_mac.png 2>/dev/null || { echo "::warning::the app did not draw its window"; tail -20 app.log; }
+          (cd out-ui && ditto -c -k --keepParent "Twenty Engine.app" ../TwentyEngine-App-Mac.zip)
           cd out-ui && ditto -c -k --keepParent TwentyEngineUI.component ../TwentyEngineUI-AU.zip && ditto -c -k --keepParent TwentyEngineUI.vst3 ../TwentyEngineUI-VST3-Mac.zip
 
       - name: Sign (ad hoc) and validate the AU (Intel)
@@ -163,6 +173,10 @@ jobs:
             --install-location /Library/Audio/Plug-Ins/Components --scripts installer/scripts au.pkg
           pkgbuild --root pkgroot/vst3 --identifier com.peterkohlmetzmoller.twentyengine.vst3 --version "$VER" \
             --install-location /Library/Audio/Plug-Ins/VST3 vst3.pkg
+          mkdir -p pkgroot/app && cp -R "out-ui/Twenty Engine.app" pkgroot/app/
+          pkgbuild --analyze --root pkgroot/app app-comp.plist && plutil -replace 0.BundleIsRelocatable -bool NO app-comp.plist
+          pkgbuild --root pkgroot/app --component-plist app-comp.plist --identifier com.peterkohlmetzmoller.twentyengine.app --version "$VER" \
+            --install-location /Applications --scripts installer/scripts app.pkg
           productbuild --distribution installer/distribution.xml --resources installer/resources --package-path . TwentyEngine-Installer.pkg
           ls -la TwentyEngine-Installer.pkg
 
@@ -173,6 +187,8 @@ jobs:
           sudo installer -pkg TwentyEngine-Installer.pkg -target /
           ls -d /Library/Audio/Plug-Ins/Components/TwentyEngine.component /Library/Audio/Plug-Ins/VST3/TwentyEngine.vst3
           ls -d /Library/Audio/Plug-Ins/Components/TwentyEngineUI.component /Library/Audio/Plug-Ins/VST3/TwentyEngineUI.vst3
+          ls -d "/Applications/Twenty Engine.app"
+          echo "console user: $(stat -f%Su /dev/console)"; ls ~/Library/Audio/Presets/Peter\ Kohlmetz\ Moller/Twenty\ Engine\ UI/ 2>/dev/null | head -3 || echo "no preset files in the user's folder"
           killall -9 AudioComponentRegistrar || true
           sleep 2
           auval -v aumu Tw20 Pkmo
@@ -192,7 +208,9 @@ jobs:
           path: |
             TwentyEngineUI-AU.zip
             TwentyEngineUI-VST3-Mac.zip
+            TwentyEngine-App-Mac.zip
             TwentyEngine-AAX-Mac-unsigned.zip
+            app_window_mac.png
       - name: 1.1 test build on the draft release (plain downloads)
         if: github.ref_name == 'v1.1'
         env:
@@ -394,8 +412,14 @@ jobs:
           set +e
           cmake --build build-ui --config Release --target TwentyEngineUI-vst3 > ui.log 2>&1
           st=$?
+          [ $st -eq 0 ] && { cmake --build build-ui --config Release --target TwentyEngineUI-app >> ui.log 2>&1; st=$?; }   # the standalone app
           grep -E "error|fatal" ui.log | grep -v " 0 error" | sort -u | head -25 | sed 's/^/::error::/'
           [ $st -eq 0 ] || exit $st
+          UEXE=$(find build-ui -name "TwentyEngineUI.exe" | head -1); echo "App: $UEXE"
+          cp "$UEXE" "out/Twenty Engine.exe"
+          ("out/Twenty Engine.exe" --screenshot "$(cygpath -w "$PWD")\\app_window_win.png" &) ; for i in $(seq 1 30); do sleep 1; [ -f app_window_win.png ] && break; done
+          taskkill //F //IM "Twenty Engine.exe" > /dev/null 2>&1 || true
+          ls -la app_window_win.png 2>/dev/null || echo "::warning::the app did not draw its window"
           UVST3=$(find build-ui -name "TwentyEngineUI.vst3" -type d | head -1)
           VAL=$(find iPlug2/Dependencies/IPlug/VST3_SDK/vbuild -name "validator.exe" | head -1)
           "$VAL" "$UVST3" > uval.txt 2>&1; st=$?
@@ -425,6 +449,7 @@ jobs:
           $inst = "C:\Program Files\Common Files\VST3\TwentyEngine.vst3"
           if (!(Test-Path $inst)) { throw "not installed" }
           if (!(Test-Path "C:\Program Files\Common Files\VST3\TwentyEngineUI.vst3")) { throw "Twenty Engine UI not installed" }
+          if (!(Test-Path "C:\Program Files\Twenty Engine\Twenty Engine.exe")) { throw "the app is not installed" }
           $val = Get-ChildItem -Recurse -Filter validator.exe iPlug2\Dependencies\IPlug\VST3_SDK\vbuild | Select-Object -First 1
           & $val.FullName $inst | Select-Object -Last 3
           if ($LASTEXITCODE -ne 0) { throw "validator failed on the installed plugin" }
@@ -432,7 +457,7 @@ jobs:
           if (!$un) { $un = Get-ChildItem "$inst" -Filter "unins*.exe" | Select-Object -First 1 }
           Start-Process -Wait -FilePath $un.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
           Start-Sleep -Seconds 3
-          if ((Test-Path $inst) -or (Test-Path "C:\Program Files\Common Files\VST3\TwentyEngineUI.vst3")) { throw "uninstall left files" } else { "installed, validated and uninstalled cleanly" }
+          if ((Test-Path $inst) -or (Test-Path "C:\Program Files\Common Files\VST3\TwentyEngineUI.vst3") -or (Test-Path "C:\Program Files\Twenty Engine")) { throw "uninstall left files" } else { "installed, validated and uninstalled cleanly" }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -441,6 +466,7 @@ jobs:
             TwentyEngine-Setup.exe
             TwentyEngine-VST3-Windows.zip
             TwentyEngine-AAX-Windows-unsigned.zip
+            app_window_win.png
       - name: 1.1 test build on the draft release (plain downloads)
         if: github.ref_name == 'v1.1'
         shell: bash

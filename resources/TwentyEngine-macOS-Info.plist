@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>TwentyEngine</string>
 	<key>CFBundleGetInfoString</key>
-	<string>TwentyEngine v1.0.0 Copyright 2025 Acme Inc</string>
+	<string>Twenty Engine 1.1.0, Copyright 2026 Peter Kohlmetz Moller</string>
 	<key>CFBundleIconFile</key>
 	<string>TwentyEngine.icns</string>
 	<key>CFBundleIdentifier</key>
@@ -16,14 +16,18 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>TwentyEngine</string>
+	<key>CFBundleDisplayName</key>
+	<string>TwentyEngine</string>
 	<key>CFBundlePackageType</key>
-	<string>BNDL</string>
+	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.0</string>
+	<string>1.1.0</string>
 	<key>CFBundleSignature</key>
-	<string>PmBl</string>
+	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.0.0</string>
+	<string>1.1.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
 	<key>CSResourcesFileMapped</key>
 	<true/>
 	<key>LSApplicationCategoryType</key>

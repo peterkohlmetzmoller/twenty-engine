@@ -986,6 +986,7 @@ public:
   {
     if (SwitchB().Contains(x, y)) { mSwitch = true; SwitchHeld() = true; mPatch->SwitchDown(true); SetDirty(false); }
     if (LogB().Contains(x, y)) { mPatch->CopyLog(); if (mLogBox) mLogBox->Open(); else SetInfo("LOG copied  \xC2\xB7  paste it into an email to " TWENTY_SUPPORT_MAIL); SetDirty(false); }
+    if (mPatch->HasCapture() && IRECT(mRECT.L + 236.f, mRECT.T, mRECT.L + 626.f, mRECT.B).Contains(x, y)) mPatch->ShowCaptures();   // the apps: the takes' folder
     if (ModeB().Contains(x, y) && mPatch->ModeSetting() >= 0)
     {
       const int ms = mPatch->ModeSetting();

@@ -108,9 +108,8 @@ private:
   static IMouseMod Mod(uint m, bool left, bool right = false) { return IMouseMod(left, right, (m & kModifierShift) != 0, (m & kModifierControl) != 0, (m & kModifierAlt) != 0); }
   void Diag(char* out, int n) const
   {
-    const int ps = mPlug->PanelSource();
-    if (mPlug->Controller() == 0) snprintf(out, n, "Plays from any MIDI keyboard  \xC2\xB7  plug in the MS-20ic for knobs and LEDs");
-    else snprintf(out, n, "%s", ps == 2 ? "Panel read from the MS-20ic" : ps == 1 ? "Panel from memory  \xC2\xB7  volume off/on reads the knobs" : "Switch the volume off and on to read the knobs");
+    if (mPlug->Controller() > 0 && mPlug->PanelSource() == 0) snprintf(out, n, "Switch the volume off and on to read the knobs");
+    else mPlug->CaptureText(out, n);   // where the takes go
   }
 
   TwentyEnginePlugin* mPlug = nullptr;

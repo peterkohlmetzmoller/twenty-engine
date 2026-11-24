@@ -212,7 +212,11 @@ public:
   // never opens the input and plays the knobs through the track (as the DAW sends them).
   void Rescan()
   {
+#if defined(APP_API)
+    RescanInput();   // the standalone app: no DAW to share the iC with - it always opens the iC itself
+#else
     if (SharedPorts()) RescanInput(); else CloseIn();
+#endif
     if (mOut) return;
     const UINT n = midiOutGetNumDevs();
     for (UINT i = 0; i < n; i++)

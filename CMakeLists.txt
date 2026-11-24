@@ -27,6 +27,9 @@ if(APPLE)
 else()
   set(TWENTY_FORMATS VST3 AAX)
 endif()
+if(PROJECT_NAME STREQUAL "TwentyEngineUI")
+  list(APPEND TWENTY_FORMATS APP)   # the standalone app "Twenty Engine" (Mac, Windows): audio capture, no DAW
+endif()
 
 # Minimal window: name + connection status (Logic shows the parameters in its own controls view).
 # Windows: no IGraphics (its OpenGL window crashed with some drivers, e.g. in virtual machines); the plugin
@@ -64,7 +67,7 @@ iplug_add_plugin(${PROJECT_NAME}
 )
 
 # The LED port and controller detection use Core MIDI on the Mac (every plugin format), WinMM on Windows
-foreach(_t ${PROJECT_NAME}-au ${PROJECT_NAME}-vst3 ${PROJECT_NAME}-aax)
+foreach(_t ${PROJECT_NAME}-au ${PROJECT_NAME}-vst3 ${PROJECT_NAME}-aax ${PROJECT_NAME}-app)
   if(TARGET ${_t})
     if(APPLE)
       target_link_libraries(${_t} PRIVATE "-framework CoreMIDI" "-framework CoreFoundation" "-framework CoreServices")   # CoreServices: opening the support email
