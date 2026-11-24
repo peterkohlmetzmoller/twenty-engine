@@ -736,3 +736,27 @@ jobs:
         run: |
           (cd web-out && zip -q -r ../TwentyEngine-Web.zip .)
           gh release upload v1.1-test TwentyEngine-Web.zip web_panel.png --clobber -R ${{ github.repository }}
+
+  # ---------------- the web edition online: main's build goes to the gh-pages branch (GitHub Pages) ----------------
+  publish-web:
+    if: ${{ !inputs.artifacts_run && github.ref_name == 'main' }}
+    needs: build-web
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: TwentyEngine-Web
+          path: web
+      - name: Put the page on gh-pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone -q --branch gh-pages --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" pages
+          cp web/web-out/* pages/
+          cd pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && { echo "the page is unchanged"; exit 0; }
+          git commit -q -m "Web edition from ${GITHUB_SHA::7} (main)"
+          git push -q origin gh-pages

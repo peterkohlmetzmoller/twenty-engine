@@ -12,7 +12,7 @@
 - Standalone app "Twenty Engine" for Mac, Windows and Linux: the panel window, audio and MIDI settings, and every
   take saved as a 24-bit WAV in Music/Twenty Engine/Captures.
 - Free web edition: Twenty Engine in Chrome and Edge, played from the MS-20ic (with its LEDs) or any MIDI keyboard
-  over Web MIDI. Sounds stay in the browser. No takes.
+  over Web MIDI, at peterkohlmetzmoller.github.io/twenty-engine. Sounds stay in the browser. No takes.
 - Presets the normal way: the DAW's preset menu lists the panel and the 36 sounds, and a saved preset keeps the
   whole sound, cables included. Ableton Live on the Mac gets them as preset files.
 - CC learn in the window (UI plugin, app, web): right-click a knob, move a controller. One map for your setup.

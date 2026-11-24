@@ -342,7 +342,7 @@ def gtable(rows, widths, head, big=False):
 # ================================================================== the manual
 # pages: 1 cover, 2 what it adds, 3 new in 1.1, 4 shortcuts, 5 play modes, 6 poly/arp/mono/delay, 7 new sounds,
 # 8 memory, 9 factory sounds + patch panel, 10 first patches, 11 editions, 12 the window, 13 recording, 14 app + web
-WEB = 'peterkohlmetzmoller.github.io/twenty-engine-web'
+WEB = 'peterkohlmetzmoller.github.io/twenty-engine'
 story = [NextPageTemplate('body'), PageBreak()]
 
 # ---------------- 2. what Twenty Engine adds

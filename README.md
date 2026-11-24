@@ -10,7 +10,8 @@ patch, in every edition:
   projects made with "Twenty Engine" 1.0 open with it.
 - **Twenty Engine**, the standalone app (Mac, Windows, Linux): the panel window, audio and MIDI settings, and every
   take saved as a WAV.
-- **The free web edition** (`web/`): the panel and the engine in the browser (WebAssembly, Web MIDI).
+- **The free web edition** (`web/`): the panel and the engine in the browser (WebAssembly, Web MIDI). Play it at
+  https://peterkohlmetzmoller.github.io/twenty-engine/ (the `gh-pages` branch, updated by CI from `main`).
 - **Ksoloti Core** and **Teensy 4.1** (inside the MS-20ic), and the Daisy Patch SM (beta).
 
 Free software under the GNU GPL v3 (`LICENSE`), with an additional permission for the Avid AAX SDK
