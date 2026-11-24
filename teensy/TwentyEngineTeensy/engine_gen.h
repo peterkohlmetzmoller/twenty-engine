@@ -3,7 +3,7 @@
 #include "ksoloti_host.h"
 namespace ms20 {
 
-static const int NPARAMS = 58;
+static const int NPARAMS = 62;
 static const int PARAM_INDEX_MS20__Voices_vco1wave = 0;
 static const int PARAM_INDEX_MS20__Voices_vco1oct = 1;
 static const int PARAM_INDEX_MS20__Voices_pw = 2;
@@ -62,6 +62,10 @@ static const int PARAM_INDEX_MG__Morphing__LFO_shape = 54;
 static const int PARAM_INDEX_MG__Morphing__LFO_pitchmod = 55;
 static const int PARAM_INDEX_MG__Morphing__LFO_lpfmod = 56;
 static const int PARAM_INDEX_MG__Morphing__LFO_hpfmod = 57;
+static const int PARAM_INDEX_Patch__State_c12 = 58;
+static const int PARAM_INDEX_Patch__State_mono = 59;
+static const int PARAM_INDEX_Patch__State_wheel = 60;
+static const int PARAM_INDEX_Patch__State_ovr = 61;
 struct rootc { ParameterExchange_t PExch[NPARAMS]; };
 
 struct O_MS20_Voices {
@@ -856,6 +860,7 @@ struct O_PatchBay {
   int32_t param_eg2trig;
   int32_t param_shin;
   int32_t param_shclock;
+  int32_t inlet_rseq;
   int32_t inlet_mgtri;
   int32_t inlet_mgsq;
   int32_t inlet_eg1;
@@ -889,18 +894,24 @@ static const int OPEN=13;    // plug in the input, other end not connected: norm
 int8_t jack[35];int8_t lk[35];int monof;int pwr,pon; /* volume knob power switch: state, and a counter that steps on every switch-on */ /* monof: KBD CV OUT patched into VCO1+2 CV IN */ /* lk: jack is part of a cable connection */             // NRPN jack number -> >0 source id (output jack), <0 -(destination+1) (input jack), 0 unknown
 int pidx[NDEST];
 int wplug,sel12; /* a plug in WHEEL OUT; the source in VCO1+2 CV IN (not a parameter: 0 normal) */
+int psel[NDEST+1],pmono,pwplug,lrseq,pubc12,pubmono,pubwheel; /* the real panel's cables (psel[10] = VCO1+2 CV IN); ovr seen last tick; last values written to Patch_State */
 int32_t src[14];
 int m99,m98,m6;bool h99,h98,h6;int ev99,ev98,ev6;
 uint32_t nrng;int32_t shval;int pclk;
 void setsel(int d,int v){if(d>=0&&d<NDEST)PExParameterChange(&parent->PExch[pidx[d]],v,0xFFFD);} // same call as Ksoloti's own CC assignment -> selector moves in the editor
-void setd(int d,int v){if(d==10)sel12=v;else setsel(d,v);}   /* destination 10 = VCO1+2 CV IN */
+void setd(int d,int v){if(d<0||d>NDEST)return;if(d==NDEST&&v==OPEN)v=0;psel[d]=v;if(d==10)sel12=v;else setsel(d,v);}   /* destination 10 = VCO1+2 CV IN; psel = the real panel */
+void setps(const char*,int i,int v){PExParameterChange(&parent->PExch[i],v,0xFFFD);}
+void restorePhys(){for(int d=0;d<NDEST;d++)setsel(d,psel[d]);sel12=psel[NDEST];monof=pmono;wplug=pwplug;   /* back to the real panel's cables */
+ setps(0,PARAM_INDEX_Patch__State_c12,sel12);setps(0,PARAM_INDEX_Patch__State_mono,monof);setps(0,PARAM_INDEX_Patch__State_wheel,wplug);pubc12=sel12;pubmono=monof;pubwheel=wplug;}
 void patchEvent(int t,int a,int b){
  if(t==6){int on=(a!=b)?1:0;if(on&&!pwr)pon++;pwr=on;return;}   /* 6 = volume knob power switch: 6/0/127 on, 6/0/0 off */
  if(t!=4&&t!=5)return;                 // 4 = connect / plug in, 5 = disconnect / plug out
  if(a<0||a>34||b<0||b>34)return;
+ if(parent->PExch[PARAM_INDEX_Patch__State_ovr].value){restorePhys();setps(0,PARAM_INDEX_Patch__State_ovr,0);}   /* a cable touched: the recalled sound's cables give way to the real panel */
  if((a==31&&b==25)||(a==25&&b==31))monof=(t==4)?1:0;          /* KBD CV -> VCO1+2 CV IN: mono mode */
  if(t==5&&a==b&&(a==25||a==31))monof=0;                       /* either plug pulled (or the power-on dump): poly */
  if(a==27||b==27){if(a==b)wplug=(t==4)?1:0;else if(t==4)wplug=1;}   /* WHEEL OUT: plugged (cleared by its plug-out, also in the power-on dump) */
+ pmono=monof;pwplug=wplug;
  if(a==b){                             /* single plug in / out */
   int d=jack[a];
   if(t==5)lk[a]=0;
@@ -936,6 +947,7 @@ if((status&0xF0)==MIDI_CONTROL_CHANGE){
 void initOs(){
 
 for(int i=0;i<35;i++){jack[i]=0;lk[i]=0;}monof=0;pwr=1;pon=0;wplug=0;sel12=0;
+for(int d=0;d<=NDEST;d++)psel[d]=0;pmono=pwplug=0;lrseq=0;pubc12=pubmono=pubwheel=-1;
 // ---- jack table: confirmed on the MS-20 iC (one cable from TOTAL through every jack) ----
 // outputs
 jack[1]=1;    // MG triangle out
@@ -980,6 +992,18 @@ initOs();
   }
   void ks_dsp(){
 
+// ---- a recalled sound's own cables (Patch_State ovr) or the real panel's ----
+{int ov=parent->PExch[PARAM_INDEX_Patch__State_ovr].value?1:0;
+ if(inlet_rseq!=lrseq){lrseq=inlet_rseq;if(ov){restorePhys();setps(0,PARAM_INDEX_Patch__State_ovr,0);ov=0;}}   // the memory asks for the real panel's cables (panel, a sound without cables, cables only)
+ int32_t c=parent->PExch[PARAM_INDEX_Patch__State_c12].value,m=parent->PExch[PARAM_INDEX_Patch__State_mono].value,w=parent->PExch[PARAM_INDEX_Patch__State_wheel].value;
+ if(ov){sel12=c;monof=m;wplug=w;}               // the sound's own: the real panel stays in psel/pmono/pwplug
+ else{
+  int sp[NDEST]={param_total,param_freq,param_vco2freq,param_hpf,param_lpf,param_vca,param_eg1trig,param_eg2trig,param_shin,param_shclock};
+  for(int d=0;d<NDEST;d++)psel[d]=sp[d];        // follow the selectors (a host preset, the plugin window's cables)
+  if(c!=pubc12){sel12=psel[NDEST]=c;pubc12=c;}else if(sel12!=pubc12){setps(0,PARAM_INDEX_Patch__State_c12,sel12);pubc12=sel12;}
+  if(m!=pubmono){monof=pmono=m;pubmono=m;}else if(monof!=pubmono){setps(0,PARAM_INDEX_Patch__State_mono,monof);pubmono=monof;}
+  if(w!=pubwheel){wplug=pwplug=w;pubwheel=w;}else if(wplug!=pubwheel){setps(0,PARAM_INDEX_Patch__State_wheel,wplug);pubwheel=wplug;}
+ }}
 outlet_mono=monof;outlet_power=pwr;outlet_poweron=pon;outlet_wheelout=wplug;
 // ---- sources (frac32 full scale = 1<<27) ----
 src[1]=inlet_mgtri;src[2]=inlet_mgsq;
@@ -1344,6 +1368,7 @@ struct O_Patch_Memory {
   int32_t outlet_fseq;
   int32_t outlet_fmask;
   int32_t outlet_fn;
+  int32_t outlet_rseq;
 
 // ---- patch memory on the keys ----
 // No cable on SWITCH: while the momentary switch is held the keyboard is silent and the TRIG LED is lit.
@@ -1357,11 +1382,15 @@ static const int NP=29;          // stored values per slot
 static const int NS=36;            // slots: the 36 lowest keys
 static const int BASE=48;          // MIDI note of the lowest iC key (slot 1): 48, measured on the iC (MIDI Monitor shows it as C3); BASE+36 (top C) = panel. Change here if the keyboard sends another range.
 static const uint32_t ARMT=6000;   // 2 s (3000 control ticks per second): key hold to save
-static const int32_t MAGIC=0x4D533230; // 'MS20'
+static const int32_t MAGIC=0x4D533230; // 'MS20': knobs only (1.0)
+static const int32_t MAGIC2=0x4D533231; // 'MS21': knobs + cables (1.1)
+static const int NC=13;            // cable values per slot: the 10 PatchBay selectors, VCO1+2 CV IN, mono, WHEEL OUT
 const int pidx[NP]={PARAM_INDEX_MS20__Voices_vco1wave,PARAM_INDEX_MS20__Voices_vco1oct,PARAM_INDEX_MS20__Voices_pw,PARAM_INDEX_MS20__Voices_portamento,PARAM_INDEX_MS20__Voices_vco2wave,PARAM_INDEX_MS20__Voices_vco2oct,PARAM_INDEX_MS20__Voices_vco2semi,PARAM_INDEX_EG1_delay,PARAM_INDEX_EG1_attack,PARAM_INDEX_EG1_release,PARAM_INDEX_EG1_amount,PARAM_INDEX_EG2_hold,PARAM_INDEX_EG2_attack,PARAM_INDEX_EG2_decay,PARAM_INDEX_EG2_sustain,PARAM_INDEX_EG2_release,PARAM_INDEX_EG2_lpfdepth,PARAM_INDEX_EG2_hpfdepth,PARAM_INDEX_Master__Mixer_vco1,PARAM_INDEX_Master__Mixer_vco2,PARAM_INDEX_Filter__Macro_hpfcut,PARAM_INDEX_Filter__Macro_hpfpeak,PARAM_INDEX_Filter__Macro_lpfcut,PARAM_INDEX_Filter__Macro_lpfpeak,PARAM_INDEX_MG__Morphing__LFO_rate,PARAM_INDEX_MG__Morphing__LFO_shape,PARAM_INDEX_MG__Morphing__LFO_pitchmod,PARAM_INDEX_MG__Morphing__LFO_lpfmod,PARAM_INDEX_MG__Morphing__LFO_hpfmod};
 const int8_t kind[NP]={2,2,0,0,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0};  // 0 knob 0..64, 1 knob -64..64, 2 rotary switch (4 positions)
 const uint8_t kcc[NP]={77,15,14,5,82,22,19,24,23,26,93,25,73,75,70,72,79,31,20,21,28,29,74,71,27,76,12,85,30};
 int32_t (*mem)[NP];uint8_t *valid;   // in SDRAM (internal RAM is full)
+int32_t (*cab)[NC];uint8_t *hasc;    // the sound's cables, and whether it has any (sounds saved before 1.1 and the factory sounds: no)
+const int cidx[NC]={PARAM_INDEX_PatchBay_total,PARAM_INDEX_PatchBay_freq,PARAM_INDEX_PatchBay_vco2freq,PARAM_INDEX_PatchBay_hpf,PARAM_INDEX_PatchBay_lpf,PARAM_INDEX_PatchBay_vca,PARAM_INDEX_PatchBay_eg1trig,PARAM_INDEX_PatchBay_eg2trig,PARAM_INDEX_PatchBay_shin,PARAM_INDEX_PatchBay_shclock,PARAM_INDEX_Patch__State_c12,PARAM_INDEX_Patch__State_mono,PARAM_INDEX_Patch__State_wheel};
 int lastcc[NP];int32_t cur[NP];bool lock[NP];
 bool btn,armed,saved,tapmode;uint32_t tk,tpress,kdown;int keyn,inmem;
 int fseq,fmask,fn;
@@ -1371,22 +1400,27 @@ static int32_t ccraw(int k,int cc){if(k==2)return (cc<22)?0:((cc<64)?1:((cc<106)
 static int rawcc(int k,int32_t r){int c=(k==1)?((r>>21)+64):(r>>20);if(c<0)c=0;if(c>127)c=127;return c;}
 void setp(int p,int32_t v){PExParameterChange(&parent->PExch[pidx[p]],v,0xFFFD);}
 void flash(int mask,int count){fmask=mask;fn=count;fseq++;}
+int rseq;   /* +1: PatchBay goes back to the real panel's cables */
+void setovr(int v){if(v)PExParameterChange(&parent->PExch[PARAM_INDEX_Patch__State_ovr],1,0xFFFD);else rseq++;}   /* 1: the recalled sound's cables; 0: ask for the real panel's */
 void recall(int n){
  if(n==NS){                                      // top C: panel
   for(int p=0;p<NP;p++){if(lastcc[p]>=0)setp(p,ccraw(kind[p],lastcc[p]));lock[p]=false;}
-  inmem=-1;flash(31,1);return;
+  setovr(0);inmem=-1;flash(31,1);return;
  }
  if(!valid[n]){flash(2,2);return;}               // empty slot: EG LED blinks twice, nothing changes
  for(int p=0;p<NP;p++){setp(p,mem[n][p]);if(kind[p]!=2){lock[p]=true;cur[p]=mem[n][p];}}
+ if(hasc[n]){setovr(1);for(int c=0;c<NC;c++)PExParameterChange(&parent->PExch[cidx[c]],cab[n][c],0xFFFD);}   /* the sound's own cables, until a cable is touched */
+ else setovr(0);                                                       /* no cables stored: the cables plugged in now */
  inmem=n;flash(31,1);
 }
 void save(int n){
- if(n>=NS)return;
+ if(n>=NS){setovr(0);flash(31,2);return;}   /* top C held 2 s: cables only - the cables plugged in now, knobs as they are */
  for(int p=0;p<NP;p++)mem[n][p]=parent->PExch[pidx[p]].value;
+ for(int c=0;c<NC;c++)cab[n][c]=parent->PExch[cidx[c]].value;hasc[n]=1;   /* the cables as heard */
  valid[n]=1;inmem=n;savereq=1;
 }
 void cable(int ty,int a,int b){
- if(ty==6){if(a!=b){for(int p=0;p<NP;p++)lock[p]=false;inmem=-1;}return;}          // power on: the iC sends every knob next, the panel is the sound
+ if(ty==6){if(a!=b){for(int p=0;p<NP;p++)lock[p]=false;inmem=-1;setovr(0);}return;}          // power on: the iC sends every knob next, the panel is the sound
  if((a==33&&b==3)||(a==3&&b==33)){if(ty==4)tapmode=true;else if(ty==5)tapmode=false;}  // SWITCH <-> ESP SIGNAL IN
  if(ty==5&&a==b&&(a==33||a==3))tapmode=false;                                            // either plug pulled (or the power-on dump)
 }
@@ -1394,13 +1428,17 @@ void cable(int ty,int a,int b){
 bool loadFile(){
  FIL f;UINT br;
  {FRESULT r=f_open(&f,"/MS20MEM.BIN",FA_READ|FA_OPEN_EXISTING);if(r!=FR_OK){sderr=(r!=FR_NO_FILE);return false;}}   // no file yet: factory sounds; anything else: card problem
- int32_t hdr[3];
+ int32_t hdr[4];
  if(f_read(&f,fbuff,12,&br)!=FR_OK||br!=12){f_close(&f);return false;}
  memcpy(hdr,fbuff,12);
- if(hdr[0]!=MAGIC||hdr[1]!=NS||hdr[2]!=NP){f_close(&f);return false;}
+ if((hdr[0]!=MAGIC&&hdr[0]!=MAGIC2)||hdr[1]!=NS||hdr[2]!=NP){f_close(&f);return false;}
+ int nc=0;
+ if(hdr[0]==MAGIC2){if(f_read(&f,fbuff,4,&br)!=FR_OK||br!=4){f_close(&f);return false;}memcpy(&hdr[3],fbuff,4);nc=hdr[3];if(nc!=NC){f_close(&f);return false;}}
+ UINT rl=(UINT)((NP+1+(nc?nc+1:0))*4);           // one slot: valid, knobs (+ has cables, cables)
  for(int n=0;n<NS;n++){
-  if(f_read(&f,fbuff,(NP+1)*4,&br)!=FR_OK||br!=(UINT)((NP+1)*4))break;
+  if(f_read(&f,fbuff,rl,&br)!=FR_OK||br!=rl)break;
   if(fbuff[0]==1){memcpy(mem[n],&fbuff[1],NP*4);valid[n]=1;}
+  if(nc&&fbuff[0]==1&&fbuff[NP+1]==1){memcpy(cab[n],&fbuff[NP+2],NC*4);hasc[n]=1;}
  }
  f_close(&f);return true;
 }
@@ -1408,11 +1446,12 @@ bool saveFile(){
  FIL f;UINT bw;
  if(f_open(&f,"/MS20MEM.BIN",FA_WRITE|FA_CREATE_ALWAYS)!=FR_OK)return false;
  UINT tot=0;
- int32_t hdr[3]={MAGIC,NS,NP};memcpy(fbuff,hdr,12);f_write(&f,fbuff,12,&bw);tot+=bw;
+ int32_t hdr[4]={MAGIC2,NS,NP,NC};memcpy(fbuff,hdr,16);f_write(&f,fbuff,16,&bw);tot+=bw;
  for(int n=0;n<NS;n++){
-  fbuff[0]=valid[n];memcpy(&fbuff[1],mem[n],NP*4);f_write(&f,fbuff,(NP+1)*4,&bw);tot+=bw;
+  fbuff[0]=valid[n];memcpy(&fbuff[1],mem[n],NP*4);fbuff[NP+1]=hasc[n];memcpy(&fbuff[NP+2],cab[n],NC*4);
+  f_write(&f,fbuff,(NP+2+NC)*4,&bw);tot+=bw;
  }
- return (f_close(&f)==FR_OK)&&(tot==(UINT)(12+NS*(NP+1)*4));
+ return (f_close(&f)==FR_OK)&&(tot==(UINT)(16+NS*(NP+2+NC)*4));
 }
 __attribute__((noinline)) msg_t memThread2(){
  loadFile();
@@ -1516,6 +1555,8 @@ void initOs(){
 
 
 mem=_mem;valid=_valid;
+
+cab=_cab;hasc=_hasc;rseq=0;for(int n=0;n<NS;n++){hasc[n]=0;for(int c=0;c<NC;c++)cab[n][c]=0;}
 for(int n=0;n<NS;n++){valid[n]=(n<36)?1:0;for(int p=0;p<NP;p++)mem[n][p]=(n<36)?facval(n,p):0;}
 for(int p=0;p<NP;p++){lastcc[p]=-1;cur[p]=0;lock[p]=false;}
 btn=armed=saved=tapmode=false;tk=tpress=kdown=0;keyn=-1;inmem=-1;fseq=0;fmask=0;fn=0;
@@ -1526,6 +1567,8 @@ thd=chThdCreateStatic(waMem,sizeof(waMem),LOWPRIO,(tfunc_t)memThread,(void *)thi
 
   int32_t _mem[NS][NP];   /* moved from a function: one per instance */
   uint8_t _valid[NS];   /* moved from a function: one per instance */
+  int32_t _cab[NS][NC];   /* moved from a function: one per instance */
+  uint8_t _hasc[NS];   /* moved from a function: one per instance */
   void ks_init(rootc *_parent){ parent=_parent;
 
 initOs();
@@ -1539,7 +1582,7 @@ if(keyn>=0&&!saved&&(tk-kdown)>=ARMT){saved=true;save(keyn-BASE);}     // key he
 outlet_armed=armed;
 outlet_tapok=tapmode;
 outlet_trig=btn?((keyn>=0&&!saved)?2:1):((inmem>=0)?3:0);
-outlet_fseq=fseq;outlet_fmask=fmask;outlet_fn=fn;
+outlet_fseq=fseq;outlet_fmask=fmask;outlet_fn=fn;outlet_rseq=rseq;
 
   for(int buffer_index=0;buffer_index<BUFSIZE;buffer_index++){
 
@@ -1626,6 +1669,27 @@ float hd=kn_hpfmod/134217728.f;outlet_hpfmod=(int32_t)(lfo*hd*134217728.f);
   }
 };
 
+struct O_Patch_State {
+  rootc *parent;
+  int32_t param_c12;
+  int32_t param_mono;
+  int32_t param_wheel;
+  int32_t param_ovr;
+
+  void ks_init(rootc *_parent){ parent=_parent;
+
+  }
+  void ks_dsp(){
+
+  for(int buffer_index=0;buffer_index<BUFSIZE;buffer_index++){
+
+  }
+  }
+  void ks_midi(midi_device_t dev,uint8_t port,uint8_t status,uint8_t data1,uint8_t data2){
+
+  }
+};
+
 struct EngineCore {
   rootc root;
   O_MS20_Voices o_MS20_Voices;
@@ -1641,6 +1705,7 @@ struct EngineCore {
   O_ESP_Layer o_ESP_Layer;
   O_Patch_Memory o_Patch_Memory;
   O_MG_Morphing_LFO o_MG_Morphing_LFO;
+  O_Patch_State o_Patch_State;
   int32_t net0;
   int32_t net1;
   int32_t net2;
@@ -1718,6 +1783,7 @@ struct EngineCore {
   int32_t net74;
   int32_t net75;
   int32_t net76;
+  int32_t net77;
   int32_t audioInL[BUFSIZE], audioOutL[BUFSIZE], audioOutR[BUFSIZE];
   void init(){
     this->~EngineCore(); new (this) EngineCore(); g_ks_rng = 0x12345678u;   // value-initialised: zeroed, constant tables kept
@@ -1752,7 +1818,7 @@ struct EngineCore {
     root.PExch[PARAM_INDEX_Filter__Macro_hpfpeak].value = 0;
     root.PExch[PARAM_INDEX_Filter__Macro_lpfcut].value = 60817408;
     root.PExch[PARAM_INDEX_Filter__Macro_lpfpeak].value = 0;
-    root.PExch[PARAM_INDEX_Filter__Macro_clicknoise].value = 12582912;
+    root.PExch[PARAM_INDEX_Filter__Macro_clicknoise].value = 6291456;
     root.PExch[PARAM_INDEX_VCA__Macro_bassboost].value = 133169152;
     root.PExch[PARAM_INDEX_VCA__Macro_drive].value = 77594624;
     root.PExch[PARAM_INDEX_VCA__Macro_mastervol].value = 113246208;
@@ -1779,6 +1845,10 @@ struct EngineCore {
     root.PExch[PARAM_INDEX_MG__Morphing__LFO_pitchmod].value = 0;
     root.PExch[PARAM_INDEX_MG__Morphing__LFO_lpfmod].value = 0;
     root.PExch[PARAM_INDEX_MG__Morphing__LFO_hpfmod].value = 0;
+    root.PExch[PARAM_INDEX_Patch__State_c12].value = 0;
+    root.PExch[PARAM_INDEX_Patch__State_mono].value = 0;
+    root.PExch[PARAM_INDEX_Patch__State_wheel].value = 0;
+    root.PExch[PARAM_INDEX_Patch__State_ovr].value = 0;
     o_MS20_Voices.ks_init(&root);
     o_EG1.ks_init(&root);
     o_EG2.ks_init(&root);
@@ -1792,6 +1862,7 @@ struct EngineCore {
     o_ESP_Layer.ks_init(&root);
     o_Patch_Memory.ks_init(&root);
     o_MG_Morphing_LFO.ks_init(&root);
+    o_Patch_State.ks_init(&root);
   }
   // one 16-sample block: audio in (frac32, 1<<27 = full scale), stereo out
   void process(){
@@ -1928,6 +1999,7 @@ struct EngineCore {
     o_PatchBay.param_eg2trig = root.PExch[PARAM_INDEX_PatchBay_eg2trig].value;
     o_PatchBay.param_shin = root.PExch[PARAM_INDEX_PatchBay_shin].value;
     o_PatchBay.param_shclock = root.PExch[PARAM_INDEX_PatchBay_shclock].value;
+    o_PatchBay.inlet_rseq = net77;
     o_PatchBay.inlet_mgtri = net42;
     o_PatchBay.inlet_mgsq = net43;
     o_PatchBay.inlet_eg1 = net44;
@@ -1997,6 +2069,7 @@ struct EngineCore {
     net72 = o_Patch_Memory.outlet_fseq;
     net73 = o_Patch_Memory.outlet_fmask;
     net74 = o_Patch_Memory.outlet_fn;
+    net77 = o_Patch_Memory.outlet_rseq;
     o_MG_Morphing_LFO.param_rate = root.PExch[PARAM_INDEX_MG__Morphing__LFO_rate].value;
     o_MG_Morphing_LFO.param_shape = root.PExch[PARAM_INDEX_MG__Morphing__LFO_shape].value;
     o_MG_Morphing_LFO.param_pitchmod = root.PExch[PARAM_INDEX_MG__Morphing__LFO_pitchmod].value;
@@ -2014,6 +2087,11 @@ struct EngineCore {
     net7 = net3 + net5;
     net32 = net24 + net28;
     net33 = net25 + net29;
+    o_Patch_State.param_c12 = root.PExch[PARAM_INDEX_Patch__State_c12].value;
+    o_Patch_State.param_mono = root.PExch[PARAM_INDEX_Patch__State_mono].value;
+    o_Patch_State.param_wheel = root.PExch[PARAM_INDEX_Patch__State_wheel].value;
+    o_Patch_State.param_ovr = root.PExch[PARAM_INDEX_Patch__State_ovr].value;
+    o_Patch_State.ks_dsp();
   }
   void midi(uint8_t status,uint8_t data1,uint8_t data2){
     o_MS20_Voices.ks_midi(MIDI_DEVICE_USB_HOST,1,status,data1,data2);
@@ -2029,6 +2107,7 @@ struct EngineCore {
     o_ESP_Layer.ks_midi(MIDI_DEVICE_USB_HOST,1,status,data1,data2);
     o_Patch_Memory.ks_midi(MIDI_DEVICE_USB_HOST,1,status,data1,data2);
     o_MG_Morphing_LFO.ks_midi(MIDI_DEVICE_USB_HOST,1,status,data1,data2);
+    o_Patch_State.ks_midi(MIDI_DEVICE_USB_HOST,1,status,data1,data2);
   }
 };
 
@@ -2065,7 +2144,7 @@ static const ParamInfo kParamInfo[NPARAMS] = {
   {"PARAM_INDEX_Filter__Macro_hpfpeak","Filter_Macro","hpfpeak","Filter hpfpeak","frac32.u.map",0,-1,0},
   {"PARAM_INDEX_Filter__Macro_lpfcut","Filter_Macro","lpfcut","Filter lpfcut","frac32.s.map",60817408,-1,0},
   {"PARAM_INDEX_Filter__Macro_lpfpeak","Filter_Macro","lpfpeak","Filter lpfpeak","frac32.u.map",0,-1,0},
-  {"PARAM_INDEX_Filter__Macro_clicknoise","Filter_Macro","clicknoise","Filter clicknoise","frac32.u.map",12582912,-1,0},
+  {"PARAM_INDEX_Filter__Macro_clicknoise","Filter_Macro","clicknoise","Filter clicknoise","frac32.u.map",6291456,-1,0},
   {"PARAM_INDEX_VCA__Macro_bassboost","VCA_Macro","bassboost","VCA bassboost","frac32.u.map",133169152,-1,0},
   {"PARAM_INDEX_VCA__Macro_drive","VCA_Macro","drive","VCA drive","frac32.u.map",77594624,-1,0},
   {"PARAM_INDEX_VCA__Macro_mastervol","VCA_Macro","mastervol","VCA mastervol","frac32.u.map",113246208,7,0},
@@ -2092,5 +2171,9 @@ static const ParamInfo kParamInfo[NPARAMS] = {
   {"PARAM_INDEX_MG__Morphing__LFO_pitchmod","MG_Morphing_LFO","pitchmod","MG pitchmod","frac32.u.map",0,-1,0},
   {"PARAM_INDEX_MG__Morphing__LFO_lpfmod","MG_Morphing_LFO","lpfmod","MG lpfmod","frac32.u.map",0,-1,0},
   {"PARAM_INDEX_MG__Morphing__LFO_hpfmod","MG_Morphing_LFO","hpfmod","MG hpfmod","frac32.u.map",0,-1,0},
+  {"PARAM_INDEX_Patch__State_c12","Patch_State","c12","Patch_State c12","int32",0,-1,13},
+  {"PARAM_INDEX_Patch__State_mono","Patch_State","mono","Patch_State mono","int32",0,-1,1},
+  {"PARAM_INDEX_Patch__State_wheel","Patch_State","wheel","Patch_State wheel","int32",0,-1,1},
+  {"PARAM_INDEX_Patch__State_ovr","Patch_State","ovr","Patch_State ovr","int32",0,-1,1},
 };
 } // namespace ms20

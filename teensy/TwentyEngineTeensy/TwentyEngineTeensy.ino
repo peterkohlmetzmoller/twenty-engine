@@ -19,7 +19,7 @@
 #define MS20_OSF 2          // oscillators: 2 = 96 kHz oversampling (cleaner high notes), 1 = as on the Ksoloti (less CPU)
 static const float DRIFT = 0.5f;   // analog drift 0.0 .. 1.0: 0 = as on the Ksoloti, 1 = loose vintage poly
 static const float HEADPHONE_VOLUME = 0.8f;   // 0.0 .. 1.0
-static const float KEY_CLICK = 6.0f;   // key click on every note: 0 = off, 6 = standard, 64 = max (same scale as the plugin's Key Click)
+static const float KEY_CLICK = 3.0f;   // key click on every note: 0 = off, 3 = standard, 64 = max (same scale as the plugin's Key Click)
 
 // Extra switches on free Teensy pins: wire each switch from its pin to GND. -1 = not used.
 // Free with the audio board: 0-5, 9, 14, 16, 17, 22, 24-41 (the audio board uses 7, 8, 18-21, 23).
