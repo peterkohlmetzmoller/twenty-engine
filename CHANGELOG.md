@@ -1,5 +1,11 @@
 # Twenty Engine changelog
 
+## 1.1.1 (in progress)
+
+### New
+- Teensy: DIN MIDI in on pin 0 (Serial1 RX) through an optocoupler. Another keyboard or a sequencer plays the
+  engine without a computer. Set DIN_MIDI_IN to false at the top of the sketch to use pin 0 for a button.
+
 ## 1.1
 
 ### New

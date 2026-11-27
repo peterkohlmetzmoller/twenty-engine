@@ -1,6 +1,7 @@
 # Twenty Engine – Teensy 4.1 edition
 
 Teensy 4.1 + SGTL5000 audio board (PJRC Rev D pinout) + MS-20 iC on the USB host port.
+Optional DIN MIDI in on pin 0 (Serial1 RX) through a 6N138 or H11L1 optocoupler.
 
 Open `TwentyEngineTeensy/TwentyEngineTeensy.ino` in the Arduino IDE with Teensyduino:
 - Tools > Board > Teensy 4.1

@@ -12,6 +12,8 @@
 //  - USB device (Tools > USB Type > "Serial + MIDI"): shows up as "Twenty Engine";
 //    everything from the iC is passed through (memory keys as CC 102/103, silent in a DAW),
 //    notes/CC from the computer play the engine, SysEx from the computer goes to the iC
+//  - DIN MIDI in on pin 0 (Serial1 RX) through an optocoupler: another keyboard or a sequencer
+//    plays the engine (notes, CC, pitch bend, aftertouch, program change), no computer needed
 //
 // Serial Monitor prints the engine's CPU load every 2 seconds.
 
@@ -19,10 +21,12 @@
 #define MS20_OSF 2          // oscillators: 2 = 96 kHz oversampling (cleaner high notes), 1 = as on the Ksoloti (less CPU)
 static const float DRIFT = 0.5f;   // analog drift 0.0 .. 1.0: 0 = as on the Ksoloti, 1 = loose vintage poly
 static const float HEADPHONE_VOLUME = 0.8f;   // 0.0 .. 1.0
+static const bool DIN_MIDI_IN = true;   // DIN MIDI in on pin 0 (Serial1 RX, 31250 baud), wired through an optocoupler
 static const float KEY_CLICK = 3.0f;   // key click on every note: 0 = off, 3 = standard, 64 = max (same scale as the plugin's Key Click)
 
 // Extra buttons on free Teensy pins: wire each button from its pin to GND (momentary buttons).
-// Free with the audio board: 0-5, 9, 14, 16, 17, 22, 24-41 (the audio board uses 7, 8, 18-21, 23).
+// Free with the audio board: 1-5, 9, 14, 16, 17, 22, 24-41 (the audio board uses 7, 8, 18-21, 23;
+// pin 0 is DIN MIDI in, unless DIN_MIDI_IN is false).
 // Give each button a function in BUTTONS below (remove the // in front of a line to use it). Any function on any pin:
 //   NEXT       next sound (memory keys 1..36)
 //   PREV       previous sound
@@ -275,6 +279,32 @@ static void readSwitches() {
   }
 }
 
+// ---------------- DIN MIDI in (Serial1, pin 0) ----------------
+// A small MIDI byte parser: running status; realtime bytes (clock etc.) are skipped
+// without breaking a message; SysEx and other system messages are ignored.
+static uint8_t dinStatus = 0, dinData[2], dinCount = 0;
+static bool dinSysex = false;
+static void dinByte(uint8_t b) {
+  if (b >= 0xF8) return;                         // realtime: clock, start, stop, active sensing
+  if (b & 0x80) {                                // status byte
+    dinSysex = (b == 0xF0);
+    dinStatus = (b < 0xF0) ? b : 0;              // system common (and F7) cancels running status
+    dinCount = 0;
+    return;
+  }
+  if (dinSysex || !dinStatus) return;            // data without a channel status: not ours
+  dinData[dinCount++] = b;
+  uint8_t t = dinStatus & 0xF0;
+  uint8_t need = (t == 0xC0 || t == 0xD0) ? 1 : 2;
+  if (dinCount < need) return;
+  queueMidi(dinStatus, dinData[0], need == 2 ? dinData[1] : 0);   // to the engine, like notes from the computer
+  dinCount = 0;                                  // running status: the next data bytes reuse dinStatus
+}
+static void readDin() {
+  int n = 0;
+  while (Serial1.available() && n++ < 64) dinByte((uint8_t)Serial1.read());
+}
+
 // ---------------- setup / loop ----------------
 void setup() {
   Serial.begin(115200);
@@ -299,12 +329,14 @@ void setup() {
   bool loaded = loadMemories();
 
   myusb.begin();
+  if (DIN_MIDI_IN) Serial1.begin(31250);
   setupSwitches();
   engineReady = true;
 
   Serial.println("Twenty Engine (Teensy 4.1)");
   Serial.printf("oscillators %d x 48 kHz, drift %.2f, audio block %d samples (%.1f ms)\n",
                 MS20_OSF, DRIFT, AUDIO_BLOCK_SAMPLES, 1000.0f * AUDIO_BLOCK_SAMPLES / SAMPLE_RATE);
+  Serial.printf("DIN MIDI in: %s\n", DIN_MIDI_IN ? "pin 0 (Serial1)" : "off");
   Serial.printf("memory: flash %s, SD card %s, sounds %s\n", flashOK ? "OK" : "FAILED",
                 sdOK ? "found (backup)" : "none", loaded ? "loaded" : "factory");
 }
@@ -312,6 +344,7 @@ void setup() {
 void loop() {
   myusb.Task();
   readSwitches();
+  if (DIN_MIDI_IN) readDin();
 
   // iC -> engine + computer
   while (ic.read()) {
