@@ -6,6 +6,11 @@
 - Teensy: DIN MIDI in on pin 0 (Serial1 RX) through an optocoupler. Another keyboard or a sequencer plays the
   engine without a computer. Set DIN_MIDI_IN to false at the top of the sketch to use pin 0 for a button.
 
+### Changed
+- Snappier envelopes: with ATTACK at the fast end the attack takes about 2 ms (was about 8 ms), and DECAY / RELEASE
+  at the fast end die away in about 4 ms (was about 17 ms). Only the fast quarter of each knob changes; from the
+  middle up the times are as before. EG 1 and EG 2, every edition.
+
 ## 1.1
 
 ### New

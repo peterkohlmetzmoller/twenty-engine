@@ -129,8 +129,8 @@ HQ = {
   ('ve[v]+=(1.05f-ve[v])*eac;', 've[v]+=(1.05f-ve[v])*eac*(1.f+0.15f*g_drift*vrr[v][0]);'),
   ('ve[v]+=(sus-ve[v])*edc;', 've[v]+=(sus-ve[v])*edc*(1.f+0.15f*g_drift*vrr[v][1]);'),
   ('ve[v]+=(0.f-ve[v])*erc-0.00001f;', 've[v]+=(0.f-ve[v])*erc*(1.f+0.15f*g_drift*vrr[v][2])-0.00001f;'),
-  ('float s1=0.f,s2=0.f;\nfor(int v=0;v<NV;v++){\n vgn[v]+=0.02f*(ve[v]-vgn[v]); // ~1 ms de-click smoother on every voice amplitude\n if(vgn[v]>0.00005f){',
-   'float s1=0.f,s2=0.f;float s1o[2]={0.f,0.f},s2o[2]={0.f,0.f};\nfor(int v=0;v<NV;v++){\n vgn[v]+=0.02f*(ve[v]-vgn[v]); // ~1 ms de-click smoother on every voice amplitude\n'
+  ('float s1=0.f,s2=0.f;\nfor(int v=0;v<NV;v++){\n vgn[v]+=0.05f*(ve[v]-vgn[v]); // ~0.4 ms de-click smoother on every voice amplitude (1.1.1: was ~1 ms)\n if(vgn[v]>0.00005f){',
+   'float s1=0.f,s2=0.f;float s1o[2]={0.f,0.f},s2o[2]={0.f,0.f};\nfor(int v=0;v<NV;v++){\n vgn[v]+=0.05f*(ve[v]-vgn[v]); // ~0.4 ms de-click smoother on every voice amplitude (1.1.1: was ~1 ms)\n'
    ' float lv=vgn[v]*0.15f*(1.f+0.1f*g_drift*vrr[v][3]);   /* HQ drift: voice level */\n'
    ' if(vgn[v]>0.00005f)for(int os=0;os<MS20_OSF;os++){   /* HQ: oscillators at MS20_OSF x 48 kHz */'),
   ('s1+=o*(vgn[v]*0.15f);', 's1o[os]+=o*lv;'),

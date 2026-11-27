@@ -321,7 +321,7 @@ float dty=0.5f*(1.f-pws*1.015f);if(dty<0.f)dty=0.f;
 // EG2 settings arrive from the EG2 object (knobs are unipolar: 0 = fastest, 64 = slowest)
 int32_t sa=(inlet_egattack<<1)-(1<<27),sd=(inlet_egdecay<<1)-(1<<27),sr=(inlet_egrelease<<1)-(1<<27);
 uint32_t a_i,d_i,r_i;MTOFEXTENDED(-sa,a_i);MTOFEXTENDED(-sd,d_i);MTOFEXTENDED(-sr,r_i);
-float eac=0.00003f+(a_i*2.32e-10f)*0.35f;float edc=0.00002f+(d_i*2.32e-10f)*0.25f;float erc=0.00002f+(r_i*2.32e-10f)*0.25f;
+float eac=0.00003f+(a_i*2.32e-10f)*0.35f;float edc=0.00002f+(d_i*2.32e-10f)*0.25f;float erc=0.00002f+(r_i*2.32e-10f)*0.25f;eac+=eac*eac*eac*440.f;if(eac>0.6f)eac=0.6f;edc+=edc*edc*edc*900.f;if(edc>0.6f)edc=0.6f;erc+=erc*erc*erc*900.f;if(erc>0.6f)erc=0.6f;   /* 1.1.1: snappier fast end */
 float sus=inlet_egsustain/(float)(1<<27);holdt=inlet_eghold>>15;
 bool hinf=(inlet_eghold>=(60<<21));   /* HOLD at the top (60..64): sustain pedal - released notes hold until the knob comes down */
 if(hpinf&&!hinf){for(int v=0;v<NV;v++){if(!vg[v]&&(vs[v]==1||vs[v]==2))vh[v]=0;}}   /* pedal up: held notes release now */
@@ -398,7 +398,7 @@ float ns=0.f;
 if(w1==3){rng=rng*196314165U+907633515U;float w_n=(int32_t)rng*4.6566e-10f;pk=0.96f*pk+0.04f*w_n;ns=w_n*0.45f+pws*(pk*1.5f-w_n*0.45f);} // noise only when VCO1 is on noise
 float s1=0.f,s2=0.f;float s1o[2]={0.f,0.f},s2o[2]={0.f,0.f};
 for(int v=0;v<NV;v++){
- vgn[v]+=0.02f*(ve[v]-vgn[v]); // ~1 ms de-click smoother on every voice amplitude
+ vgn[v]+=0.05f*(ve[v]-vgn[v]); // ~0.4 ms de-click smoother on every voice amplitude (1.1.1: was ~1 ms)
  float lv=vgn[v]*0.15f*(1.f+0.1f*g_drift*vrr[v][3]);   /* HQ drift: voice level */
  if(vgn[v]>0.00005f)for(int os=0;os<MS20_OSF;os++){   /* HQ: oscillators at MS20_OSF x 48 kHz */
   float q=ph1[v]+inc1[v];if(q>=1.f)q-=1.f;ph1[v]=q;float dt=inc1[v];float rdt=rin1[v];float o=0.f;
@@ -515,7 +515,7 @@ if(inlet_mode!=pm){pm=inlet_mode;pg=0;if(stg)stg=3;}            // mode switch: 
 if(g&&!pg){stg=1;tmr=0;}else if(!g&&pg){stg=3;}pg=g;            /* attack from current level, no click */
 int32_t sa=(kn_attack<<1)-(1<<27),sr=(kn_release<<1)-(1<<27); // unipolar knob: 0 = fastest, 64 = slowest
 uint32_t ai,ri;MTOFEXTENDED(-sa,ai);MTOFEXTENDED(-sr,ri);
-float ac=0.00003f+(ai*2.32e-10f)*0.35f;float rc=0.00002f+(ri*2.32e-10f)*0.25f;
+float ac=0.00003f+(ai*2.32e-10f)*0.35f;float rc=0.00002f+(ri*2.32e-10f)*0.25f;ac+=ac*ac*ac*440.f;if(ac>0.6f)ac=0.6f;rc+=rc*rc*rc*900.f;if(rc>0.6f)rc=0.6f;   /* 1.1.1: snappier fast end */
 if(stg==1){if(tmr++>=(uint32_t)(kn_delay>>15))stg=2;}
 else if(stg==2){val+=(1.05f-val)*ac;if(val>=1.f)val=1.f;}
 else if(stg==3){val+=(0.f-val)*rc-0.00001f;if(val<=0.f){val=0.f;stg=0;}}
@@ -598,7 +598,7 @@ kn_f=0;
 
 int32_t sa=(kn_attack<<1)-(1<<27),sd=(kn_decay<<1)-(1<<27),sr=(kn_release<<1)-(1<<27); // unipolar knob: 0 = fastest, 64 = slowest
 uint32_t ai,di,ri;MTOFEXTENDED(-sa,ai);MTOFEXTENDED(-sd,di);MTOFEXTENDED(-sr,ri);
-float ac=0.00003f+(ai*2.32e-10f)*0.35f;float dc=0.00002f+(di*2.32e-10f)*0.25f;float rc=0.00002f+(ri*2.32e-10f)*0.25f;
+float ac=0.00003f+(ai*2.32e-10f)*0.35f;float dc=0.00002f+(di*2.32e-10f)*0.25f;float rc=0.00002f+(ri*2.32e-10f)*0.25f;ac+=ac*ac*ac*440.f;if(ac>0.6f)ac=0.6f;dc+=dc*dc*dc*900.f;if(dc>0.6f)dc=0.6f;rc+=rc*rc*rc*900.f;if(rc>0.6f)rc=0.6f;   /* 1.1.1: snappier fast end */
 float sus=kn_sustain/134217728.f;uint32_t ht=kn_hold>>15;bool einf=(kn_hold>=(60<<21));bool eup=epinf&&!einf;epinf=einf;   /* HOLD at the top: sustain pedal; eup = pedal just lifted */
 int gt[2]={inlet_polygate,inlet_arpgate};int rt[2]={inlet_polyretrig,inlet_arpretrig};
 if(inlet_trig!=(int32_t)0x80000000){int tg=(inlet_trig>0);gt[0]=gt[1]=tg;rt[0]=rt[1]=0;} // EG2 TRIG jack patched: replaces the keyboard / arp gate
